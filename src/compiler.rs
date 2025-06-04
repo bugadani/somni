@@ -5,7 +5,7 @@ use indexmap::{IndexMap, IndexSet};
 use crate::{
     error::CompileError,
     lexer::{self, Location},
-    parser,
+    parser::{self, Expression},
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -344,9 +344,10 @@ impl Locations {
 #[derive(Default, Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct LocationIndex(pub u32);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct VariableDef {
     pub initial_value: Value,
+    pub type_: Type,
     pub mutable: bool,
 }
 impl VariableDef {
@@ -512,7 +513,7 @@ impl ScopeTreeNode {
 struct Scope {
     kind: ScopeKind,
     // Currently declared and visible variables.
-    variables: IndexMap<StringIndex, (VariableIndex, bool)>,
+    variables: IndexMap<StringIndex, VariableDef>,
     // Number of variables declared in this scope. Needed due to shadowing.
     declared_count: usize,
 }
@@ -628,11 +629,11 @@ impl ScopeStack {
     fn find(&self, variable_name: StringIndex) -> Option<VarId> {
         let mut node = self.node(self.current);
         loop {
-            if let Some((index, mutable)) = self.scopes[node.id].variables.get(&variable_name) {
+            if let Some((index, _, def)) = self.scopes[node.id].variables.get_full(&variable_name) {
                 return Some(if self.scopes[node.id].kind == ScopeKind::Global {
-                    VarId::Global(*index, *mutable)
+                    VarId::Global(VariableIndex(index), def.mutable)
                 } else {
-                    VarId::Local(*index, *mutable)
+                    VarId::Local(VariableIndex(index), def.mutable)
                 });
             }
             if node.is_root() {
@@ -660,12 +661,12 @@ impl ScopeStack {
         count
     }
 
-    fn declare_variable(&mut self, variable_name: StringIndex, mutable: bool) -> Option<VarId> {
+    fn declare_variable(&mut self, name: StringIndex, def: VariableDef) -> Option<VarId> {
         let current_scope = &self.scopes[self.current];
 
         let address = if current_scope.kind == ScopeKind::Global {
             // Globals must be unique in their scope.
-            if current_scope.variables.contains_key(&variable_name) {
+            if current_scope.variables.contains_key(&name) {
                 return None;
             }
 
@@ -678,15 +679,13 @@ impl ScopeStack {
 
         let current_scope = &mut self.scopes[self.current];
 
-        current_scope
-            .variables
-            .insert(variable_name, (index, mutable));
+        current_scope.variables.insert(name, def);
         current_scope.declared_count += 1;
 
         let id = if current_scope.kind == ScopeKind::Global {
-            VarId::Global(index, mutable)
+            VarId::Global(index, def.mutable)
         } else {
-            VarId::Local(index, mutable)
+            VarId::Local(index, def.mutable)
         };
 
         Some(id)
@@ -795,7 +794,14 @@ impl Compiler {
                 let var_name = arg.name.source(source);
                 let name_idx = self.program.intern_string(var_name);
                 let Some(VarId::Local(variable_index, _)) =
-                    self.program.variables.declare_variable(name_idx, true)
+                    self.program.variables.declare_variable(
+                        name_idx,
+                        VariableDef {
+                            initial_value: Value::Void,
+                            type_: arg_type,
+                            mutable: true,
+                        },
+                    )
                 else {
                     return Err(CompileError {
                         source,
@@ -921,7 +927,7 @@ impl Compiler {
         source: &'s str,
         constant: &parser::Constant,
     ) -> Result<(), CompileError<'s>> {
-        let (name, value) = self.compile_global(
+        let (name, def) = self.compile_global(
             source,
             constant.identifier,
             constant.type_token,
@@ -931,13 +937,7 @@ impl Compiler {
 
         self.program
             .globals
-            .push(
-                name,
-                VariableDef {
-                    initial_value: value,
-                    mutable: false,
-                },
-            )
+            .push(name, def)
             .ok_or_else(|| CompileError {
                 source,
                 location: constant.location(),
@@ -955,7 +955,7 @@ impl Compiler {
         source: &'s str,
         global: &parser::GlobalVariable,
     ) -> Result<(), CompileError<'s>> {
-        let (name, value) = self.compile_global(
+        let (name, def) = self.compile_global(
             source,
             global.identifier,
             global.type_token,
@@ -965,13 +965,7 @@ impl Compiler {
 
         self.program
             .globals
-            .push(
-                name,
-                VariableDef {
-                    initial_value: value,
-                    mutable: true,
-                },
-            )
+            .push(name, def)
             .ok_or_else(|| CompileError {
                 source,
                 location: global.location(),
@@ -991,7 +985,7 @@ impl Compiler {
         type_token: parser::Type,
         value: &parser::Expression,
         mutable: bool,
-    ) -> Result<(VariableIndex, Value), CompileError<'s>> {
+    ) -> Result<(VariableIndex, VariableDef), CompileError<'s>> {
         let parser::Expression::Literal { value } = &value else {
             return Err(CompileError {
                 source,
@@ -1005,9 +999,14 @@ impl Compiler {
 
         let var_name = identifier.source(source);
         let name_idx = self.program.intern_string(var_name);
-        let Some(VarId::Global(variable_index, _)) =
-            self.program.variables.declare_variable(name_idx, mutable)
-        else {
+        let Some(VarId::Global(variable_index, _)) = self.program.variables.declare_variable(
+            name_idx,
+            VariableDef {
+                initial_value: value,
+                type_: val_type,
+                mutable: mutable,
+            },
+        ) else {
             return Err(CompileError {
                 source,
                 location: identifier.location,
@@ -1015,7 +1014,14 @@ impl Compiler {
             });
         };
 
-        Ok((variable_index, value))
+        Ok((
+            variable_index,
+            VariableDef {
+                initial_value: value,
+                type_: val_type,
+                mutable,
+            },
+        ))
     }
 
     fn compile_literal_value<'s>(
@@ -1024,37 +1030,43 @@ impl Compiler {
         literal_type: Type,
         literal: &parser::Literal,
     ) -> Result<Value, CompileError<'s>> {
-        let value = match &literal.value {
-            parser::LiteralValue::Integer(value) => match literal_type {
-                Type::U8 => Value::U8(u8::try_from(*value).map_err(|_| CompileError {
+        let value = match (literal_type, &literal.value) {
+            (Type::U8, parser::LiteralValue::Integer(value)) => {
+                Value::U8(u8::try_from(*value).map_err(|_| CompileError {
                     source,
                     location: literal.location,
                     error: "Value out of range for u8".to_string(),
-                })?),
-                Type::U64 => Value::U64(*value as u64),
-                _ => {
-                    return Err(CompileError {
-                        source,
-                        location: literal.location,
-                        error: format!("Expected integer type, found {literal_type}"),
-                    });
-                }
-            },
-            parser::LiteralValue::Float(value) => match literal_type {
-                Type::F32 => Value::F32(*value as f32),
-                Type::F64 => Value::F64(*value),
-                _ => {
-                    return Err(CompileError {
-                        source,
-                        location: literal.location,
-                        error: format!("Expected float type, found {literal_type}"),
-                    });
-                }
-            },
-            parser::LiteralValue::Boolean(value) => Value::Bool(*value),
-            parser::LiteralValue::String(value) => {
+                })?)
+            }
+            (Type::U64, parser::LiteralValue::Integer(value)) => Value::U64(*value),
+            (Type::F32, parser::LiteralValue::Float(value)) => Value::F32(*value as f32),
+            (Type::F64, parser::LiteralValue::Float(value)) => Value::F64(*value),
+            (Type::Bool, parser::LiteralValue::Boolean(value)) => Value::Bool(*value),
+            (Type::String, parser::LiteralValue::String(value)) => {
                 let string_index = self.program.intern_string(value);
                 Value::String(string_index)
+            }
+            (Type::Void | Type::Reference, _) => {
+                return Err(CompileError {
+                    source,
+                    location: literal.location,
+                    error: format!("{literal_type} is not supported in literals"),
+                });
+            }
+            _ => {
+                return Err(CompileError {
+                    source,
+                    location: literal.location,
+                    error: format!(
+                        "Expected {literal_type}, found {} literal",
+                        match literal.value {
+                            parser::LiteralValue::Integer(_) => "integer",
+                            parser::LiteralValue::Float(_) => "float",
+                            parser::LiteralValue::Boolean(_) => "boolean",
+                            parser::LiteralValue::String(_) => "string",
+                        }
+                    ),
+                });
             }
         };
 
@@ -1088,9 +1100,21 @@ impl Compiler {
     ) -> Result<Vec<Bytecode>, CompileError<'s>> {
         let var_name = variable_def.identifier.source(source);
         let name_idx = self.program.intern_string(var_name);
-        let Some(var_id @ VarId::Local(_, _)) =
-            self.program.variables.declare_variable(name_idx, true)
-        else {
+
+        let type_ = if let Some(type_token) = &variable_def.type_token {
+            self.compile_type(source, type_token.clone())?
+        } else {
+            Type::Void
+        };
+
+        let Some(var_id @ VarId::Local(_, _)) = self.program.variables.declare_variable(
+            name_idx,
+            VariableDef {
+                initial_value: Value::Void,
+                type_,
+                mutable: true,
+            },
+        ) else {
             return Err(CompileError {
                 source,
                 location: variable_def.identifier.location,
@@ -1114,9 +1138,34 @@ impl Compiler {
     ) -> Result<Vec<Bytecode>, CompileError<'s>> {
         let const_name = constant_def.identifier.source(source);
         let name_idx = self.program.intern_string(const_name);
-        let Some(var_id @ VarId::Local(_, _)) =
-            self.program.variables.declare_variable(name_idx, false)
-        else {
+
+        let mut initializer_code = vec![];
+        let (type_, initial_value) = if let Some(type_token) = &constant_def.type_token {
+            let type_ = self.compile_type(source, type_token.clone())?;
+
+            let initial_value =
+                if let Expression::Literal { value: literal } = &constant_def.initializer {
+                    self.compile_literal_value(source, type_, literal)?
+                } else {
+                    initializer_code.extend_from_slice(
+                        &self.compile_expression(source, &constant_def.initializer)?,
+                    );
+                    Value::Void
+                };
+
+            (type_, initial_value)
+        } else {
+            (Type::Void, Value::Void)
+        };
+
+        let Some(var_id @ VarId::Local(_, _)) = self.program.variables.declare_variable(
+            name_idx,
+            VariableDef {
+                initial_value,
+                type_,
+                mutable: false,
+            },
+        ) else {
             return Err(CompileError {
                 source,
                 location: constant_def.identifier.location,
@@ -1124,13 +1173,14 @@ impl Compiler {
             });
         };
 
-        let mut code = self.compile_expression(source, &constant_def.initializer)?;
-        code.push(Bytecode {
-            instruction: Instruction::Store(var_id),
-            location: self.intern_location(constant_def.location()),
-        });
+        if !initializer_code.is_empty() {
+            initializer_code.push(Bytecode {
+                instruction: Instruction::Store(var_id),
+                location: self.intern_location(constant_def.location()),
+            });
+        }
 
-        Ok(code)
+        Ok(initializer_code)
     }
 
     fn compile_return_with_value<'s>(

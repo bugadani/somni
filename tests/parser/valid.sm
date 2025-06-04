@@ -63,6 +63,12 @@ fn triple(x: i32) -> i32 {
     return result;
 }
 
+fn locals_with_type(x: i32) -> i32 {
+    const CONST: u64 = x + double(x);
+    var result: u64 = x + double(x);
+    return result;
+}
+
 fn quadruple(x: i32) -> i32 {
     return double(two() * x);
 }

@@ -17,8 +17,8 @@
 //! type -> identifier ;
 //!
 //! body -> '{' statement* '}' ;
-//! statement -> 'var' identifier '=' expression ';'
-//!            | 'const' identifier '=' expression ';'
+//! statement -> 'var' identifier (':' type)? '=' expression ';'
+//!            | 'const' identifier (':' type)? '=' expression ';'
 //!            | 'return' expression? ';'
 //!            | 'break' expression? ';'
 //!            | 'continue' expression? ';'
@@ -295,6 +295,7 @@ impl Item {
 pub struct ConstantDefinition {
     pub const_token: Token,
     pub identifier: Token,
+    pub type_token: Option<Type>,
     pub equals_token: Token,
     pub initializer: Expression,
     pub semicolon: Token,
@@ -311,6 +312,7 @@ impl ConstantDefinition {
 pub struct VariableDefinition {
     pub var_token: Token,
     pub identifier: Token,
+    pub type_token: Option<Type>,
     pub equals_token: Token,
     pub initializer: Expression,
     pub semicolon: Token,
@@ -431,6 +433,13 @@ impl Statement {
 
         if let Some(var_token) = stream.take_match(TokenKind::Identifier, &["var"]) {
             let identifier = stream.expect_match(TokenKind::Identifier, &[])?;
+
+            let type_token = if stream.take_match(TokenKind::Symbol, &[":"]).is_some() {
+                Some(Type::parse(stream)?)
+            } else {
+                None
+            };
+
             let equals_token = stream.expect_match(TokenKind::Symbol, &["="])?;
             let expression = Expression::parse(stream)?;
             let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
@@ -438,6 +447,7 @@ impl Statement {
             return Ok(Statement::VariableDefinition(VariableDefinition {
                 var_token,
                 identifier,
+                type_token,
                 equals_token,
                 initializer: expression,
                 semicolon,
@@ -446,6 +456,13 @@ impl Statement {
 
         if let Some(const_token) = stream.take_match(TokenKind::Identifier, &["const"]) {
             let identifier = stream.expect_match(TokenKind::Identifier, &[])?;
+
+            let type_token = if stream.take_match(TokenKind::Symbol, &[":"]).is_some() {
+                Some(Type::parse(stream)?)
+            } else {
+                None
+            };
+
             let equals_token = stream.expect_match(TokenKind::Symbol, &["="])?;
             let expression = Expression::parse(stream)?;
             let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
@@ -453,6 +470,7 @@ impl Statement {
             return Ok(Statement::ConstantDefinition(ConstantDefinition {
                 const_token,
                 identifier,
+                type_token,
                 equals_token,
                 initializer: expression,
                 semicolon,
