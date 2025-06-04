@@ -108,21 +108,32 @@ pub fn run_compile_test(
     let file = file.as_ref();
     let source = std::fs::read_to_string(file).unwrap();
 
-    let stderr = file.with_extension("stderr");
+    let out_path = file.parent().unwrap().join(file.file_stem().unwrap());
+
+    let write_out_file = |name: &Path, content: String| {
+        _ = std::fs::create_dir_all(&name.parent().unwrap()).unwrap();
+        std::fs::write(name, content).unwrap();
+    };
+
+    let stderr = out_path.join("stderr");
     let fail_expected = stderr.exists();
 
     let tokens = tokenize(&source).collect::<Result<Vec<_>, _>>().unwrap();
     let result = parse(&source, &tokens);
 
     let ast = match result {
-        Ok(ast) => ast,
+        Ok(ast) => {
+            write_out_file(&out_path.join("ast"), format!("{:#?}", ast));
+            ast
+        }
         Err(err) if fail_expected => {
             let expected_error = std::fs::read_to_string(&stderr).unwrap();
-            if bless && format!("{err:?}") != expected_error {
-                std::fs::write(&stderr, format!("{err:?}")).unwrap();
+            let err_str = format!("{err:?}");
+            if bless && err_str != expected_error {
+                write_out_file(&stderr, err_str);
             } else {
                 pretty_assertions::assert_eq!(
-                    format!("{err:?}"),
+                    err_str,
                     expected_error,
                     "Compilation error did not match expected error."
                 );
@@ -133,7 +144,7 @@ pub fn run_compile_test(
         }
         Err(err) => {
             if bless {
-                std::fs::write(stderr, format!("{err:?}")).unwrap();
+                write_out_file(&stderr, format!("{err:?}"));
                 // Parsing failed as expected, no need to compile
                 return None;
             } else {
@@ -144,10 +155,13 @@ pub fn run_compile_test(
 
     if compile_test {
         match compile(&source, &ast) {
-            Ok(p) => return Some(p),
+            Ok(p) => {
+                write_out_file(&out_path.join("unoptimized.disasm"), p.disasm());
+                return Some(p);
+            }
             Err(err) if fail_expected => {
                 if bless {
-                    std::fs::write(stderr, format!("{err:?}")).unwrap();
+                    write_out_file(&stderr, format!("{err:?}"));
                 } else {
                     let expected_error = std::fs::read_to_string(&stderr).unwrap();
                     pretty_assertions::assert_eq!(
@@ -160,7 +174,7 @@ pub fn run_compile_test(
             }
             Err(err) => {
                 if bless {
-                    std::fs::write(stderr, format!("{err:?}")).unwrap();
+                    write_out_file(&stderr, format!("{err:?}"));
                     return None;
                 } else {
                     panic!("Failed to compile {}:\n{err:?}", file.display());

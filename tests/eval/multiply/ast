@@ -1,0 +1,860 @@
+Program {
+    items: [
+        Function(
+            Function {
+                fn_token: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 66,
+                        end: 68,
+                    },
+                },
+                name: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 69,
+                        end: 73,
+                    },
+                },
+                opening_paren: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 73,
+                        end: 74,
+                    },
+                },
+                arguments: [],
+                closing_paren: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 74,
+                        end: 75,
+                    },
+                },
+                return_decl: None,
+                body: Body {
+                    opening_brace: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 76,
+                            end: 77,
+                        },
+                    },
+                    statements: [
+                        VariableDefinition(
+                            VariableDefinition {
+                                var_token: Token {
+                                    kind: Identifier,
+                                    location: Location {
+                                        start: 82,
+                                        end: 85,
+                                    },
+                                },
+                                identifier: Token {
+                                    kind: Identifier,
+                                    location: Location {
+                                        start: 86,
+                                        end: 87,
+                                    },
+                                },
+                                type_token: None,
+                                equals_token: Token {
+                                    kind: Symbol,
+                                    location: Location {
+                                        start: 88,
+                                        end: 89,
+                                    },
+                                },
+                                initializer: Literal {
+                                    value: Literal {
+                                        value: Integer(
+                                            2,
+                                        ),
+                                        location: Location {
+                                            start: 90,
+                                            end: 91,
+                                        },
+                                    },
+                                },
+                                semicolon: Token {
+                                    kind: Symbol,
+                                    location: Location {
+                                        start: 91,
+                                        end: 92,
+                                    },
+                                },
+                            },
+                        ),
+                        Return(
+                            ReturnWithValue {
+                                return_token: Token {
+                                    kind: Identifier,
+                                    location: Location {
+                                        start: 92,
+                                        end: 98,
+                                    },
+                                },
+                                expression: Literal {
+                                    value: Literal {
+                                        value: Integer(
+                                            0,
+                                        ),
+                                        location: Location {
+                                            start: 99,
+                                            end: 100,
+                                        },
+                                    },
+                                },
+                                semicolon: Token {
+                                    kind: Symbol,
+                                    location: Location {
+                                        start: 100,
+                                        end: 101,
+                                    },
+                                },
+                            },
+                        ),
+                    ],
+                    closing_brace: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 102,
+                            end: 103,
+                        },
+                    },
+                },
+            },
+        ),
+        Function(
+            Function {
+                fn_token: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 105,
+                        end: 107,
+                    },
+                },
+                name: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 108,
+                        end: 116,
+                    },
+                },
+                opening_paren: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 116,
+                        end: 117,
+                    },
+                },
+                arguments: [
+                    FunctionArgument {
+                        name: Token {
+                            kind: Identifier,
+                            location: Location {
+                                start: 117,
+                                end: 123,
+                            },
+                        },
+                        colon: Token {
+                            kind: Symbol,
+                            location: Location {
+                                start: 123,
+                                end: 124,
+                            },
+                        },
+                        reference_token: None,
+                        arg_type: Type {
+                            type_name: Token {
+                                kind: Identifier,
+                                location: Location {
+                                    start: 125,
+                                    end: 128,
+                                },
+                            },
+                        },
+                    },
+                    FunctionArgument {
+                        name: Token {
+                            kind: Identifier,
+                            location: Location {
+                                start: 130,
+                                end: 131,
+                            },
+                        },
+                        colon: Token {
+                            kind: Symbol,
+                            location: Location {
+                                start: 131,
+                                end: 132,
+                            },
+                        },
+                        reference_token: None,
+                        arg_type: Type {
+                            type_name: Token {
+                                kind: Identifier,
+                                location: Location {
+                                    start: 133,
+                                    end: 136,
+                                },
+                            },
+                        },
+                    },
+                    FunctionArgument {
+                        name: Token {
+                            kind: Identifier,
+                            location: Location {
+                                start: 138,
+                                end: 141,
+                            },
+                        },
+                        colon: Token {
+                            kind: Symbol,
+                            location: Location {
+                                start: 141,
+                                end: 142,
+                            },
+                        },
+                        reference_token: None,
+                        arg_type: Type {
+                            type_name: Token {
+                                kind: Identifier,
+                                location: Location {
+                                    start: 143,
+                                    end: 147,
+                                },
+                            },
+                        },
+                    },
+                ],
+                closing_paren: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 147,
+                        end: 148,
+                    },
+                },
+                return_decl: Some(
+                    ReturnDecl {
+                        return_token: Token {
+                            kind: Symbol,
+                            location: Location {
+                                start: 149,
+                                end: 151,
+                            },
+                        },
+                        return_type: Type {
+                            type_name: Token {
+                                kind: Identifier,
+                                location: Location {
+                                    start: 152,
+                                    end: 155,
+                                },
+                            },
+                        },
+                    },
+                ),
+                body: Body {
+                    opening_brace: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 156,
+                            end: 157,
+                        },
+                    },
+                    statements: [
+                        If(
+                            If {
+                                if_token: Token {
+                                    kind: Identifier,
+                                    location: Location {
+                                        start: 162,
+                                        end: 164,
+                                    },
+                                },
+                                condition: Variable {
+                                    variable: Token {
+                                        kind: Identifier,
+                                        location: Location {
+                                            start: 165,
+                                            end: 168,
+                                        },
+                                    },
+                                },
+                                body: Body {
+                                    opening_brace: Token {
+                                        kind: Symbol,
+                                        location: Location {
+                                            start: 169,
+                                            end: 170,
+                                        },
+                                    },
+                                    statements: [
+                                        VariableDefinition(
+                                            VariableDefinition {
+                                                var_token: Token {
+                                                    kind: Identifier,
+                                                    location: Location {
+                                                        start: 179,
+                                                        end: 182,
+                                                    },
+                                                },
+                                                identifier: Token {
+                                                    kind: Identifier,
+                                                    location: Location {
+                                                        start: 183,
+                                                        end: 186,
+                                                    },
+                                                },
+                                                type_token: None,
+                                                equals_token: Token {
+                                                    kind: Symbol,
+                                                    location: Location {
+                                                        start: 187,
+                                                        end: 188,
+                                                    },
+                                                },
+                                                initializer: Literal {
+                                                    value: Literal {
+                                                        value: Integer(
+                                                            0,
+                                                        ),
+                                                        location: Location {
+                                                            start: 189,
+                                                            end: 190,
+                                                        },
+                                                    },
+                                                },
+                                                semicolon: Token {
+                                                    kind: Symbol,
+                                                    location: Location {
+                                                        start: 190,
+                                                        end: 191,
+                                                    },
+                                                },
+                                            },
+                                        ),
+                                        While(
+                                            While {
+                                                while_token: Token {
+                                                    kind: Identifier,
+                                                    location: Location {
+                                                        start: 200,
+                                                        end: 205,
+                                                    },
+                                                },
+                                                condition: BinaryOperator {
+                                                    name: Token {
+                                                        kind: Symbol,
+                                                        location: Location {
+                                                            start: 208,
+                                                            end: 209,
+                                                        },
+                                                    },
+                                                    operands: [
+                                                        Variable {
+                                                            variable: Token {
+                                                                kind: Identifier,
+                                                                location: Location {
+                                                                    start: 206,
+                                                                    end: 207,
+                                                                },
+                                                            },
+                                                        },
+                                                        Literal {
+                                                            value: Literal {
+                                                                value: Integer(
+                                                                    0,
+                                                                ),
+                                                                location: Location {
+                                                                    start: 210,
+                                                                    end: 211,
+                                                                },
+                                                            },
+                                                        },
+                                                    ],
+                                                },
+                                                body: Body {
+                                                    opening_brace: Token {
+                                                        kind: Symbol,
+                                                        location: Location {
+                                                            start: 212,
+                                                            end: 213,
+                                                        },
+                                                    },
+                                                    statements: [
+                                                        Expression {
+                                                            expression: BinaryOperator {
+                                                                name: Token {
+                                                                    kind: Symbol,
+                                                                    location: Location {
+                                                                        start: 230,
+                                                                        end: 231,
+                                                                    },
+                                                                },
+                                                                operands: [
+                                                                    Variable {
+                                                                        variable: Token {
+                                                                            kind: Identifier,
+                                                                            location: Location {
+                                                                                start: 226,
+                                                                                end: 229,
+                                                                            },
+                                                                        },
+                                                                    },
+                                                                    BinaryOperator {
+                                                                        name: Token {
+                                                                            kind: Symbol,
+                                                                            location: Location {
+                                                                                start: 236,
+                                                                                end: 237,
+                                                                            },
+                                                                        },
+                                                                        operands: [
+                                                                            Variable {
+                                                                                variable: Token {
+                                                                                    kind: Identifier,
+                                                                                    location: Location {
+                                                                                        start: 232,
+                                                                                        end: 235,
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                            Variable {
+                                                                                variable: Token {
+                                                                                    kind: Identifier,
+                                                                                    location: Location {
+                                                                                        start: 238,
+                                                                                        end: 244,
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                        ],
+                                                                    },
+                                                                ],
+                                                            },
+                                                            semicolon: Token {
+                                                                kind: Symbol,
+                                                                location: Location {
+                                                                    start: 244,
+                                                                    end: 245,
+                                                                },
+                                                            },
+                                                        },
+                                                        Expression {
+                                                            expression: BinaryOperator {
+                                                                name: Token {
+                                                                    kind: Symbol,
+                                                                    location: Location {
+                                                                        start: 260,
+                                                                        end: 261,
+                                                                    },
+                                                                },
+                                                                operands: [
+                                                                    Variable {
+                                                                        variable: Token {
+                                                                            kind: Identifier,
+                                                                            location: Location {
+                                                                                start: 258,
+                                                                                end: 259,
+                                                                            },
+                                                                        },
+                                                                    },
+                                                                    BinaryOperator {
+                                                                        name: Token {
+                                                                            kind: Symbol,
+                                                                            location: Location {
+                                                                                start: 264,
+                                                                                end: 265,
+                                                                            },
+                                                                        },
+                                                                        operands: [
+                                                                            Variable {
+                                                                                variable: Token {
+                                                                                    kind: Identifier,
+                                                                                    location: Location {
+                                                                                        start: 262,
+                                                                                        end: 263,
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                            Literal {
+                                                                                value: Literal {
+                                                                                    value: Integer(
+                                                                                        1,
+                                                                                    ),
+                                                                                    location: Location {
+                                                                                        start: 266,
+                                                                                        end: 267,
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                        ],
+                                                                    },
+                                                                ],
+                                                            },
+                                                            semicolon: Token {
+                                                                kind: Symbol,
+                                                                location: Location {
+                                                                    start: 267,
+                                                                    end: 268,
+                                                                },
+                                                            },
+                                                        },
+                                                    ],
+                                                    closing_brace: Token {
+                                                        kind: Symbol,
+                                                        location: Location {
+                                                            start: 277,
+                                                            end: 278,
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                        ),
+                                        Return(
+                                            ReturnWithValue {
+                                                return_token: Token {
+                                                    kind: Identifier,
+                                                    location: Location {
+                                                        start: 287,
+                                                        end: 293,
+                                                    },
+                                                },
+                                                expression: Variable {
+                                                    variable: Token {
+                                                        kind: Identifier,
+                                                        location: Location {
+                                                            start: 294,
+                                                            end: 297,
+                                                        },
+                                                    },
+                                                },
+                                                semicolon: Token {
+                                                    kind: Symbol,
+                                                    location: Location {
+                                                        start: 297,
+                                                        end: 298,
+                                                    },
+                                                },
+                                            },
+                                        ),
+                                    ],
+                                    closing_brace: Token {
+                                        kind: Symbol,
+                                        location: Location {
+                                            start: 303,
+                                            end: 304,
+                                        },
+                                    },
+                                },
+                                else_branch: Some(
+                                    Else {
+                                        else_token: Token {
+                                            kind: Identifier,
+                                            location: Location {
+                                                start: 305,
+                                                end: 309,
+                                            },
+                                        },
+                                        else_body: Body {
+                                            opening_brace: Token {
+                                                kind: Symbol,
+                                                location: Location {
+                                                    start: 310,
+                                                    end: 311,
+                                                },
+                                            },
+                                            statements: [
+                                                Expression {
+                                                    expression: FunctionCall {
+                                                        name: Token {
+                                                            kind: Identifier,
+                                                            location: Location {
+                                                                start: 320,
+                                                                end: 324,
+                                                            },
+                                                        },
+                                                        arguments: [],
+                                                    },
+                                                    semicolon: Token {
+                                                        kind: Symbol,
+                                                        location: Location {
+                                                            start: 326,
+                                                            end: 327,
+                                                        },
+                                                    },
+                                                },
+                                                Return(
+                                                    ReturnWithValue {
+                                                        return_token: Token {
+                                                            kind: Identifier,
+                                                            location: Location {
+                                                                start: 336,
+                                                                end: 342,
+                                                            },
+                                                        },
+                                                        expression: BinaryOperator {
+                                                            name: Token {
+                                                                kind: Symbol,
+                                                                location: Location {
+                                                                    start: 350,
+                                                                    end: 351,
+                                                                },
+                                                            },
+                                                            operands: [
+                                                                Variable {
+                                                                    variable: Token {
+                                                                        kind: Identifier,
+                                                                        location: Location {
+                                                                            start: 343,
+                                                                            end: 349,
+                                                                        },
+                                                                    },
+                                                                },
+                                                                Variable {
+                                                                    variable: Token {
+                                                                        kind: Identifier,
+                                                                        location: Location {
+                                                                            start: 352,
+                                                                            end: 353,
+                                                                        },
+                                                                    },
+                                                                },
+                                                            ],
+                                                        },
+                                                        semicolon: Token {
+                                                            kind: Symbol,
+                                                            location: Location {
+                                                                start: 353,
+                                                                end: 354,
+                                                            },
+                                                        },
+                                                    },
+                                                ),
+                                            ],
+                                            closing_brace: Token {
+                                                kind: Symbol,
+                                                location: Location {
+                                                    start: 359,
+                                                    end: 360,
+                                                },
+                                            },
+                                        },
+                                    },
+                                ),
+                            },
+                        ),
+                    ],
+                    closing_brace: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 361,
+                            end: 362,
+                        },
+                    },
+                },
+            },
+        ),
+        Function(
+            Function {
+                fn_token: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 364,
+                        end: 366,
+                    },
+                },
+                name: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 367,
+                        end: 371,
+                    },
+                },
+                opening_paren: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 371,
+                        end: 372,
+                    },
+                },
+                arguments: [],
+                closing_paren: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 372,
+                        end: 373,
+                    },
+                },
+                return_decl: Some(
+                    ReturnDecl {
+                        return_token: Token {
+                            kind: Symbol,
+                            location: Location {
+                                start: 374,
+                                end: 376,
+                            },
+                        },
+                        return_type: Type {
+                            type_name: Token {
+                                kind: Identifier,
+                                location: Location {
+                                    start: 377,
+                                    end: 381,
+                                },
+                            },
+                        },
+                    },
+                ),
+                body: Body {
+                    opening_brace: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 382,
+                            end: 383,
+                        },
+                    },
+                    statements: [
+                        Return(
+                            ReturnWithValue {
+                                return_token: Token {
+                                    kind: Identifier,
+                                    location: Location {
+                                        start: 388,
+                                        end: 394,
+                                    },
+                                },
+                                expression: FunctionCall {
+                                    name: Token {
+                                        kind: Identifier,
+                                        location: Location {
+                                            start: 395,
+                                            end: 401,
+                                        },
+                                    },
+                                    arguments: [
+                                        BinaryOperator {
+                                            name: Token {
+                                                kind: Symbol,
+                                                location: Location {
+                                                    start: 425,
+                                                    end: 427,
+                                                },
+                                            },
+                                            operands: [
+                                                FunctionCall {
+                                                    name: Token {
+                                                        kind: Identifier,
+                                                        location: Location {
+                                                            start: 402,
+                                                            end: 410,
+                                                        },
+                                                    },
+                                                    arguments: [
+                                                        Literal {
+                                                            value: Literal {
+                                                                value: Integer(
+                                                                    10,
+                                                                ),
+                                                                location: Location {
+                                                                    start: 411,
+                                                                    end: 413,
+                                                                },
+                                                            },
+                                                        },
+                                                        Literal {
+                                                            value: Literal {
+                                                                value: Integer(
+                                                                    5,
+                                                                ),
+                                                                location: Location {
+                                                                    start: 415,
+                                                                    end: 416,
+                                                                },
+                                                            },
+                                                        },
+                                                        Literal {
+                                                            value: Literal {
+                                                                value: Boolean(
+                                                                    false,
+                                                                ),
+                                                                location: Location {
+                                                                    start: 418,
+                                                                    end: 423,
+                                                                },
+                                                            },
+                                                        },
+                                                    ],
+                                                },
+                                                FunctionCall {
+                                                    name: Token {
+                                                        kind: Identifier,
+                                                        location: Location {
+                                                            start: 428,
+                                                            end: 436,
+                                                        },
+                                                    },
+                                                    arguments: [
+                                                        Literal {
+                                                            value: Literal {
+                                                                value: Integer(
+                                                                    10,
+                                                                ),
+                                                                location: Location {
+                                                                    start: 437,
+                                                                    end: 439,
+                                                                },
+                                                            },
+                                                        },
+                                                        Literal {
+                                                            value: Literal {
+                                                                value: Integer(
+                                                                    5,
+                                                                ),
+                                                                location: Location {
+                                                                    start: 441,
+                                                                    end: 442,
+                                                                },
+                                                            },
+                                                        },
+                                                        Literal {
+                                                            value: Literal {
+                                                                value: Boolean(
+                                                                    true,
+                                                                ),
+                                                                location: Location {
+                                                                    start: 444,
+                                                                    end: 448,
+                                                                },
+                                                            },
+                                                        },
+                                                    ],
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                                semicolon: Token {
+                                    kind: Symbol,
+                                    location: Location {
+                                        start: 450,
+                                        end: 451,
+                                    },
+                                },
+                            },
+                        ),
+                    ],
+                    closing_brace: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 452,
+                            end: 453,
+                        },
+                    },
+                },
+            },
+        ),
+    ],
+}

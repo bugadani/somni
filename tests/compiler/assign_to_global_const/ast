@@ -1,0 +1,155 @@
+Program {
+    items: [
+        Constant(
+            Constant {
+                const_token: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 0,
+                        end: 5,
+                    },
+                },
+                identifier: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 6,
+                        end: 7,
+                    },
+                },
+                colon: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 7,
+                        end: 8,
+                    },
+                },
+                type_token: Type {
+                    type_name: Token {
+                        kind: Identifier,
+                        location: Location {
+                            start: 9,
+                            end: 12,
+                        },
+                    },
+                },
+                equals_token: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 13,
+                        end: 14,
+                    },
+                },
+                value: Literal {
+                    value: Literal {
+                        value: Integer(
+                            10,
+                        ),
+                        location: Location {
+                            start: 15,
+                            end: 17,
+                        },
+                    },
+                },
+                semicolon: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 17,
+                        end: 18,
+                    },
+                },
+            },
+        ),
+        Function(
+            Function {
+                fn_token: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 20,
+                        end: 22,
+                    },
+                },
+                name: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 23,
+                        end: 27,
+                    },
+                },
+                opening_paren: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 27,
+                        end: 28,
+                    },
+                },
+                arguments: [],
+                closing_paren: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 28,
+                        end: 29,
+                    },
+                },
+                return_decl: None,
+                body: Body {
+                    opening_brace: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 30,
+                            end: 31,
+                        },
+                    },
+                    statements: [
+                        Expression {
+                            expression: BinaryOperator {
+                                name: Token {
+                                    kind: Symbol,
+                                    location: Location {
+                                        start: 106,
+                                        end: 107,
+                                    },
+                                },
+                                operands: [
+                                    Variable {
+                                        variable: Token {
+                                            kind: Identifier,
+                                            location: Location {
+                                                start: 104,
+                                                end: 105,
+                                            },
+                                        },
+                                    },
+                                    Literal {
+                                        value: Literal {
+                                            value: Integer(
+                                                20,
+                                            ),
+                                            location: Location {
+                                                start: 108,
+                                                end: 110,
+                                            },
+                                        },
+                                    },
+                                ],
+                            },
+                            semicolon: Token {
+                                kind: Symbol,
+                                location: Location {
+                                    start: 110,
+                                    end: 111,
+                                },
+                            },
+                        },
+                    ],
+                    closing_brace: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 144,
+                            end: 145,
+                        },
+                    },
+                },
+            },
+        ),
+    ],
+}

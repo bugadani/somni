@@ -1,0 +1,40 @@
+Function: main() -> bool
+  Code:
+    0:  push Bool(true)
+    1:  jump_forward_if 2 true
+    2:  call increment() -> void
+    3:  jump_forward 1
+    4:  push Bool(true)
+    5:  pop
+    6:  push Bool(false)
+    7:  jump_forward_if 2 true
+    8:  call increment() -> void
+    9:  jump_forward 1
+    10: push Bool(true)
+    11: pop
+    12: push Bool(false)
+    13: jump_forward_if 2 false
+    14: call increment() -> void
+    15: jump_forward 1
+    16: push Bool(false)
+    17: pop
+    18: push Bool(true)
+    19: jump_forward_if 2 false
+    20: call increment() -> void
+    21: jump_forward 1
+    22: push Bool(false)
+    23: pop
+    24: load Global(VariableIndex(0), true)
+    25: push U64(2)
+    26: equals
+    27: call_named external assert
+    28: return
+Function: increment() -> void
+  Code:
+    0: load Global(VariableIndex(0), true)
+    1: push U64(1)
+    2: add
+    3: store Global(VariableIndex(0), true)
+    4: push Void
+    5: pop
+    6: return

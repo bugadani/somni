@@ -1,0 +1,63 @@
+Program {
+    items: [
+        Constant(
+            Constant {
+                const_token: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 0,
+                        end: 5,
+                    },
+                },
+                identifier: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 6,
+                        end: 7,
+                    },
+                },
+                colon: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 7,
+                        end: 8,
+                    },
+                },
+                type_token: Type {
+                    type_name: Token {
+                        kind: Identifier,
+                        location: Location {
+                            start: 9,
+                            end: 15,
+                        },
+                    },
+                },
+                equals_token: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 16,
+                        end: 17,
+                    },
+                },
+                value: Literal {
+                    value: Literal {
+                        value: Integer(
+                            10,
+                        ),
+                        location: Location {
+                            start: 18,
+                            end: 20,
+                        },
+                    },
+                },
+                semicolon: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 20,
+                        end: 21,
+                    },
+                },
+            },
+        ),
+    ],
+}

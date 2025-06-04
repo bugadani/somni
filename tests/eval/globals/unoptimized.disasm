@@ -1,0 +1,20 @@
+Function: double() -> void
+  Code:
+    0: load Global(VariableIndex(0), true)
+    1: push U64(2)
+    2: multiply
+    3: store Global(VariableIndex(0), true)
+    4: push Void
+    5: pop
+    6: return
+Function: main() -> bool
+  Code:
+    0: call double() -> void
+    1: pop
+    2: load Global(VariableIndex(0), true)
+    3: load Global(VariableIndex(1), false)
+    4: add
+    5: push U64(52)
+    6: equals
+    7: call_named external assert
+    8: return

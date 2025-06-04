@@ -1,0 +1,6 @@
+Function: add(u64, u64) -> u64
+  Code:
+    0: load Local(VariableIndex(0), true)
+    1: load Local(VariableIndex(1), true)
+    2: add
+    3: return
