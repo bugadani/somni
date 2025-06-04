@@ -23,8 +23,6 @@ fn main() {
             std::process::Command::new("cargo")
                 .arg("test")
                 .arg("--all-features")
-                .stdout(std::process::Stdio::inherit())
-                .stderr(std::process::Stdio::inherit())
                 .envs(bless.then(|| ("BLESS", "1")))
                 .status()
                 .expect("Failed to run cargo test");

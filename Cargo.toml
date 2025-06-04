@@ -3,9 +3,16 @@ name = "somni"
 version = "0.1.0"
 edition = "2024"
 
+[[bench]]
+name = "benchmark"
+harness = false
+
 [dependencies]
 indexmap = "2.9.0"
 pretty_assertions = "1.4.1"
+
+[dev-dependencies]
+criterion = "0.6"
 
 [profile.release]
 debug = true
