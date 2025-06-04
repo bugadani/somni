@@ -1,0 +1,5 @@
+Compile error
+ ---> at line 4 column 5
+  |
+4 |     C = 20; // Should cause a compile error
+  |     ^^^^^^ Cannot assign to a constant

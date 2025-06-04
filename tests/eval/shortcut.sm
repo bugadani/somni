@@ -1,0 +1,13 @@
+var do_not_touch: u64 = 0;
+fn main() -> bool {
+    true || increment();
+    false || increment();
+    false && increment();
+    true && increment();
+
+    return assert(do_not_touch == 2);
+}
+
+fn increment() {
+    do_not_touch = do_not_touch + 1;
+}

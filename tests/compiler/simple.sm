@@ -1,0 +1,5 @@
+const PI: f64 = 3.14;
+
+var some_static_variable: u64 = 42;
+
+fn add(a: u64, b: u64) -> u64 { return a + b; }

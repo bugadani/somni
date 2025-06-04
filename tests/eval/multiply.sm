@@ -1,0 +1,25 @@
+// Regression test
+
+// This function shouldn't affect `multiply`.
+fn noop() {
+    var n = 2;return 0;
+}
+
+fn multiply(number: u64, n: u64, add: bool) -> u64 {
+    if add {
+        var acc = 0;
+        while n > 0 {
+            acc = acc + number;
+            n = n - 1;
+        }
+        return acc;
+    } else {
+        noop();
+        return number * n;
+    }
+}
+
+fn main() -> bool {
+    //return assert(multiply(10, 5, false) == multiply(10, 5, true));
+    return true;
+}

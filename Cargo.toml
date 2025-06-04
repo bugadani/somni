@@ -9,3 +9,9 @@ pretty_assertions = "1.4.1"
 
 [profile.release]
 debug = true
+
+[workspace]
+members = [
+    ".",
+    "xtask",
+]

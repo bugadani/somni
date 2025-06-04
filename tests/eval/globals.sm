@@ -1,0 +1,11 @@
+var n: u64 = 10;
+const M: u64 = 32;
+
+fn double() {
+    n = n * 2;
+}
+
+fn main() -> bool {
+    double();
+    return assert(n + M == 52);
+}

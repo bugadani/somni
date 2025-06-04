@@ -938,7 +938,6 @@ pub fn parse_expression<'s>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lexer::tokenize;
 
     #[test]
     fn test_unescape() {
@@ -948,102 +947,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_functions() {
-        let source = r#"
-            const CONSTANT: int = 42;
-            var global_var: int = 100;
-
-            // Simple function
-            fn my_function() {}
-
-            // Function with return type
-            fn my_function() -> void {}
-
-            // Function with argument
-            fn my_function(arg: type) -> type {}
-
-            // Function with argument and trailing comma
-            fn my_function(arg1: type,) -> type {}
-
-            // Function with multiple arguments
-            fn my_function(arg1: type, arg2: type) -> type {
-            }
-
-            // Function with reference arguments
-            fn my_function(
-                // A comment here
-                arg1: &type,
-                // A comment there
-                arg2: &type) ->
-                    // A comment after return arrow
-                    type {
-                // comment in body
-            }
-
-            // Function with empty return statement
-            fn my_function() -> void {
-                return;
-            }
-
-            // Some statements
-            fn my_function() -> void {
-                if fun {
-                    return;
-                } else {
-                    if without_else {}
-                    loop {
-                        break;
-                    }
-
-                    while false {
-                        continue;
-                    }
-                }
-            }
-
-            fn add(x: i32, y: i32) -> i32 {
-                return x + y;
-            }
-
-            fn double(x: i32) -> i32 {
-                var result = x * add(1, --1);
-                return result;
-            }
-
-            fn triple(x: i32) -> i32 {
-                var result = x + double(x);
-                return result;
-            }
-
-            fn quadruple(x: i32) -> i32 {
-                return double(two() * x);
-            }
-        "#;
-
-        let tokens = tokenize(source).collect::<Result<Vec<_>, _>>().unwrap();
-        if let Err(e) = parse(source, &tokens) {
-            println!("{:?}", e);
-            panic!("Failed to parse");
-        }
-    }
-
-    #[test]
-    fn test_parse_errors() {
-        let source = "fn add(a: u64, b: u64) -> u64 { a + b }";
-        let tokens = tokenize(source).collect::<Result<Vec<_>, _>>().unwrap();
-        let Err(result) = parse(source, &tokens) else {
-            panic!("Expected parse error, but succeeded");
-        };
-
-        let message = format!("{:?}\n", result);
-        pretty_assertions::assert_eq!(
-            message,
-            r#"Compile error
- ---> at line 1 column 39
-  |
-1 | fn add(a: u64, b: u64) -> u64 { a + b }
-  |                                       ^ Expected ';', found '}'
-"#
-        );
+    fn test_parser() {
+        crate::test::run_parser_tests("tests/parser/");
     }
 }
