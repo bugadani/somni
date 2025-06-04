@@ -889,6 +889,9 @@ impl Compiler {
             parser::Statement::VariableDefinition(variable_def) => {
                 self.compile_variable_definition(source, variable_def)
             }
+            parser::Statement::ConstantDefinition(constant_def) => {
+                self.compile_constant_definition(source, constant_def)
+            }
             parser::Statement::Return(ret_with_value) => {
                 self.compile_return_with_value(source, ret_with_value)
             }
@@ -1099,6 +1102,32 @@ impl Compiler {
         code.push(Bytecode {
             instruction: Instruction::Store(var_id),
             location: self.intern_location(variable_def.location()),
+        });
+
+        Ok(code)
+    }
+
+    fn compile_constant_definition<'s>(
+        &mut self,
+        source: &'s str,
+        constant_def: &parser::ConstantDefinition,
+    ) -> Result<Vec<Bytecode>, CompileError<'s>> {
+        let const_name = constant_def.identifier.source(source);
+        let name_idx = self.program.intern_string(const_name);
+        let Some(var_id @ VarId::Local(_, _)) =
+            self.program.variables.declare_variable(name_idx, false)
+        else {
+            return Err(CompileError {
+                source,
+                location: constant_def.identifier.location,
+                error: format!("Constant `{const_name}` is already defined in this scope"),
+            });
+        };
+
+        let mut code = self.compile_expression(source, &constant_def.initializer)?;
+        code.push(Bytecode {
+            instruction: Instruction::Store(var_id),
+            location: self.intern_location(constant_def.location()),
         });
 
         Ok(code)
@@ -1542,11 +1571,38 @@ mod tests {
     }
 
     #[test]
-    fn test_compile_errors() {
+    fn test_global_const_compile_error() {
         let store_into_const = r#"
             const C: u64 = 10;
 
             fn main() {
+                // This should fail, as C is a constant and cannot be modified.
+                C = 20; // Should cause a compile error
+            }
+        "#;
+        let tokens = lexer::tokenize(store_into_const)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let ast = match parser::parse(store_into_const, &tokens) {
+            Ok(ast) => ast,
+            Err(e) => {
+                println!("Error parsing `{store_into_const}`");
+                println!("{:?}", e);
+                panic!("Parsing failed");
+            }
+        };
+        let Err(compile_result) = compile(store_into_const, &ast) else {
+            panic!("Expected compilation to fail, but it succeeded");
+        };
+
+        println!("{:?}", compile_result);
+    }
+
+    #[test]
+    fn test_local_const_compile_error() {
+        let store_into_const = r#"
+            fn main() {
+                const C = 10;
                 // This should fail, as C is a constant and cannot be modified.
                 C = 20; // Should cause a compile error
             }

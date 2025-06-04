@@ -17,7 +17,8 @@
 //! type -> identifier ;
 //!
 //! body -> '{' statement* '}' ;
-//! statement -> 'var' identifier ('=' expression)? ';'
+//! statement -> 'var' identifier '=' expression ';'
+//!            | 'const' identifier '=' expression ';'
 //!            | 'return' expression? ';'
 //!            | 'break' expression? ';'
 //!            | 'continue' expression? ';'
@@ -291,6 +292,22 @@ impl Item {
 }
 
 #[derive(Debug, Clone)]
+pub struct ConstantDefinition {
+    pub const_token: Token,
+    pub identifier: Token,
+    pub equals_token: Token,
+    pub initializer: Expression,
+    pub semicolon: Token,
+}
+impl ConstantDefinition {
+    pub fn location(&self) -> Location {
+        let start = self.const_token.location.start;
+        let end = self.semicolon.location.end;
+        Location { start, end }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct VariableDefinition {
     pub var_token: Token,
     pub identifier: Token,
@@ -369,6 +386,7 @@ pub struct Continue {
 #[derive(Debug, Clone)]
 pub enum Statement {
     VariableDefinition(VariableDefinition),
+    ConstantDefinition(ConstantDefinition),
     Return(ReturnWithValue),
     EmptyReturn(EmptyReturn),
     If(If),
@@ -419,6 +437,21 @@ impl Statement {
 
             return Ok(Statement::VariableDefinition(VariableDefinition {
                 var_token,
+                identifier,
+                equals_token,
+                initializer: expression,
+                semicolon,
+            }));
+        }
+
+        if let Some(const_token) = stream.take_match(TokenKind::Identifier, &["const"]) {
+            let identifier = stream.expect_match(TokenKind::Identifier, &[])?;
+            let equals_token = stream.expect_match(TokenKind::Symbol, &["="])?;
+            let expression = Expression::parse(stream)?;
+            let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
+
+            return Ok(Statement::ConstantDefinition(ConstantDefinition {
+                const_token,
                 identifier,
                 equals_token,
                 initializer: expression,
