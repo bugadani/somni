@@ -630,10 +630,15 @@ impl ScopeStack {
         let mut node = self.node(self.current);
         loop {
             if let Some((index, _, def)) = self.scopes[node.id].variables.get_full(&variable_name) {
+                // The variable index is counted with visible variables in the current scope, but
+                // stored as the index in the innermost scope. Therefore, add the number of
+                // variables declared in the outer scopes to the index.
+                let above = self.n_visible_locals_of(node.parent);
+                let index = VariableIndex(index + above);
                 return Some(if self.scopes[node.id].kind == ScopeKind::Global {
-                    VarId::Global(VariableIndex(index), def.mutable)
+                    VarId::Global(index, def.mutable)
                 } else {
-                    VarId::Local(VariableIndex(index), def.mutable)
+                    VarId::Local(index, def.mutable)
                 });
             }
             if node.is_root() {
@@ -646,9 +651,13 @@ impl ScopeStack {
     }
 
     fn n_visible_locals(&self) -> usize {
+        self.n_visible_locals_of(self.current)
+    }
+
+    fn n_visible_locals_of(&self, node: usize) -> usize {
         let mut count = 0;
 
-        let mut node = self.node(self.current);
+        let mut node = self.node(node);
         loop {
             let scope = &self.scopes[node.id];
             if scope.kind == ScopeKind::Global {
@@ -809,6 +818,7 @@ impl Compiler {
                         error: format!("Variable `{var_name}` is already defined in this scope"),
                     });
                 };
+                //println!("Allocating {var_name} as {:?}", variable_index);
 
                 Ok((variable_index, arg_type))
             })
@@ -1121,6 +1131,7 @@ impl Compiler {
                 error: format!("Variable `{var_name}` is already defined in this scope"),
             });
         };
+        //println!("Allocating {var_name} as {:?}", var_id);
 
         let mut code = self.compile_expression(source, &variable_def.initializer)?;
         code.push(Bytecode {
@@ -1363,6 +1374,7 @@ impl Compiler {
             parser::Expression::Variable { variable } => {
                 let var_name = variable.source(source);
                 let name_idx = self.program.intern_string(var_name);
+                //println!("Looking for {var_name} ({name_idx:?})");
                 let Some(variable_index) = self.program.variables.find(name_idx) else {
                     return Err(CompileError {
                         source,
@@ -1370,6 +1382,9 @@ impl Compiler {
                         error: format!("Variable `{var_name}` is not defined"),
                     });
                 };
+
+                //println!("Loading {var_name} ({name_idx:?}) as {:?}", variable_index);
+
                 Ok(vec![Bytecode {
                     instruction: Instruction::Load(variable_index),
                     location,

@@ -13,10 +13,12 @@ pub struct EvalError(Box<str>);
 
 impl EvalError {
     pub fn mark<'a>(&'a self, context: &'a EvalContext, message: &'a str) -> MarkInSource<'a> {
-        let pc = context.current_frame.program_counter;
-        let location = context.program.debug_info.instruction_locations[pc];
-        let location = context.program.location_at(location);
-        MarkInSource(&context.program.source, location, message, &self.0)
+        MarkInSource(
+            &context.program.source,
+            context.current_location(),
+            message,
+            &self.0,
+        )
     }
 }
 
@@ -612,8 +614,9 @@ impl<'p> EvalContext<'p> {
 
     pub fn set_return_value(&mut self, value: Value) -> Result<(), EvalEvent> {
         match std::mem::replace(&mut self.state, EvalState::Running) {
-            EvalState::WaitingForFunctionResult(..) => {
+            EvalState::WaitingForFunctionResult(_, arg_count) => {
                 self.state = EvalState::Running;
+                self.memory.remove_n(arg_count);
                 self.memory.push(value);
                 Ok(())
             }
@@ -685,6 +688,12 @@ impl<'p> EvalContext<'p> {
     fn current_instruction(&self) -> Instruction {
         self.program.code[self.current_frame.program_counter]
     }
+
+    fn current_location(&self) -> Location {
+        let pc = self.current_frame.program_counter;
+        let location = self.program.debug_info.instruction_locations[pc];
+        self.program.location_at(location)
+    }
 }
 
 #[cfg(test)]
@@ -692,5 +701,8 @@ mod test {
     #[test]
     fn test_vm() {
         crate::test::run_eval_tests("tests/eval/");
+        //let program = crate::test::run_compile_test("tests/eval/multiply.sm", true).unwrap();
+        //println!("{}", program.disasm());
+        //crate::test::run_eval_test(&program, "tests/eval/multiply.sm", false);
     }
 }

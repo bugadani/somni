@@ -45,63 +45,62 @@ pub fn run_eval_tests(dir: impl AsRef<Path>) {
         if path.is_file() && path.extension().map_or(false, |ext| ext == "sm") {
             let program = run_compile_test(&path, true).unwrap();
 
-            let stderr = path.with_extension("stderr");
-            let fail_expected = stderr.exists();
-
-            // let expressions = program
-            //     .source
-            //     .lines()
-            //     .filter_map(|line| line.trim().strip_prefix("//@"))
-            //     .collect::<Vec<_>>();
-
-            // TODO run expressions against the program
-            let mut context = EvalContext::new(&program);
-
-            loop {
-                match context.run() {
-                    EvalEvent::Error(e) => {
-                        let error = e.mark(&context, "Runtime error").to_string();
-                        if fail_expected && bless {
-                            std::fs::write(&stderr, error).unwrap();
-                        } else if fail_expected {
-                            let expected_error = std::fs::read_to_string(&stderr).unwrap();
-                            pretty_assertions::assert_eq!(
-                                error,
-                                expected_error,
-                                "Runtime error did not match expected error."
-                            );
-                        } else {
-                            panic!("{error} while running {}", path.display());
-                        }
-                        break;
-                    }
-                    EvalEvent::Complete(_) => break,
-                    EvalEvent::UnknownFunctionCall => {
-                        let (name, args) =
-                            context.unknown_function_info().expect("No function info");
-                        if name == "assert" {
-                            // TODO: generating a type error is not a great way to handle failures
-                            match args[0] {
-                                Value::Bool(true) => {
-                                    context.set_return_value(Value::Bool(true)).unwrap()
-                                }
-                                Value::Bool(false) => {
-                                    context.set_return_value(Value::Void).unwrap()
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
-            }
+            run_eval_test(&program, &path, bless);
         } else if path.is_dir() {
             run_compile_tests(&path);
         }
     }
 }
 
+pub fn run_eval_test(program: &crate::compiler::Program, path: impl AsRef<Path>, bless: bool) {
+    let stderr = path.as_ref().with_extension("stderr");
+    let fail_expected = stderr.exists();
+
+    // let expressions = program
+    //     .source
+    //     .lines()
+    //     .filter_map(|line| line.trim().strip_prefix("//@"))
+    //     .collect::<Vec<_>>();
+
+    // TODO run expressions against the program
+    let mut context = EvalContext::new(&program);
+
+    loop {
+        match context.run() {
+            EvalEvent::Error(e) => {
+                let error = e.mark(&context, "Runtime error").to_string();
+                if fail_expected && bless {
+                    std::fs::write(&stderr, error).unwrap();
+                } else if fail_expected {
+                    let expected_error = std::fs::read_to_string(&stderr).unwrap();
+                    pretty_assertions::assert_eq!(
+                        error,
+                        expected_error,
+                        "Runtime error did not match expected error."
+                    );
+                } else {
+                    panic!("{error} while running {}", path.as_ref().display());
+                }
+                break;
+            }
+            EvalEvent::Complete(_) => break,
+            EvalEvent::UnknownFunctionCall => {
+                let (name, args) = context.unknown_function_info().expect("No function info");
+                if name == "assert" {
+                    // TODO: generating a type error is not a great way to handle failures
+                    match args[0] {
+                        Value::Bool(true) => context.set_return_value(Value::Bool(true)).unwrap(),
+                        Value::Bool(false) => context.set_return_value(Value::Void).unwrap(),
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[track_caller]
-fn run_compile_test(
+pub fn run_compile_test(
     file: impl AsRef<Path>,
     compile_test: bool,
 ) -> Option<crate::compiler::Program> {

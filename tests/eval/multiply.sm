@@ -20,6 +20,5 @@ fn multiply(number: u64, n: u64, add: bool) -> u64 {
 }
 
 fn main() -> bool {
-    //return assert(multiply(10, 5, false) == multiply(10, 5, true));
-    return true;
+    return assert(multiply(10, 5, false) == multiply(10, 5, true));
 }

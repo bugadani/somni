@@ -4,5 +4,5 @@ fn main() -> bool {
         var x = 20;
         x = x + 10; // This should modify the inner x
     }
-    return true;//assert(x == 10);
+    return assert(x == 10);
 }

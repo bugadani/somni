@@ -1,4 +1,4 @@
 fn main() -> bool {
     var n = 2;
-    return true;//assert(n == 3);
+    return assert(n == 2);
 }
