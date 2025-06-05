@@ -1,17 +1,17 @@
 Function: noop() -> void
   Code:
-    0: push U64(2)
+    0: push Int(2)
     1: store Local(VariableIndex(0), true)
-    2: push U64(0)
+    2: push Int(0)
     3: return
-Function: multiply(u64, u64, bool) -> u64
+Function: multiply(int, int, bool) -> int
   Code:
     0:  load Local(VariableIndex(2), true)
     1:  jump_forward_if 25 false
-    2:  push U64(0)
+    2:  push Int(0)
     3:  store Local(VariableIndex(3), true)
     4:  loop_start 20
-    5:  push U64(0)
+    5:  push Int(0)
     6:  load Local(VariableIndex(1), true)
     7:  less than
     8:  jump_forward_if 13 false
@@ -22,7 +22,7 @@ Function: multiply(u64, u64, bool) -> u64
     13: push Void
     14: pop
     15: load Local(VariableIndex(1), true)
-    16: push U64(1)
+    16: push Int(1)
     17: subtract
     18: store Local(VariableIndex(1), true)
     19: push Void
@@ -41,14 +41,14 @@ Function: multiply(u64, u64, bool) -> u64
     32: return
 Function: main() -> bool
   Code:
-    0:  push U64(10)
-    1:  push U64(5)
+    0:  push Int(10)
+    1:  push Int(5)
     2:  push Bool(false)
-    3:  call multiply(u64, u64, bool) -> u64
-    4:  push U64(10)
-    5:  push U64(5)
+    3:  call multiply(int, int, bool) -> int
+    4:  push Int(10)
+    5:  push Int(5)
     6:  push Bool(true)
-    7:  call multiply(u64, u64, bool) -> u64
+    7:  call multiply(int, int, bool) -> int
     8:  equals
     9:  call_named external assert
     10: return

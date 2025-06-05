@@ -135,7 +135,8 @@ pub fn run_compile_test(
                 pretty_assertions::assert_eq!(
                     err_str,
                     expected_error,
-                    "Compilation error did not match expected error."
+                    "Compilation error did not match expected error. {}",
+                    file.display()
                 );
             }
 
@@ -167,7 +168,8 @@ pub fn run_compile_test(
                     pretty_assertions::assert_eq!(
                         format!("{err:?}"),
                         expected_error,
-                        "Compilation error did not match expected error."
+                        "Compilation error did not match expected error. {}",
+                        file.display()
                     );
                 }
                 return None;

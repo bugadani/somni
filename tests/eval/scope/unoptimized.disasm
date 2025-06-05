@@ -1,19 +1,19 @@
 Function: main() -> bool
   Code:
-    0:  push U64(10)
+    0:  push Int(10)
     1:  store Local(VariableIndex(0), true)
     2:  push Bool(true)
     3:  jump_forward_if 8 false
-    4:  push U64(20)
+    4:  push Int(20)
     5:  store Local(VariableIndex(1), true)
     6:  load Local(VariableIndex(1), true)
-    7:  push U64(10)
+    7:  push Int(10)
     8:  add
     9:  store Local(VariableIndex(1), true)
     10: push Void
     11: pop
     12: load Local(VariableIndex(0), true)
-    13: push U64(10)
+    13: push Int(10)
     14: equals
     15: call_named external assert
     16: return

@@ -1,26 +1,26 @@
-Function: fib(u64) -> u64
+Function: fib(int) -> int
   Code:
     0:  load Local(VariableIndex(0), true)
-    1:  push U64(1)
+    1:  push Int(1)
     2:  less than or equal
     3:  jump_forward_if 2 false
     4:  load Local(VariableIndex(0), true)
     5:  return
     6:  load Local(VariableIndex(0), true)
-    7:  push U64(1)
+    7:  push Int(1)
     8:  subtract
-    9:  call fib(u64) -> u64
+    9:  call fib(int) -> int
     10: load Local(VariableIndex(0), true)
-    11: push U64(2)
+    11: push Int(2)
     12: subtract
-    13: call fib(u64) -> u64
+    13: call fib(int) -> int
     14: add
     15: return
 Function: main() -> bool
   Code:
-    0: push U64(20)
-    1: call fib(u64) -> u64
-    2: push U64(6765)
+    0: push Int(20)
+    1: call fib(int) -> int
+    2: push Int(6765)
     3: equals
     4: call_named external assert
     5: return

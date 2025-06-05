@@ -1,5 +1,5 @@
-const PI: f64 = 3.14;
+const PI: float = 3.14;
 
-var some_static_variable: u64 = 42;
+var some_static_variable: int = 42;
 
-fn add(a: u64, b: u64) -> u64 { return a + b; }
+fn add(a: int, b: int) -> int { return a + b; }

@@ -126,10 +126,9 @@ impl Bytecode {
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Value {
     Void,
-    U8(u8),
-    U64(u64),
-    F32(f32),
-    F64(f64),
+    Int(u64),
+    SignedInt(i64),
+    Float(f64),
     Bool(bool),
     String(StringIndex),
     Reference(VariableIndex),
@@ -139,12 +138,11 @@ impl Value {
     pub fn type_of(&self) -> Type {
         match self {
             Value::Void => Type::Void,
-            Value::U8(_) => Type::U8,
-            Value::U64(_) => Type::U64,
+            Value::Int(_) => Type::Int,
+            Value::SignedInt(_) => Type::SignedInt,
             Value::Bool(_) => Type::Bool,
             Value::String(_) => Type::String,
-            Value::F32(_) => Type::F32,
-            Value::F64(_) => Type::F64,
+            Value::Float(_) => Type::Float,
             Value::Reference(_) => Type::Reference,
         }
     }
@@ -153,10 +151,9 @@ impl Value {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Type {
     Void,
-    U8,
-    U64,
-    F32,
-    F64,
+    Int,
+    SignedInt,
+    Float,
     Bool,
     String,
     Reference,
@@ -166,12 +163,11 @@ impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Type::Void => write!(f, "void"),
-            Type::U8 => write!(f, "u8"),
-            Type::U64 => write!(f, "u64"),
+            Type::Int => write!(f, "int"),
+            Type::SignedInt => write!(f, "signed"),
             Type::Bool => write!(f, "bool"),
             Type::String => write!(f, "string"),
-            Type::F32 => write!(f, "f32"),
-            Type::F64 => write!(f, "f64"),
+            Type::Float => write!(f, "float"),
             Type::Reference => write!(f, "reference"),
         }
     }
@@ -1041,16 +1037,8 @@ impl Compiler {
         literal: &parser::Literal,
     ) -> Result<Value, CompileError<'s>> {
         let value = match (literal_type, &literal.value) {
-            (Type::U8, parser::LiteralValue::Integer(value)) => {
-                Value::U8(u8::try_from(*value).map_err(|_| CompileError {
-                    source,
-                    location: literal.location,
-                    error: "Value out of range for u8".to_string(),
-                })?)
-            }
-            (Type::U64, parser::LiteralValue::Integer(value)) => Value::U64(*value),
-            (Type::F32, parser::LiteralValue::Float(value)) => Value::F32(*value as f32),
-            (Type::F64, parser::LiteralValue::Float(value)) => Value::F64(*value),
+            (Type::Int, parser::LiteralValue::Integer(value)) => Value::Int(*value),
+            (Type::Float, parser::LiteralValue::Float(value)) => Value::Float(*value),
             (Type::Bool, parser::LiteralValue::Boolean(value)) => Value::Bool(*value),
             (Type::String, parser::LiteralValue::String(value)) => {
                 let string_index = self.program.intern_string(value);
@@ -1089,10 +1077,9 @@ impl Compiler {
         type_token: parser::Type,
     ) -> Result<Type, CompileError<'s>> {
         match type_token.type_name.source(source) {
-            "u8" => Ok(Type::U8),
-            "u64" => Ok(Type::U64),
-            "f32" => Ok(Type::F32),
-            "f64" => Ok(Type::F64),
+            "int" => Ok(Type::Int),
+            "signed" => Ok(Type::SignedInt),
+            "float" => Ok(Type::Float),
             "bool" => Ok(Type::Bool),
             "string" => Ok(Type::String),
             other => Err(CompileError {
@@ -1358,8 +1345,8 @@ impl Compiler {
         match &expression {
             parser::Expression::Literal { value } => {
                 let val_type = match value.value {
-                    parser::LiteralValue::Integer(_) => Type::U64, // Default to U64 for integers
-                    parser::LiteralValue::Float(_) => Type::F64,   // Default to F64 for floats
+                    parser::LiteralValue::Integer(_) => Type::Int,
+                    parser::LiteralValue::Float(_) => Type::Float,
                     parser::LiteralValue::Boolean(_) => Type::Bool,
                     parser::LiteralValue::String(_) => Type::String,
                 };

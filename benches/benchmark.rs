@@ -9,7 +9,7 @@ use criterion::Criterion;
 
 pub fn vm(c: &mut Criterion) {
     let source_code = r#"
-fn fib(n: u64) -> u64 {
+fn fib(n: int) -> int {
     if n <= 1 {
         return n;
     }

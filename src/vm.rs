@@ -187,16 +187,16 @@ macro_rules! arithmetic_operator {
         };
 
         let result = match (lhs, rhs) {
-            (Value::U8(a), Value::U8(b)) => {
-                if let Some(result) = <u8>::$op(a, b) {
-                    Value::U8(result)
+            (Value::Int(a), Value::Int(b)) => {
+                if let Some(result) = <u64>::$op(a, b) {
+                    Value::Int(result)
                 } else {
                     return $this.runtime_error(format_args!($check_error, a, b));
                 }
             }
-            (Value::U64(a), Value::U64(b)) => {
-                if let Some(result) = <u64>::$op(a, b) {
-                    Value::U64(result)
+            (Value::SignedInt(a), Value::SignedInt(b)) => {
+                if let Some(result) = <i64>::$op(a, b) {
+                    Value::SignedInt(result)
                 } else {
                     return $this.runtime_error(format_args!($check_error, a, b));
                 }
@@ -217,8 +217,9 @@ macro_rules! comparison_operator {
         };
 
         let result = match (lhs, rhs) {
-            (Value::U8(a), Value::U8(b)) => Value::Bool(a $op b),
-            (Value::U64(a), Value::U64(b)) => Value::Bool(a $op b),
+            (Value::Int(a), Value::Int(b)) => Value::Bool(a $op b),
+            (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a $op b),
+            (Value::Float(a), Value::Float(b)) => Value::Bool(a $op b),
             (a, b) => {
                 return $this.runtime_error(format_args!("Cannot compare {} and {}", a.type_of(), b.type_of()));
             }
@@ -235,8 +236,8 @@ macro_rules! bitwise_operator {
         };
 
         let result = match (lhs, rhs) {
-            (Value::U8(a), Value::U8(b)) => Value::U8(a $op b),
-            (Value::U64(a), Value::U64(b)) => Value::U64(a $op b),
+            (Value::Int(a), Value::Int(b)) => Value::Int(a $op b),
+            (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a $op b),
             (a, b) => {
                 return $this.runtime_error(
                     format_args!("Cannot calculate {} {} {}", a.type_of(), stringify!($op), b.type_of()),
@@ -311,12 +312,11 @@ impl<'p> EvalContext<'p> {
             for value in args.iter() {
                 match value {
                     Value::String(s) => print!("{}", program.string(*s)),
-                    Value::U64(v) => print!("{v}"),
+                    Value::Int(v) => print!("{v}"),
+                    Value::SignedInt(v) => print!("{v}"),
                     Value::Bool(v) => print!("{v}"),
                     Value::Void => print!("(void)"),
-                    Value::U8(v) => print!("{v}"),
-                    Value::F32(v) => print!("{v}"),
-                    Value::F64(v) => print!("{v}"),
+                    Value::Float(v) => print!("{v}"),
                     Value::Reference(..) => print!("Cannot print reference"),
                 }
             }
@@ -578,7 +578,23 @@ impl<'p> EvalContext<'p> {
                         "Cannot divide {} and {}"
                     );
                 }
-                Instruction::Negate => todo!(),
+                Instruction::Negate => {
+                    let Some(operand) = self.memory.pop() else {
+                        return self.runtime_error("Not enough arguments on the stack");
+                    };
+
+                    let result = match operand {
+                        Value::SignedInt(a) => Value::SignedInt(-a),
+                        Value::Float(a) => Value::Float(-a),
+
+                        a => {
+                            return self
+                                .runtime_error(format_args!("Cannot negate {}", a.type_of()));
+                        }
+                    };
+
+                    self.memory.push(result);
+                }
                 Instruction::InvertBoolean => {
                     let Some(operand) = self.memory.pop() else {
                         return self.runtime_error("Not enough arguments on the stack");
@@ -586,8 +602,7 @@ impl<'p> EvalContext<'p> {
 
                     let result = match operand {
                         Value::Bool(a) => Value::Bool(!a),
-                        Value::U8(a) => Value::U8(!a),
-                        Value::U64(a) => Value::U64(!a),
+                        Value::Int(a) => Value::Int(!a),
                         a => {
                             return self
                                 .runtime_error(format_args!("Cannot invert {}", a.type_of()));

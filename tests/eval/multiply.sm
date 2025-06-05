@@ -5,7 +5,7 @@ fn noop() {
     var n = 2;return 0;
 }
 
-fn multiply(number: u64, n: u64, add: bool) -> u64 {
+fn multiply(number: int, n: int, add: bool) -> int {
     if add {
         var acc = 0;
         while n > 0 {

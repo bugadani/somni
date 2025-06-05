@@ -1,5 +1,5 @@
-var n: u64 = 10;
-const M: u64 = 32;
+var n: int = 10;
+const M: int = 32;
 
 fn double() {
     n = n * 2;

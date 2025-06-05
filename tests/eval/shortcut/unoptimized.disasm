@@ -25,14 +25,14 @@ Function: main() -> bool
     22: push Bool(false)
     23: pop
     24: load Global(VariableIndex(0), true)
-    25: push U64(2)
+    25: push Int(2)
     26: equals
     27: call_named external assert
     28: return
 Function: increment() -> void
   Code:
     0: load Global(VariableIndex(0), true)
-    1: push U64(1)
+    1: push Int(1)
     2: add
     3: store Global(VariableIndex(0), true)
     4: push Void

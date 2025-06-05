@@ -1,4 +1,4 @@
-var do_not_touch: u64 = 0;
+var do_not_touch: int = 0;
 fn main() -> bool {
     true || increment();
     false || increment();
