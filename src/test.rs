@@ -112,7 +112,7 @@ pub fn run_compile_test(
 
     let write_out_file = |name: &Path, content: String| {
         _ = std::fs::create_dir_all(&name.parent().unwrap()).unwrap();
-        std::fs::write(name, content).unwrap();
+        std::fs::write(name, strip_ansi(content)).unwrap();
     };
 
     let stderr = out_path.join("stderr");
@@ -127,19 +127,7 @@ pub fn run_compile_test(
             ast
         }
         Err(err) if fail_expected => {
-            let expected_error = std::fs::read_to_string(&stderr).unwrap();
-            let err_str = format!("{err:?}");
-            if bless && err_str != expected_error {
-                write_out_file(&stderr, err_str);
-            } else {
-                pretty_assertions::assert_eq!(
-                    err_str,
-                    expected_error,
-                    "Compilation error did not match expected error. {}",
-                    file.display()
-                );
-            }
-
+            compare_error(&stderr, &err, bless, file);
             // Parsing failed as expected, no need to compile
             return None;
         }
@@ -161,17 +149,7 @@ pub fn run_compile_test(
                 return Some(p);
             }
             Err(err) if fail_expected => {
-                if bless {
-                    write_out_file(&stderr, format!("{err:?}"));
-                } else {
-                    let expected_error = std::fs::read_to_string(&stderr).unwrap();
-                    pretty_assertions::assert_eq!(
-                        format!("{err:?}"),
-                        expected_error,
-                        "Compilation error did not match expected error. {}",
-                        file.display()
-                    );
-                }
+                compare_error(&stderr, &err, bless, file);
                 return None;
             }
             Err(err) => {
@@ -193,4 +171,39 @@ pub fn run_compile_test(
     }
 
     None
+}
+
+fn compare_error(stderr: &Path, err: &crate::error::CompileError, bless: bool, file: &Path) {
+    let write_out_file = |name: &Path, content: String| {
+        _ = std::fs::create_dir_all(&name.parent().unwrap()).unwrap();
+        std::fs::write(name, strip_ansi(content)).unwrap();
+    };
+
+    let error = strip_ansi(format!("{err:?}"));
+    if bless {
+        write_out_file(&stderr, error);
+    } else {
+        let expected_error = std::fs::read_to_string(&stderr).unwrap();
+        pretty_assertions::assert_eq!(
+            error,
+            expected_error,
+            "Compilation error did not match expected error. {}",
+            file.display()
+        );
+    }
+}
+
+pub fn strip_ansi(s: impl AsRef<str>) -> String {
+    use ansi_parser::AnsiParser;
+    fn text_block(output: ansi_parser::Output) -> Option<&str> {
+        match output {
+            ansi_parser::Output::TextBlock(text) => Some(text),
+            _ => None,
+        }
+    }
+
+    s.as_ref()
+        .ansi_parse()
+        .filter_map(text_block)
+        .collect::<String>()
 }

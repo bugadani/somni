@@ -41,12 +41,25 @@ pub fn mark_in_source(
     let line = source.lines().nth(start_line - 1).unwrap();
     let line_no_chars = start_line.ilog10() as usize + 1;
     f.write_fmt(format_args!(
-        "{message}\n{:>width$}---> at line {start_line} column {start_col}\n",
+        "{bold}{message}{reset}\n{:>width$}{blue}--->{reset} at line {start_line} column {start_col}\n",
         "",
-        width = line_no_chars
+        width = line_no_chars,
+        blue = "\x1b[1;36m",
+        bold = "\x1b[1m",
+        reset = "\x1b[0m",
     ))?;
-    f.write_fmt(format_args!("{:>width$} |\n", "", width = line_no_chars))?;
-    f.write_fmt(format_args!("{start_line} | {line}\n"))?;
+    f.write_fmt(format_args!(
+        "{:>width$} {blue}|{reset}\n",
+        "",
+        width = line_no_chars,
+        blue = "\x1b[1;36m",
+        reset = "\x1b[0m",
+    ))?;
+    f.write_fmt(format_args!(
+        "{blue}{start_line} |{reset} {line}\n",
+        blue = "\x1b[1;36m",
+        reset = "\x1b[0m",
+    ))?;
 
     let arrow_width = if start_line == end_line {
         end_col - start_col
@@ -56,12 +69,15 @@ pub fn mark_in_source(
     };
 
     f.write_fmt(format_args!(
-        "{placeholder:>line_no_chars$} | {placeholder:>space_width$}{arrow:^<arrow_width$} {hint}",
+        "{placeholder:>line_no_chars$} {blue}|{reset} {placeholder:>space_width$}{red}{arrow:^<arrow_width$} {hint}{reset}",
         placeholder = "",
         line_no_chars = line_no_chars,
         space_width = start_col - 1,
         arrow = "^",
         arrow_width = arrow_width,
+        blue = "\x1b[1;36m",
+        red = "\x1b[1;31m",
+        reset = "\x1b[0m",
     ))
 }
 
@@ -86,6 +102,8 @@ pub fn location(source: &str, offset: usize) -> (usize, usize) {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::strip_ansi;
+
     use super::*;
 
     #[test]
@@ -112,14 +130,14 @@ mod tests {
   |
 1 | 1 + 2 * foo(3)
   |     ^ Syntax error"#,
-            format!(
+            strip_ansi(format!(
                 "{:?}",
                 CompileError {
                     source,
                     location: Location { start: 4, end: 5 },
                     error: "Syntax error".to_string(),
                 }
-            )
+            ))
         );
 
         pretty_assertions::assert_eq!(
@@ -128,14 +146,14 @@ mod tests {
   |
 1 | 1 + 2 * foo(3)
   |         ^^^^^^ Syntax error"#,
-            format!(
+            strip_ansi(format!(
                 "{:?}",
                 CompileError {
                     source,
                     location: Location { start: 8, end: 14 },
                     error: "Syntax error".to_string(),
                 }
-            )
+            ))
         );
     }
 }
