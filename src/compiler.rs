@@ -10,31 +10,33 @@ use crate::{
 
 #[derive(Clone, Copy, Debug)]
 pub enum Instruction {
-    // Assign the value from the eval stack to an existing variable
+    /// Assign the value from the eval stack to an existing variable. The destination address
+    /// is loaded from the top eval stack.
     Store,
 
-    // Load a constant value onto the eval stack
+    /// Load a constant value onto the eval stack
     Push(Value),
 
-    // Pop the top value from the eval stack
+    /// Pop the top value from the eval stack
     Pop,
 
-    // Load a variable value onto the eval stack
+    /// Load a variable value onto the eval stack. The source address is loaded
+    /// from the top eval stack.
     Load,
 
-    // Call a function with a number of arguments popped from the eval stack
+    /// Call a function with a number of arguments popped from the eval stack
     Call(FunctionIndex, usize),
 
-    // Call a function with a number of arguments popped from the eval stack
+    /// Call a function with a number of arguments popped from the eval stack
     CallByName(StringIndex, usize),
 
-    // Jump forward by a number of instructions
+    /// Jump forward by a number of instructions
     JumpForward(usize),
 
-    // Jump forward by a number of instructions if the top value on the eval stack is true or false
+    /// Jump forward by a number of instructions if the top value on the eval stack is true or false
     JumpForwardIf(usize, bool),
 
-    // Jump back by a number of instructions
+    /// Jump back by a number of instructions
     JumpBack(usize),
 
     // Loop control instructions, should be turned into jumps by an optimizer pass
@@ -64,7 +66,7 @@ pub enum Instruction {
     Negate,
     InvertBoolean,
 
-    // Return with the value from the eval stack
+    /// Return with the value from the eval stack
     Return,
 }
 impl Instruction {
@@ -1373,38 +1375,68 @@ impl Compiler {
                 let operator = name.source(source);
                 match operator {
                     "=" => {
-                        let Some(var_ident_token) = operands[0].as_variable() else {
-                            return Err(CompileError {
-                                source,
-                                location: name.location,
-                                error: "Left-hand side of assignment must be a variable"
-                                    .to_string(),
-                            });
-                        };
+                        let mut current_operand = &operands[0];
+                        let mut derefs = vec![];
+                        let mut code = vec![];
+                        loop {
+                            match current_operand {
+                                Expression::Variable { variable } => {
+                                    let var_name = variable.source(source);
+                                    let name_idx = self.program.intern_string(var_name);
+                                    let Some(variable_index) =
+                                        self.program.variables.find(name_idx)
+                                    else {
+                                        return Err(CompileError {
+                                            source,
+                                            location: variable.location,
+                                            error: format!("Variable `{var_name}` is not defined"),
+                                        });
+                                    };
 
-                        let var_name = var_ident_token.source(source);
-                        let name_idx = self.program.intern_string(var_name);
-                        let Some(variable_index) = self.program.variables.find(name_idx) else {
-                            return Err(CompileError {
-                                source,
-                                location: var_ident_token.location,
-                                error: format!("Variable `{var_name}` is not defined"),
-                            });
-                        };
+                                    if !variable_index.mutable {
+                                        return Err(CompileError {
+                                            source,
+                                            location: expression.location(),
+                                            error: "Cannot assign to a constant".to_string(),
+                                        });
+                                    }
 
-                        if !variable_index.mutable {
-                            return Err(CompileError {
-                                source,
-                                location: expression.location(),
-                                error: "Cannot assign to a constant".to_string(),
+                                    code.extend_from_slice(
+                                        &self.compile_expression(source, &operands[1])?,
+                                    );
+                                    code.push(Bytecode {
+                                        instruction: Instruction::Push(Value::Address(
+                                            variable_index.index,
+                                        )),
+                                        location,
+                                    });
+                                    break;
+                                }
+                                Expression::UnaryOperator { name, operand }
+                                    if name.source(source) == "*" =>
+                                {
+                                    derefs.push(self.intern_location(name.location));
+                                    current_operand = operand;
+                                    continue;
+                                }
+                                _ => {
+                                    return Err(CompileError {
+                                        source,
+                                        location: name.location,
+                                        error: "Left-hand side of assignment must be a variable, or a dereference of a variable"
+                                            .to_string(),
+                                    });
+                                }
+                            }
+                        }
+
+                        for loc in derefs.into_iter().rev() {
+                            code.push(Bytecode {
+                                instruction: Instruction::Load,
+                                location: loc,
                             });
                         }
 
-                        let mut code = self.compile_expression(source, &operands[1])?;
-                        code.push(Bytecode {
-                            instruction: Instruction::Push(Value::Address(variable_index.index)),
-                            location,
-                        });
                         code.push(Bytecode {
                             instruction: Instruction::Store,
                             location,
