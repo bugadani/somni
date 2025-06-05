@@ -1,5 +1,0 @@
-Compile error
-  ---> at line 10 column 9
-   |
-10 |     let x: signed = 5;
-   |         ^ Expected ';', found Identifier

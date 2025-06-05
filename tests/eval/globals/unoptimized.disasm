@@ -1,20 +1,24 @@
 Function: double() -> void
   Code:
-    0: load Global(VariableIndex(0), true)
-    1: push Int(2)
-    2: multiply
-    3: store Global(VariableIndex(0), true)
-    4: push Void
-    5: pop
-    6: return
+    0: push Address(Global(VariableIndex(0)))
+    1: load
+    2: push Int(2)
+    3: multiply
+    4: push Address(Global(VariableIndex(0)))
+    5: store
+    6: push Void
+    7: pop
+    8: return
 Function: main() -> bool
   Code:
-    0: call double() -> void
-    1: pop
-    2: load Global(VariableIndex(0), true)
-    3: load Global(VariableIndex(1), false)
-    4: add
-    5: push Int(52)
-    6: equals
-    7: call_named external assert
-    8: return
+    0:  call double() -> void
+    1:  pop
+    2:  push Address(Global(VariableIndex(0)))
+    3:  load
+    4:  push Address(Global(VariableIndex(1)))
+    5:  load
+    6:  add
+    7:  push Int(52)
+    8:  equals
+    9:  call_named external assert
+    10: return

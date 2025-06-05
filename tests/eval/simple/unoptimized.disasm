@@ -1,9 +1,11 @@
 Function: main() -> bool
   Code:
     0: push Int(2)
-    1: store Local(VariableIndex(0), true)
-    2: load Local(VariableIndex(0), true)
-    3: push Int(2)
-    4: equals
-    5: call_named external assert
-    6: return
+    1: push Address(Local(VariableIndex(0)))
+    2: store
+    3: push Address(Local(VariableIndex(0)))
+    4: load
+    5: push Int(2)
+    6: equals
+    7: call_named external assert
+    8: return

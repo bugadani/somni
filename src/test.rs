@@ -13,6 +13,11 @@ pub fn run_parser_tests(dir: impl AsRef<Path>) {
     for entry in std::fs::read_dir(dir).unwrap() {
         let entry = entry.unwrap();
         let path = entry.path();
+
+        if !filter(&path) {
+            continue;
+        }
+
         if path.is_file() && path.extension().map_or(false, |ext| ext == "sm") {
             run_compile_test(&path, false);
         } else if path.is_dir() {
@@ -27,6 +32,11 @@ pub fn run_compile_tests(dir: impl AsRef<Path>) {
     for entry in std::fs::read_dir(dir).unwrap() {
         let entry = entry.unwrap();
         let path = entry.path();
+
+        if !filter(&path) {
+            continue;
+        }
+
         if path.is_file() && path.extension().map_or(false, |ext| ext == "sm") {
             run_compile_test(&path, true);
         } else if path.is_dir() {
@@ -42,6 +52,11 @@ pub fn run_eval_tests(dir: impl AsRef<Path>) {
     for entry in std::fs::read_dir(dir).unwrap() {
         let entry = entry.unwrap();
         let path = entry.path();
+
+        if !filter(&path) {
+            continue;
+        }
+
         if path.is_file() && path.extension().map_or(false, |ext| ext == "sm") {
             let program = run_compile_test(&path, true).unwrap();
 
@@ -206,4 +221,12 @@ pub fn strip_ansi(s: impl AsRef<str>) -> String {
         .ansi_parse()
         .filter_map(text_block)
         .collect::<String>()
+}
+
+fn filter(path: &Path) -> bool {
+    let Ok(env) = std::env::var("TEST_FILTER") else {
+        return true; // No filter set, include all paths
+    };
+
+    Path::new(&env) == path
 }

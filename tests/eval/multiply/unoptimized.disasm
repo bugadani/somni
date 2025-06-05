@@ -1,44 +1,56 @@
 Function: noop() -> void
   Code:
     0: push Int(2)
-    1: store Local(VariableIndex(0), true)
-    2: push Int(0)
-    3: return
+    1: push Address(Local(VariableIndex(0)))
+    2: store
+    3: push Int(0)
+    4: return
 Function: multiply(int, int, bool) -> int
   Code:
-    0:  load Local(VariableIndex(2), true)
-    1:  jump_forward_if 25 false
-    2:  push Int(0)
-    3:  store Local(VariableIndex(3), true)
-    4:  loop_start 20
-    5:  push Int(0)
-    6:  load Local(VariableIndex(1), true)
-    7:  less than
-    8:  jump_forward_if 13 false
-    9:  load Local(VariableIndex(3), true)
-    10: load Local(VariableIndex(0), true)
-    11: add
-    12: store Local(VariableIndex(3), true)
-    13: push Void
-    14: pop
-    15: load Local(VariableIndex(1), true)
-    16: push Int(1)
-    17: subtract
-    18: store Local(VariableIndex(1), true)
+    0:  push Address(Local(VariableIndex(2)))
+    1:  load
+    2:  jump_forward_if 33 false
+    3:  push Int(0)
+    4:  push Address(Local(VariableIndex(3)))
+    5:  store
+    6:  loop_start 26
+    7:  push Int(0)
+    8:  push Address(Local(VariableIndex(1)))
+    9:  load
+    10: less than
+    11: jump_forward_if 18 false
+    12: push Address(Local(VariableIndex(3)))
+    13: load
+    14: push Address(Local(VariableIndex(0)))
+    15: load
+    16: add
+    17: push Address(Local(VariableIndex(3)))
+    18: store
     19: push Void
     20: pop
-    21: jump_forward 1
-    22: break
-    23: continue
-    24: load Local(VariableIndex(3), true)
-    25: return
-    26: jump_forward 6
-    27: call noop() -> void
+    21: push Address(Local(VariableIndex(1)))
+    22: load
+    23: push Int(1)
+    24: subtract
+    25: push Address(Local(VariableIndex(1)))
+    26: store
+    27: push Void
     28: pop
-    29: load Local(VariableIndex(0), true)
-    30: load Local(VariableIndex(1), true)
-    31: multiply
-    32: return
+    29: jump_forward 1
+    30: break
+    31: continue
+    32: push Address(Local(VariableIndex(3)))
+    33: load
+    34: return
+    35: jump_forward 8
+    36: call noop() -> void
+    37: pop
+    38: push Address(Local(VariableIndex(0)))
+    39: load
+    40: push Address(Local(VariableIndex(1)))
+    41: load
+    42: multiply
+    43: return
 Function: main() -> bool
   Code:
     0:  push Int(10)

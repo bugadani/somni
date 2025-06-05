@@ -3,6 +3,7 @@ use std::{collections::HashMap, mem::MaybeUninit};
 use crate::{
     compiler::{
         Function, FunctionSignature, Instruction, Program, StringIndex, Type, Value, VarId,
+        VariableIndex,
     },
     error::MarkInSource,
     lexer::Location,
@@ -118,8 +119,8 @@ impl Memory {
 
     fn address(&self, var_id: VarId) -> usize {
         match var_id {
-            VarId::Global(address, _) => address.index(),
-            VarId::Local(address, _) => self.sp + address.index(),
+            VarId::Global(address) => address.index(),
+            VarId::Local(address) => self.sp + address.index(),
         }
     }
 
@@ -335,35 +336,35 @@ impl<'p> EvalContext<'p> {
             Ok(Value::Void)
         });
 
-        this.memory.allocate(program.globals.values.len());
-        for (name, value) in program.globals.values.iter() {
-            // TODO after compilation we shouldn't need to store mutability.
-            this.memory
-                .store(
-                    VarId::Global(*name, value.is_mutable()),
-                    value.value().clone(),
-                )
-                .unwrap();
+        this.memory.allocate(program.variables.n_globals());
+        for def in program.variables.globals() {
+            this.memory.store(def.index, def.value()).unwrap();
         }
 
         this
     }
 
-    fn store(&mut self, name: VarId) -> Result<(), EvalEvent> {
+    fn store(&mut self) -> Result<(), EvalEvent> {
+        let Some(Value::Address(address)) = self.memory.data.pop() else {
+            return Err(self.runtime_error("No address on the stack to store value at"));
+        };
         let Some(value) = self.memory.data.pop() else {
             return Err(
                 self.runtime_error("Cannot assign to variable without a value on the stack")
             );
         };
 
-        match self.memory.store(name, value) {
+        match self.memory.store(address, value) {
             Ok(()) => Ok(()),
             Err(e) => Err(self.runtime_error(format_args!("Failed to store value: {e}"))),
         }
     }
 
-    fn load(&mut self, name: VarId) -> Result<(), EvalEvent> {
-        match self.memory.load(name) {
+    fn load(&mut self) -> Result<(), EvalEvent> {
+        let Some(Value::Address(address)) = self.memory.data.pop() else {
+            return Err(self.runtime_error("No address on the stack to store value at"));
+        };
+        match self.memory.load(address) {
             Ok(value) => {
                 self.memory.push(value);
                 Ok(())
@@ -400,18 +401,20 @@ impl<'p> EvalContext<'p> {
         loop {
             let instruction = self.current_instruction();
 
-            //println!(
-            //    "{}",
-            //    crate::error::MarkInSource(
-            //        &self.program.source,
-            //        self.current_location(),
-            //        &format!(
-            //            "Executing instruction: {}",
-            //            instruction.disasm(&self.program)
-            //        ),
-            //        "",
-            //    )
-            //);
+            if cfg!(false) {
+                println!(
+                    "{}",
+                    crate::error::MarkInSource(
+                        &self.program.source,
+                        self.current_location(),
+                        &format!(
+                            "Executing instruction: {}",
+                            instruction.disasm(&self.program)
+                        ),
+                        "",
+                    )
+                );
+            }
 
             match instruction {
                 Instruction::Push(value) => self.memory.push(value),
@@ -420,13 +423,13 @@ impl<'p> EvalContext<'p> {
                         return self.runtime_error("Cannot pop from an empty stack");
                     }
                 }
-                Instruction::Load(name) => {
-                    if let Err(e) = self.load(name) {
+                Instruction::Load => {
+                    if let Err(e) = self.load() {
                         return e;
                     }
                 }
-                Instruction::Store(name) => {
-                    if let Err(e) = self.store(name) {
+                Instruction::Store => {
+                    if let Err(e) = self.store() {
                         return e;
                     }
                 }
@@ -496,7 +499,7 @@ impl<'p> EvalContext<'p> {
                         self.memory.push(retval);
                     } else {
                         // Outermost function has returned
-                        self.memory.truncate(self.program.globals.values.len());
+                        self.memory.truncate(self.program.variables.n_globals());
                         self.state = EvalState::Running;
                         return EvalEvent::Complete(retval);
                     }
@@ -642,21 +645,19 @@ impl<'p> EvalContext<'p> {
                     self.memory.push(result);
                 }
                 Instruction::AddressOf(variable) => {
-                    self.memory.push(Value::Address(variable.address()))
+                    let address = self.memory.address(variable);
+                    self.memory
+                        .push(Value::Address(VarId::Global(VariableIndex(address))))
                 }
                 Instruction::Dereference(variable) => match self.memory.load(variable) {
-                    Ok(Value::Address(address)) => {
-                        match self.memory.load(VarId::Global(address, false)) {
-                            Ok(value) => {
-                                self.memory.push(value);
-                            }
-                            Err(e) => {
-                                return self.runtime_error(format_args!(
-                                    "Failed to dereference address {address:?}: {e}"
-                                ));
-                            }
+                    Ok(Value::Address(address)) => match self.memory.load(address) {
+                        Ok(value) => self.memory.push(value),
+                        Err(e) => {
+                            return self.runtime_error(format_args!(
+                                "Failed to dereference address {address:?}: {e}"
+                            ));
                         }
-                    }
+                    },
                     Ok(value) => {
                         return self
                             .runtime_error(format!("Cannot dereference a {:?}", value.type_of()));

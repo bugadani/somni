@@ -11,6 +11,9 @@ fn main() {
     enum Command {
         /// Run tests
         Test {
+            #[clap()]
+            filter: Option<String>,
+
             /// Bless the test output
             #[clap(long)]
             bless: bool,
@@ -18,12 +21,21 @@ fn main() {
     }
     let cli = Cli::parse();
     match cli.command {
-        Command::Test { bless } => {
+        Command::Test { filter, bless } => {
             // invoke `cargo test`
+            let mut envs = vec![];
+            envs.extend(bless.then(|| ("BLESS", "1")));
+            envs.extend(filter.as_deref().map(|f| ("TEST_FILTER", f)));
+
+            let mut args = vec!["test", "--all-features"];
+            if filter.is_some() {
+                args.push("--");
+                args.push("--nocapture");
+            }
+
             std::process::Command::new("cargo")
-                .arg("test")
-                .arg("--all-features")
-                .envs(bless.then(|| ("BLESS", "1")))
+                .args(args)
+                .envs(envs)
                 .status()
                 .expect("Failed to run cargo test");
         }

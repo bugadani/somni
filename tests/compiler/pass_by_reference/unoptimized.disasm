@@ -1,9 +1,9 @@
 Function: pass_by_reference(signed) -> signed
   Code:
-    0: address_of Local(VariableIndex(0), true)
+    0: address_of Local(VariableIndex(0))
     1: call take_by_reference(address) -> signed
     2: return
 Function: take_by_reference(address) -> signed
   Code:
-    0: dereference Local(VariableIndex(0), true)
+    0: dereference Local(VariableIndex(0))
     1: return

@@ -1,21 +1,25 @@
 Function: fib(int) -> int
   Code:
-    0:  load Local(VariableIndex(0), true)
-    1:  push Int(1)
-    2:  less than or equal
-    3:  jump_forward_if 2 false
-    4:  load Local(VariableIndex(0), true)
-    5:  return
-    6:  load Local(VariableIndex(0), true)
-    7:  push Int(1)
-    8:  subtract
-    9:  call fib(int) -> int
-    10: load Local(VariableIndex(0), true)
-    11: push Int(2)
-    12: subtract
-    13: call fib(int) -> int
-    14: add
-    15: return
+    0:  push Address(Local(VariableIndex(0)))
+    1:  load
+    2:  push Int(1)
+    3:  less than or equal
+    4:  jump_forward_if 3 false
+    5:  push Address(Local(VariableIndex(0)))
+    6:  load
+    7:  return
+    8:  push Address(Local(VariableIndex(0)))
+    9:  load
+    10: push Int(1)
+    11: subtract
+    12: call fib(int) -> int
+    13: push Address(Local(VariableIndex(0)))
+    14: load
+    15: push Int(2)
+    16: subtract
+    17: call fib(int) -> int
+    18: add
+    19: return
 Function: main() -> bool
   Code:
     0: push Int(20)

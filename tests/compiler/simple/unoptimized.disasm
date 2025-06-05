@@ -1,6 +1,8 @@
 Function: add(int, int) -> int
   Code:
-    0: load Local(VariableIndex(0), true)
-    1: load Local(VariableIndex(1), true)
-    2: add
-    3: return
+    0: push Address(Local(VariableIndex(0)))
+    1: load
+    2: push Address(Local(VariableIndex(1)))
+    3: load
+    4: add
+    5: return
