@@ -830,7 +830,15 @@ impl<'s> TokenStream<'s> {
     }
 
     fn end(&self) -> bool {
-        self.position >= self.tokens.len()
+        // Skip comments
+        let mut position = self.position;
+        while self.tokens.get(position).is_some()
+            && self.tokens[position].kind == TokenKind::Comment
+        {
+            position += 1;
+        }
+
+        position >= self.tokens.len()
     }
 
     fn peek(&mut self) -> Result<Token, CompileError<'s>> {
