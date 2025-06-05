@@ -181,13 +181,17 @@ impl Memory {
 }
 
 macro_rules! arithmetic_operator {
-    ($this:ident, $op:tt, $check_error:literal, $type_error:literal) => {{
+    ($this:ident, $op:tt, $check_error:literal, $type_error:literal $(, $float_op:tt)? ) => {{
         let Some([lhs, rhs]) = $this.memory.pop_n::<2>() else {
             return $this.runtime_error("Not enough arguments on the stack");
         };
 
         let result = match (lhs, rhs) {
             (Value::Int(a), Value::Int(b)) => {
+                #[allow(irrefutable_let_patterns)]
+                let Ok(b) = b.try_into() else {
+                    return $this.runtime_error(format_args!($check_error, a, b));
+                };
                 if let Some(result) = <u64>::$op(a, b) {
                     Value::Int(result)
                 } else {
@@ -195,12 +199,17 @@ macro_rules! arithmetic_operator {
                 }
             }
             (Value::SignedInt(a), Value::SignedInt(b)) => {
+                #[allow(irrefutable_let_patterns)]
+                let Ok(b) = b.try_into() else {
+                    return $this.runtime_error(format_args!($check_error, a, b));
+                };
                 if let Some(result) = <i64>::$op(a, b) {
                     Value::SignedInt(result)
                 } else {
                     return $this.runtime_error(format_args!($check_error, a, b));
                 }
             }
+            $((Value::Float(a), Value::Float(b)) => Value::Float(a $float_op b),)?
             (a, b) => {
                 return $this.runtime_error(format_args!($type_error, a.type_of(), b.type_of()));
             }
@@ -220,6 +229,8 @@ macro_rules! comparison_operator {
             (Value::Int(a), Value::Int(b)) => Value::Bool(a $op b),
             (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a $op b),
             (Value::Float(a), Value::Float(b)) => Value::Bool(a $op b),
+            (Value::String(a), Value::String(b)) => Value::Bool(a == b),
+            (Value::Bool(a), Value::Bool(b)) => Value::Bool(a $op b),
             (a, b) => {
                 return $this.runtime_error(format_args!("Cannot compare {} and {}", a.type_of(), b.type_of()));
             }
@@ -238,6 +249,7 @@ macro_rules! bitwise_operator {
         let result = match (lhs, rhs) {
             (Value::Int(a), Value::Int(b)) => Value::Int(a $op b),
             (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a $op b),
+            (Value::Bool(a), Value::Bool(b)) => Value::Bool(a $op b),
             (a, b) => {
                 return $this.runtime_error(
                     format_args!("Cannot calculate {} {} {}", a.type_of(), stringify!($op), b.type_of()),
@@ -544,14 +556,29 @@ impl<'p> EvalContext<'p> {
                 Instruction::BitwiseOr => bitwise_operator!(self, |),
                 Instruction::BitwiseXor => bitwise_operator!(self, ^),
                 Instruction::BitwiseAnd => bitwise_operator!(self, &),
-                Instruction::ShiftLeft => bitwise_operator!(self, <<),
-                Instruction::ShiftRight => bitwise_operator!(self, >>),
+                Instruction::ShiftLeft => {
+                    arithmetic_operator!(
+                        self,
+                        checked_shl,
+                        "{} << {} overflowed",
+                        "Cannot shift {} by {}"
+                    );
+                }
+                Instruction::ShiftRight => {
+                    arithmetic_operator!(
+                        self,
+                        checked_shr,
+                        "{} >> {} underflowed",
+                        "Cannot shift {} by {}"
+                    );
+                }
                 Instruction::Add => {
                     arithmetic_operator!(
                         self,
                         checked_add,
                         "{} + {} overflowed",
-                        "Cannot add {} and {}"
+                        "Cannot add {} and {}",
+                        +
                     );
                 }
                 Instruction::Subtract => {
@@ -559,7 +586,8 @@ impl<'p> EvalContext<'p> {
                         self,
                         checked_sub,
                         "{} - {} underflowed",
-                        "Cannot subtract {} and {}"
+                        "Cannot subtract {} and {}",
+                        -
                     );
                 }
                 Instruction::Multiply => {
@@ -567,7 +595,8 @@ impl<'p> EvalContext<'p> {
                         self,
                         checked_mul,
                         "{} * {} overflowed",
-                        "Cannot multiply {} and {}"
+                        "Cannot multiply {} and {}",
+                        *
                     );
                 }
                 Instruction::Divide => {
@@ -575,7 +604,8 @@ impl<'p> EvalContext<'p> {
                         self,
                         checked_div,
                         "Division by zero: {} / {}",
-                        "Cannot divide {} and {}"
+                        "Cannot divide {} and {}",
+                        /
                     );
                 }
                 Instruction::Negate => {
