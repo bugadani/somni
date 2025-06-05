@@ -1313,7 +1313,7 @@ impl Compiler {
                 let variable = self.compile_variable(source, expression)?;
                 Ok(vec![
                     Bytecode {
-                        instruction: Instruction::Push(Value::Address(variable)),
+                        instruction: Instruction::Push(Value::Address(variable.index)),
                         location,
                     },
                     Bytecode {
@@ -1338,11 +1338,20 @@ impl Compiler {
                     }
                     "&" => {
                         let variable = self.compile_variable(source, operand)?;
-                        Instruction::AddressOf(variable)
+
+                        if !variable.mutable {
+                            return Err(CompileError {
+                                source,
+                                location: expression.location(),
+                                error: "Cannot take the address of a constant".to_string(),
+                            });
+                        }
+
+                        Instruction::AddressOf(variable.index)
                     }
                     "*" => {
                         let variable = self.compile_variable(source, operand)?;
-                        Instruction::Dereference(variable)
+                        Instruction::Dereference(variable.index)
                     }
                     _ => {
                         return Err(CompileError {
@@ -1551,7 +1560,7 @@ impl Compiler {
         &mut self,
         source: &'p str,
         expression: &parser::Expression,
-    ) -> Result<VarId, CompileError<'p>> {
+    ) -> Result<VariableDef, CompileError<'p>> {
         match expression {
             parser::Expression::Variable { variable } => {
                 let var_name = variable.source(source);
@@ -1567,7 +1576,7 @@ impl Compiler {
 
                 //println!("Loading {var_name} ({name_idx:?}) as {:?}", variable_index);
 
-                Ok(variable_index.index)
+                Ok(variable_index)
             }
             _ => Err(CompileError {
                 source,

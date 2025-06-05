@@ -1,0 +1,5 @@
+Compile error
+ ---> at line 4 column 12
+  |
+4 |     by_ref(&M);
+  |            ^^ Cannot take the address of a constant

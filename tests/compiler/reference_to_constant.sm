@@ -1,0 +1,8 @@
+// Temporary restriction until mutable references are figured out.
+fn fails() {
+    const M: int = 32;
+    by_ref(&M);
+}
+
+fn by_ref(x: &int) {
+}
