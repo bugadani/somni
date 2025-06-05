@@ -716,7 +716,7 @@ impl Expression {
     }
 
     fn parse_unary<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
-        const UNARY_OPERATORS: &[&str] = &["!", "-"];
+        const UNARY_OPERATORS: &[&str] = &["!", "-", "&", "*"];
         if let Some(operator) = stream.take_match(TokenKind::Symbol, UNARY_OPERATORS) {
             let operand = Self::parse_unary(stream)?;
             Ok(Self::UnaryOperator {

@@ -329,7 +329,7 @@ impl<'p> EvalContext<'p> {
                     Value::Bool(v) => print!("{v}"),
                     Value::Void => print!("(void)"),
                     Value::Float(v) => print!("{v}"),
-                    Value::Reference(..) => print!("Cannot print reference"),
+                    Value::Address(..) => print!("Cannot print reference"),
                 }
             }
             Ok(Value::Void)

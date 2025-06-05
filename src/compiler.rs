@@ -131,7 +131,7 @@ pub enum Value {
     Float(f64),
     Bool(bool),
     String(StringIndex),
-    Reference(VariableIndex),
+    Address(VariableIndex),
 }
 
 impl Value {
@@ -143,7 +143,7 @@ impl Value {
             Value::Bool(_) => Type::Bool,
             Value::String(_) => Type::String,
             Value::Float(_) => Type::Float,
-            Value::Reference(_) => Type::Reference,
+            Value::Address(_) => Type::Address,
         }
     }
 }
@@ -156,7 +156,7 @@ pub enum Type {
     Float,
     Bool,
     String,
-    Reference,
+    Address,
 }
 
 impl Display for Type {
@@ -168,7 +168,7 @@ impl Display for Type {
             Type::Bool => write!(f, "bool"),
             Type::String => write!(f, "string"),
             Type::Float => write!(f, "float"),
-            Type::Reference => write!(f, "reference"),
+            Type::Address => write!(f, "address"),
         }
     }
 }
@@ -1044,7 +1044,7 @@ impl Compiler {
                 let string_index = self.program.intern_string(value);
                 Value::String(string_index)
             }
-            (Type::Void | Type::Reference, _) => {
+            (Type::Void | Type::Address, _) => {
                 return Err(CompileError {
                     source,
                     location: literal.location,

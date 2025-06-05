@@ -82,3 +82,11 @@ fn locals(x: i32) -> i32 {
     var n = 2;
     return double(two() * !!x);
 }
+
+fn take_by_reference(x: &i32) -> i32 {
+    return -*x;
+}
+
+fn pass_by_reference(x: i32) -> i32 {
+    return take_by_reference(&x);
+}
