@@ -155,7 +155,7 @@ pub fn tokenize<'s>(source: &'s str) -> impl Iterator<Item = Result<Token, Compi
                     // skip whitespace
                 }
                 '+' | '-' | '*' | '(' | ')' | '{' | '}' | '[' | ']' | ',' | ';' | '/' | ':'
-                | '<' | '>' | '&' | '|' | '^' | '=' => {
+                | '<' | '>' | '&' | '|' | '^' | '=' | '!' => {
                     return Some(Ok(Token {
                         kind: TokenKind::Symbol,
                         location,

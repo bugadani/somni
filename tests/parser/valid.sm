@@ -73,8 +73,12 @@ fn quadruple(x: i32) -> i32 {
     return double(two() * x);
 }
 
+fn unary(x: bool) -> bool {
+    return !x;
+}
+
 fn locals(x: i32) -> i32 {
     const FOO = "bar";
     var n = 2;
-    return double(two() * x);
+    return double(two() * !!x);
 }

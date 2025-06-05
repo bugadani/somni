@@ -38,7 +38,7 @@
 //! binary7 -> binary8 ( ( '<<' | '>>' ) binary8 )* ;
 //! binary8 -> binary9 ( ( '+' | '-' ) binary9 )* ;
 //! binary9 -> unary ( ( '*' | '/' ) unary )* ;
-//! unary -> ('!' | '-' ) unary | call ;
+//! unary -> ('!' | '-' )* primary | call ;
 //! primary -> ( literal | identifier ( '(' call_arguments ')' )? ) | '(' expression ')' ;
 //! call_arguments -> expression ( ',' expression )* ','? ;
 //! literal -> NUMBER | STRING | "true" | "false" ;
