@@ -641,6 +641,31 @@ impl<'p> EvalContext<'p> {
 
                     self.memory.push(result);
                 }
+                Instruction::AddressOf(variable) => {
+                    self.memory.push(Value::Address(variable.address()))
+                }
+                Instruction::Dereference(variable) => match self.memory.load(variable) {
+                    Ok(Value::Address(address)) => {
+                        match self.memory.load(VarId::Global(address, false)) {
+                            Ok(value) => {
+                                self.memory.push(value);
+                            }
+                            Err(e) => {
+                                return self.runtime_error(format_args!(
+                                    "Failed to dereference address {address:?}: {e}"
+                                ));
+                            }
+                        }
+                    }
+                    Ok(value) => {
+                        return self
+                            .runtime_error(format!("Cannot dereference a {:?}", value.type_of()));
+                    }
+                    Err(e) => {
+                        return self
+                            .runtime_error(format_args!("Failed to dereference variable: {e}"));
+                    }
+                },
             }
 
             self.current_frame.step();

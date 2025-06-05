@@ -1,0 +1,7 @@
+fn pass_by_reference(x: signed) -> signed {
+    return take_by_reference(&x);
+}
+
+fn take_by_reference(x: &signed) -> signed {
+    return *x;
+}

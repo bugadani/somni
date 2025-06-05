@@ -1,0 +1,18 @@
+Function: take_by_reference(address) -> int
+  Code:
+    0: push Int(2)
+    1: dereference Local(VariableIndex(0), true)
+    2: multiply
+    3: return
+Function: main() -> bool
+  Code:
+    0:  push Int(5)
+    1:  store Local(VariableIndex(0), true)
+    2:  address_of Local(VariableIndex(0), true)
+    3:  call take_by_reference(address) -> int
+    4:  store Local(VariableIndex(1), true)
+    5:  load Local(VariableIndex(1), true)
+    6:  push Int(10)
+    7:  equals
+    8:  call_named external assert
+    9:  return

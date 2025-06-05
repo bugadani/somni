@@ -43,6 +43,10 @@ pub enum Instruction {
     Continue,
     Break,
 
+    // Reference and dereference instructions
+    AddressOf(VarId),
+    Dereference(VarId),
+
     // Operators
     TestLessThan,
     TestLessThanOrEqual,
@@ -91,6 +95,8 @@ impl Instruction {
             Instruction::LoopEnd => "loop_end".to_string(),
             Instruction::Continue => "continue".to_string(),
             Instruction::Break => "break".to_string(),
+Instruction::AddressOf(var) => format!("address_of {:?}", var),
+            Instruction::Dereference(var) => format!("dereference {:?}", var),
             Instruction::TestLessThan => "less than".to_string(),
             Instruction::TestLessThanOrEqual => "less than or equal".to_string(),
             Instruction::TestEquals => "equals".to_string(),
@@ -703,9 +709,15 @@ pub enum VarId {
     Local(VariableIndex, bool),
 }
 impl VarId {
-    fn is_const(&self) -> bool {
+    fn is_const(self) -> bool {
         match self {
             VarId::Global(_, mutable) | VarId::Local(_, mutable) => !mutable,
+        }
+    }
+
+    pub(crate) fn address(self) -> VariableIndex {
+        match self {
+            VarId::Global(index, _) | VarId::Local(index, _) => index,
         }
     }
 }
@@ -793,8 +805,11 @@ impl Compiler {
             .arguments
             .iter()
             .map(|arg| {
-                let arg_type = self.compile_type(source, arg.arg_type)?;
-                // TODO: reference arguments
+                let arg_type = if arg.reference_token.is_some() {
+                    Type::Address
+                } else {
+self.compile_type(source, arg.arg_type)?
+                };
 
                 let var_name = arg.name.source(source);
                 let name_idx = self.program.intern_string(var_name);
@@ -1358,32 +1373,35 @@ impl Compiler {
                     location,
                 }])
             }
-            parser::Expression::Variable { variable } => {
-                let var_name = variable.source(source);
-                let name_idx = self.program.intern_string(var_name);
-                //println!("Looking for {var_name} ({name_idx:?})");
-                let Some(variable_index) = self.program.variables.find(name_idx) else {
-                    return Err(CompileError {
-                        source,
-                        location: variable.location,
-                        error: format!("Variable `{var_name}` is not defined"),
-                    });
-                };
-
-                //println!("Loading {var_name} ({name_idx:?}) as {:?}", variable_index);
-
+            parser::Expression::Variable { .. } => {
+                let variable = self.compile_variable(source, expression)?;
                 Ok(vec![Bytecode {
-                    instruction: Instruction::Load(variable_index),
+                    instruction: Instruction::Load(variable),
                     location,
                 }])
             }
             parser::Expression::UnaryOperator { name, operand } => {
                 let operator = name.source(source);
-                let operand_code = self.compile_expression(source, operand)?;
+
+                let mut code = vec![];
 
                 let instruction = match operator {
-                    "!" => Instruction::InvertBoolean,
-                    "-" => Instruction::Negate,
+                    "!" => {
+                        code.extend_from_slice(&self.compile_expression(source, operand)?);
+Instruction::InvertBoolean
+                    }
+                    "-" => {
+                        code.extend_from_slice(&self.compile_expression(source, operand)?);
+                        Instruction::Negate
+                    }
+                    "&" => {
+                        let variable = self.compile_variable(source, operand)?;
+                        Instruction::AddressOf(variable)
+                    }
+                    "*" => {
+                        let variable = self.compile_variable(source, operand)?;
+                        Instruction::Dereference(variable)
+                    }
                     _ => {
                         return Err(CompileError {
                             source,
@@ -1393,8 +1411,7 @@ impl Compiler {
                     }
                 };
 
-                let mut code = operand_code;
-                code.push(Bytecode {
+                                code.push(Bytecode {
                     instruction,
                     location,
                 });
@@ -1582,6 +1599,36 @@ impl Compiler {
 
     fn intern_location(&mut self, location: Location) -> LocationIndex {
         self.program.debug_info.locations.push(location)
+    }
+
+    fn compile_variable<'p>(
+        &mut self,
+        source: &'p str,
+        expression: &parser::Expression,
+    ) -> Result<VarId, CompileError<'p>> {
+        match expression {
+            parser::Expression::Variable { variable } => {
+                let var_name = variable.source(source);
+                let name_idx = self.program.intern_string(var_name);
+                //println!("Looking for {var_name} ({name_idx:?})");
+                let Some(variable_index) = self.program.variables.find(name_idx) else {
+                    return Err(CompileError {
+                        source,
+                        location: variable.location,
+                        error: format!("Variable `{var_name}` is not defined"),
+                    });
+                };
+
+                //println!("Loading {var_name} ({name_idx:?}) as {:?}", variable_index);
+
+                Ok(variable_index)
+            }
+            _ => Err(CompileError {
+                source,
+                location: expression.location(),
+                error: "Expected a variable".to_string(),
+            }),
+        }
     }
 }
 
