@@ -1,12 +1,10 @@
-use std::{collections::HashMap, mem::MaybeUninit};
+use std::collections::HashMap;
 
 use crate::{
-    compiler::{
-        Function, FunctionSignature, Instruction, Program, StringIndex, Type, Value, VarId,
-        VariableIndex,
-    },
+    codegen::{self, CodeAddress, Function, Instruction, MemoryAddress, Value},
     error::MarkInSource,
     lexer::Location,
+    string_interner::{StringIndex, Strings},
 };
 
 #[derive(Clone, Debug)]
@@ -14,12 +12,7 @@ pub struct EvalError(Box<str>);
 
 impl EvalError {
     pub fn mark<'a>(&'a self, context: &'a EvalContext, message: &'a str) -> MarkInSource<'a> {
-        MarkInSource(
-            &context.program.source,
-            context.current_location(),
-            message,
-            &self.0,
-        )
+        MarkInSource(context.source, context.current_location(), message, &self.0)
     }
 }
 
@@ -30,44 +23,46 @@ pub enum EvalEvent {
     Complete(Value),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum EvalState {
     Idle,
     Running,
-    WaitingForFunctionResult(StringIndex, usize),
+    WaitingForFunctionResult(StringIndex, MemoryAddress, usize),
 }
 
 struct Frame {
-    program_counter: usize,
+    program_counter: CodeAddress,
     name: StringIndex,
-    return_type: Type,
-    // TODO: loops should be removed, codegen should generate jumps instead of loops.
-    loops: Vec<(usize, usize)>, // (start, body length) of loops
-    frame_pointer: usize,       // Upon call, the stack pointer is saved here.
+    frame_pointer: usize, // Upon call, the stack pointer is saved here.
 }
 
 impl Frame {
     fn step(&mut self) {
-        self.step_forward(1);
+        self.program_counter += 1;
     }
 
-    fn step_forward(&mut self, n: usize) {
-        self.program_counter += n;
-    }
-
-    fn step_back(&mut self, n: usize) -> bool {
-        let Some(pc) = self.program_counter.checked_sub(n) else {
-            return false;
-        };
-
-        self.program_counter = pc;
-        true
+    fn pc(&self) -> usize {
+        self.program_counter.0
     }
 }
 
+impl Function {
+    fn stack_frame(&self) -> Frame {
+        Frame {
+            program_counter: self.entry_point,
+            name: self.name,
+            frame_pointer: 0, // Will be used to save callee stack pointer
+        }
+    }
+}
+
+type IntrinsicFn<'p> = fn(&EvalContext<'p>, &[Value]) -> Result<Value, EvalEvent>;
+
 pub struct EvalContext<'p> {
-    program: &'p Program,
-    intrinsics: HashMap<StringIndex, fn(&Self, &[Value]) -> Result<Value, EvalEvent>>,
+    source: &'p str,
+    strings: &'p Strings,
+    program: &'p codegen::Program,
+    intrinsics: HashMap<StringIndex, IntrinsicFn<'p>>,
     state: EvalState,
 
     memory: Memory,
@@ -101,15 +96,15 @@ impl Memory {
     }
 
     fn allocate(&mut self, size: usize) {
-        self.sp = self.data.len();
-        self.data.resize(self.sp + size, Value::Void);
+        self.data
+            .resize(self.data.len().max(self.sp + size), Value::Void);
     }
 
     fn truncate(&mut self, frame_pointer: usize) {
         if frame_pointer > self.sp {
             panic!(
-                "Trying to truncate memory to a frame pointer that is larger than the current stack pointer: {} > {}",
-                frame_pointer, self.sp
+                "Trying to truncate memory to a frame pointer that is larger than the current stack pointer: {frame_pointer} > {}",
+                self.sp
             );
         }
         let sp = self.sp;
@@ -117,20 +112,19 @@ impl Memory {
         self.data.truncate(sp);
     }
 
-    fn address(&self, var_id: VarId) -> usize {
+    fn address(&self, var_id: MemoryAddress) -> usize {
         match var_id {
-            VarId::Global(address) => address.index(),
-            VarId::Local(address) => self.sp + address.index(),
+            MemoryAddress::Global(address) => address,
+            MemoryAddress::Local(address) => self.sp + address,
         }
     }
 
-    fn store(&mut self, var_id: VarId, value: Value) -> Result<(), String> {
+    fn store(&mut self, var_id: MemoryAddress, value: Value) -> Result<(), String> {
         let address = self.address(var_id);
 
         let Some(variable) = self.data.get_mut(address) else {
             return Err(format!(
-                "Trying to store value at address {} which is out of bounds",
-                address
+                "Trying to store value at address {address} which is out of bounds"
             ));
         };
 
@@ -138,53 +132,38 @@ impl Memory {
         Ok(())
     }
 
-    fn load(&self, var_id: VarId) -> Result<Value, String> {
+    fn load(&self, var_id: MemoryAddress) -> Result<Value, String> {
         let address = self.address(var_id);
 
         let Some(variable) = self.data.get(address) else {
             return Err(format!(
-                "Trying to load value from address {} which is out of bounds",
-                address
+                "Trying to load value from address {address} which is out of bounds"
             ));
         };
 
         Ok(*variable)
     }
 
-    fn push(&mut self, value: Value) {
-        self.data.push(value);
-    }
-
-    fn pop(&mut self) -> Option<Value> {
-        self.data.pop()
-    }
-
-    fn peek_n(&self, n: usize) -> Option<&[Value]> {
-        let len = self.data.len();
-        len.checked_sub(n).and_then(|start| self.data.get(start..))
-    }
-
-    fn remove_n(&mut self, n: usize) -> bool {
-        let Some(new_len) = self.data.len().checked_sub(n) else {
-            return false;
-        };
-        self.data.truncate(new_len);
-        true
-    }
-
-    fn pop_n<const N: usize>(&mut self) -> Option<[Value; N]> {
-        let mut result = [const { MaybeUninit::uninit() }; N];
-        for i in (0..N).rev() {
-            result[i].write(self.data.pop()?);
+    fn peek_from(&self, sp: MemoryAddress, count: usize) -> Result<&[Value], String> {
+        let address = self.address(sp);
+        if address >= self.data.len() {
+            return Err(format!(
+                "Trying to peek from address {address} which is out of bounds"
+            ));
         }
-        Some(result.map(|v| unsafe { v.assume_init() }))
+        Ok(&self.data[address..][..count])
     }
 }
 
 macro_rules! arithmetic_operator {
-    ($this:ident, $op:tt, $check_error:literal, $type_error:literal $(, $float_op:tt)? ) => {{
-        let Some([lhs, rhs]) = $this.memory.pop_n::<2>() else {
-            return $this.runtime_error("Not enough arguments on the stack");
+    ($this:ident, $dst:ident, $lhs:ident, $rhs:ident, $op:tt, $check_error:literal, $type_error:literal $(, $float_op:tt)? ) => {{
+        let lhs = match $this.load($lhs) {
+            Ok(value) => value,
+            Err(e) => return e,
+        };
+        let rhs = match $this.load($rhs) {
+            Ok(value) => value,
+            Err(e) => return e,
         };
 
         let result = match (lhs, rhs) {
@@ -216,35 +195,49 @@ macro_rules! arithmetic_operator {
             }
         };
 
-        $this.memory.push(result);
+        if let Err(e) = $this.store($dst, result) {
+            return e;
+        }
     }};
 }
 
 macro_rules! comparison_operator {
-    ($this:ident, $op:tt) => {{
-        let Some([lhs, rhs]) = $this.memory.pop_n::<2>() else {
-            return $this.runtime_error("Not enough arguments on the stack");
+    ($this:ident, $dst:ident, $lhs:ident, $rhs:ident, $op:tt) => {{
+        let lhs = match $this.load($lhs) {
+            Ok(value) => value,
+            Err(e) => return e,
+        };
+        let rhs = match $this.load($rhs) {
+            Ok(value) => value,
+            Err(e) => return e,
         };
 
         let result = match (lhs, rhs) {
             (Value::Int(a), Value::Int(b)) => Value::Bool(a $op b),
             (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a $op b),
             (Value::Float(a), Value::Float(b)) => Value::Bool(a $op b),
-            (Value::String(a), Value::String(b)) => Value::Bool(a == b),
             (Value::Bool(a), Value::Bool(b)) => Value::Bool(a $op b),
+            (Value::String(a), Value::String(b)) if stringify!($op) == "==" => Value::Bool(a == b),
             (a, b) => {
                 return $this.runtime_error(format_args!("Cannot compare {} and {}", a.type_of(), b.type_of()));
             }
         };
 
-        $this.memory.push(result);
+        if let Err(e) = $this.store($dst, result) {
+            return e;
+        }
     }};
 }
 
 macro_rules! bitwise_operator {
-    ($this:ident, $op:tt) => {{
-        let Some([lhs, rhs]) = $this.memory.pop_n::<2>() else {
-            return $this.runtime_error("Not enough arguments on the stack");
+    ($this:ident, $dst:ident, $lhs:ident, $rhs:ident, $op:tt) => {{
+        let lhs = match $this.load($lhs) {
+            Ok(value) => value,
+            Err(e) => return e,
+        };
+        let rhs = match $this.load($rhs) {
+            Ok(value) => value,
+            Err(e) => return e,
         };
 
         let result = match (lhs, rhs) {
@@ -257,68 +250,36 @@ macro_rules! bitwise_operator {
                 );
             }
         };
-
-        $this.memory.push(result);
-    }};
-}
-
-impl Function {
-    fn stack_frame<'p>(&'p self) -> Frame {
-        Frame {
-            program_counter: self.address,
-            name: self.signature.name,
-            return_type: self.return_type,
-            loops: Vec::new(),
-            frame_pointer: 0,
+        if let Err(e) = $this.store($dst, result) {
+            return e;
         }
-    }
+    }};
 }
 
 impl<'p> EvalContext<'p> {
     fn string(&self, index: StringIndex) -> &str {
-        self.program
-            .strings
-            .lookup_value_by_index(index)
-            .unwrap_or("<unknown>")
+        self.strings.lookup(index)
     }
 
-    fn load_function_by_name(&self, name: &str, args: &[Value]) -> Option<&'p Function> {
-        let name = self.program.strings.lookup_index_by_value(name)?;
-        let function = self.program.functions.get_by_name(name)?;
-
-        self.typecheck_args(function, args).then_some(function)
+    fn load_function_by_name(&self, name: &str) -> Option<&'p codegen::Function> {
+        let name = self.strings.find(name)?;
+        self.program.functions.get(&name)
     }
 
-    fn typecheck_args(&self, function: &'p Function, args: &[Value]) -> bool {
-        let signature = &function.signature;
-        signature.args.len() == args.len()
-            && signature
-                .args
-                .iter()
-                .zip(args.iter())
-                .all(|((_, arg_type), arg)| *arg_type == arg.type_of())
-    }
-
-    pub fn new(program: &'p Program) -> Self {
-        static EMPTY_FUNCTION: Function = Function {
-            signature: FunctionSignature {
-                name: StringIndex::default(),
-                location: Location { start: 0, end: 0 },
-                args: vec![],
-            },
-            return_type: Type::Void,
-            address: 0,
-            length: 0,
-            scope_size: 0,
-        };
-
+    pub fn new(source: &'p str, strings: &'p Strings, program: &'p codegen::Program) -> Self {
         let mut this = EvalContext {
             intrinsics: HashMap::new(),
             state: EvalState::Idle,
             program,
             memory: Memory::new(),
-            current_frame: EMPTY_FUNCTION.stack_frame(),
             call_stack: vec![],
+            source,
+            strings,
+            current_frame: Frame {
+                program_counter: CodeAddress(0),
+                name: StringIndex::dummy(), // Will be set when the first function is called
+                frame_pointer: 0,           // Will be set when the first function is called
+            },
         };
 
         this.add_intrinsic("print", |program, args| {
@@ -336,287 +297,241 @@ impl<'p> EvalContext<'p> {
             Ok(Value::Void)
         });
 
-        this.memory.allocate(program.variables.n_globals());
-        for def in program.variables.globals() {
-            this.memory.store(def.index, def.value()).unwrap();
+        this.memory.allocate(program.globals.len());
+        for (address, (_, def)) in program.globals.iter().enumerate() {
+            this.memory
+                .store(MemoryAddress::Global(address), *def.value())
+                .unwrap();
         }
 
         this
     }
 
-    fn store(&mut self) -> Result<(), EvalEvent> {
-        let Some(Value::Address(address)) = self.memory.data.pop() else {
-            return Err(self.runtime_error("No address on the stack to store value at"));
-        };
-        let Some(value) = self.memory.data.pop() else {
-            return Err(
-                self.runtime_error("Cannot assign to variable without a value on the stack")
-            );
-        };
-
-        match self.memory.store(address, value) {
-            Ok(()) => Ok(()),
-            Err(e) => Err(self.runtime_error(format_args!("Failed to store value: {e}"))),
-        }
-    }
-
-    fn load(&mut self) -> Result<(), EvalEvent> {
-        let Some(Value::Address(address)) = self.memory.data.pop() else {
-            return Err(self.runtime_error("No address on the stack to store value at"));
-        };
-        match self.memory.load(address) {
-            Ok(value) => {
-                self.memory.push(value);
-                Ok(())
-            }
-            Err(e) => Err(self.runtime_error(format_args!("Failed to load value: {e}"))),
-        }
-    }
-
+    /// Calls the `main` function and starts the evaluation. If the program is already running,
+    /// it will continue executing the current function.
+    ///
+    /// If the function returns with [`EvalEvent::UnknownFunctionCall`], it means that the script
+    /// tried to call a function that is not defined in the program. You can use
+    /// [`Self::unknown_function_info()`] to get the name and arguments of the function that
+    /// was called. Set the return value with [`Self::set_return_value()`], then call [`Self::run`]
+    /// to continue execution.
     pub fn run(&mut self) -> EvalEvent {
         if matches!(self.state, EvalState::Idle) {
             // Initialize the first frame with the main program
-            let function = self.load_function_by_name("main", &[]).unwrap();
-            self.current_frame = function.stack_frame();
-
-            self.memory.allocate(function.scope_size);
-
-            self.state = EvalState::Running;
+            self.call("main", &[])
+        } else {
+            self.execute()
         }
+    }
+
+    /// Calls a function by its name with the given arguments.
+    ///
+    /// Note that this resets the VM before calling the function, so it will not
+    /// preserve the current state of the VM. If you want to continue executing the current
+    /// function, use [`Self::run`] instead.
+    ///
+    /// If the function returns with [`EvalEvent::UnknownFunctionCall`], it means that the script
+    /// tried to call a function that is not defined in the program. You can use
+    /// [`Self::unknown_function_info()`] to get the name and arguments of the function that
+    /// was called. Set the return value with [`Self::set_return_value()`], then call [`Self::run`]
+    /// to continue execution.
+    pub fn call(&mut self, func: &str, args: &[Value]) -> EvalEvent {
+        let Some(function) = self.load_function_by_name(func) else {
+            return self.runtime_error(format!("Unknown function: {func}"));
+        };
+
+        self.current_frame = function.stack_frame();
+
+        self.memory.sp = self.program.globals.len();
+        self.memory.allocate(function.stack_size);
+
+        // Store the function arguments as temporaries in the caller's stack frame.
+        for (i, arg) in args.iter().enumerate() {
+            if let Err(e) = self.store(MemoryAddress::Local(i + 1), *arg) {
+                return e;
+            }
+        }
+
+        self.state = EvalState::Running;
 
         self.execute()
     }
 
     fn execute(&mut self) -> EvalEvent {
-        match self.state {
-            EvalState::WaitingForFunctionResult(name, _) => {
-                return self.runtime_error(format!(
-                    "Function '{}' is still waiting for a result",
-                    self.string(name)
-                ));
-            }
-            _ => (),
+        if let EvalState::WaitingForFunctionResult(name, ..) = self.state {
+            return self.runtime_error(format!(
+                "Function '{}' is still waiting for a result",
+                self.string(name)
+            ));
         }
 
         loop {
             let instruction = self.current_instruction();
 
-            if cfg!(false) {
-                println!(
-                    "{}",
-                    crate::error::MarkInSource(
-                        &self.program.source,
-                        self.current_location(),
-                        &format!(
-                            "Executing instruction: {}",
-                            instruction.disasm(&self.program)
-                        ),
-                        "",
-                    )
-                );
-            }
+            // println!(
+            //     "{}",
+            //     crate::error::MarkInSource(
+            //         self.source,
+            //         self.current_location(),
+            //         &format!("Executing instruction: {instruction:?}"),
+            //         "",
+            //     )
+            // );
 
             match instruction {
-                Instruction::Push(value) => self.memory.push(value),
-                Instruction::Pop => {
-                    if self.memory.pop().is_none() {
-                        return self.runtime_error("Cannot pop from an empty stack");
-                    }
-                }
-                Instruction::Load => {
-                    if let Err(e) = self.load() {
-                        return e;
-                    }
-                }
-                Instruction::Store => {
-                    if let Err(e) = self.store() {
-                        return e;
-                    }
-                }
-                Instruction::Call(function_index, arg_count) => {
-                    let function = self.program.functions.get(function_index).unwrap();
-                    if let Err(e) = self.call_function(function, arg_count) {
+                Instruction::Call(function_index, sp) => {
+                    let (_, function) = self.program.functions.get_index(function_index).unwrap();
+                    if let Err(e) = self.call_function(function, sp) {
                         return e;
                     }
                     continue; // Skip the step() call below, as we already stepped (into function)
                 }
-                Instruction::CallByName(name, arg_count) => {
-                    let Some(args) = self.memory.peek_n(arg_count) else {
-                        return self.runtime_error("Not enough arguments on the stack");
-                    };
-                    if let Some(intrinsic) = self.intrinsics.get(&name) {
-                        match intrinsic(&self, &args) {
-                            Ok(value) => {
-                                self.memory.remove_n(arg_count);
-                                self.memory.push(value)
-                            }
-                            Err(err) => return err,
-                        }
-                    } else {
-                        match self.program.functions.get_by_name(name) {
-                            Some(function) => {
-                                if let Err(e) = self.call_function(function, arg_count) {
-                                    return e;
-                                }
-                            }
-                            None => {
-                                // If the function is not found, return an error
-                                self.state = EvalState::WaitingForFunctionResult(name, arg_count);
-                                self.current_frame.step();
-                                return EvalEvent::UnknownFunctionCall;
-                            }
-                        }
-                    }
-                }
-                Instruction::Return => {
-                    let retval = if self.current_frame.return_type == Type::Void {
-                        // Push a Void as the return value
-                        Value::Void
-                    } else if let Some(value) = self.memory.pop() {
-                        // There is a value on the stack to return
-                        // Type check the return value
-                        if value.type_of() != self.current_frame.return_type {
-                            return self.runtime_error(format_args!(
-                                "Type mismatch: expected {}, found {}",
-                                self.current_frame.return_type,
-                                value.type_of()
-                            ));
-                        }
-                        value
-                    } else {
-                        return self.runtime_error(format_args!(
-                            "Function '{}' should return a '{}' value.",
-                            self.string(self.current_frame.name),
-                            self.current_frame.return_type
-                        ));
+                Instruction::CallNamed(function_name, sp, args) => {
+                    let Some(intrinsic) = self.intrinsics.get(&function_name) else {
+                        self.state = EvalState::WaitingForFunctionResult(function_name, sp, args);
+                        self.current_frame.step();
+                        return EvalEvent::UnknownFunctionCall;
                     };
 
-                    if let Some(frame) = self.call_stack.pop() {
-                        self.current_frame = frame;
-                        // Deallocate the current call frame
-                        self.memory.truncate(self.current_frame.frame_pointer);
-                        // Push the return value onto the eval stack
-                        self.memory.push(retval);
-                    } else {
+                    if let Err(e) = self
+                        .memory
+                        .peek_from(sp + 1, args)
+                        .map_err(|e| {
+                            self.runtime_error(format_args!("Failed to read arguments: {e}"))
+                        })
+                        .and_then(|args| intrinsic(self, args))
+                        .and_then(|result| self.store(sp, result))
+                    {
+                        return e;
+                    };
+                }
+                Instruction::Return => {
+                    let Some(frame) = self.call_stack.pop() else {
                         // Outermost function has returned
-                        self.memory.truncate(self.program.variables.n_globals());
+                        let retval = self.memory.load(MemoryAddress::Local(0)).unwrap();
+                        self.memory.truncate(self.program.globals.len());
                         self.state = EvalState::Running;
                         return EvalEvent::Complete(retval);
-                    }
+                    };
+
+                    self.current_frame = frame;
+                    self.memory.sp = self.current_frame.frame_pointer;
                 }
-                Instruction::JumpForward(n) => {
-                    self.current_frame.step_forward(n + 1);
+                Instruction::Jump(n) => {
+                    self.current_frame.program_counter = n;
                     continue; // Skip the step() call below, as we already stepped forward
                 }
-                Instruction::JumpForwardIf(n, bool) => match self.memory.pop() {
-                    Some(Value::Bool(b)) => {
-                        if b == bool {
-                            self.current_frame.step_forward(n + 1);
+                Instruction::JumpIfFalse(condition, target) => {
+                    let value = match self.load(condition) {
+                        Ok(value) => value,
+                        Err(e) => return e,
+                    };
+
+                    match value {
+                        Value::Bool(false) => {
+                            self.current_frame.program_counter = target;
                             continue; // Skip the step() call below, as we already stepped forward
                         }
-                    }
-                    Some(v) => {
-                        return self.runtime_error(format_args!(
-                            "Type mismatch: expected bool, found {}",
-                            v.type_of()
-                        ));
-                    }
-                    None => return self.runtime_error("Cannot pop value for comparison"),
-                },
-                Instruction::JumpBack(n) => {
-                    if !self.current_frame.step_back(n + 1) {
-                        return self
-                            .runtime_error("Cannot step back beyond the start of the program");
-                    }
-                    continue; // Skip the step() call below, as we already stepped back
-                }
-                Instruction::LoopStart(length) => {
-                    let start = self.current_frame.program_counter;
-                    self.current_frame.loops.push((start, length));
-                }
-                Instruction::LoopEnd => {
-                    self.current_frame.loops.pop().expect("No loop to end");
-                }
-                Instruction::Continue => {
-                    match self.current_frame.loops.last() {
-                        Some((start, _)) => {
-                            // Jump back to the start of the loop
-                            self.current_frame.program_counter = *start;
+                        Value::Bool(true) => {}
+                        v => {
+                            return self.runtime_error(format_args!(
+                                "Type mismatch: expected bool, found {}",
+                                v.type_of()
+                            ));
                         }
-                        None => return self.runtime_error("Continue outside of a loop"),
                     }
                 }
-                Instruction::Break => match self.current_frame.loops.pop() {
-                    Some((start, length)) => {
-                        self.current_frame.program_counter = start + length - 1;
-                    }
-                    None => return self.runtime_error("Break outside of a loop"),
-                },
-                Instruction::TestLessThan => comparison_operator!(self, <),
-                Instruction::TestLessThanOrEqual => comparison_operator!(self, <=),
-                Instruction::TestEquals => comparison_operator!(self, ==),
-                Instruction::TestNotEquals => comparison_operator!(self, !=),
-                Instruction::BitwiseOr => bitwise_operator!(self, |),
-                Instruction::BitwiseXor => bitwise_operator!(self, ^),
-                Instruction::BitwiseAnd => bitwise_operator!(self, &),
-                Instruction::ShiftLeft => {
+                Instruction::TestLessThan(dst, lhs, rhs) => {
+                    comparison_operator!(self, dst, lhs, rhs, <)
+                }
+                Instruction::TestLessThanOrEqual(dst, lhs, rhs) => {
+                    comparison_operator!(self, dst, lhs, rhs, <=)
+                }
+                Instruction::TestEquals(dst, lhs, rhs) => {
+                    comparison_operator!(self, dst, lhs, rhs, ==)
+                }
+                Instruction::TestNotEquals(dst, lhs, rhs) => {
+                    comparison_operator!(self, dst, lhs, rhs, !=)
+                }
+                Instruction::BitwiseOr(dst, lhs, rhs) => bitwise_operator!(self, dst, lhs, rhs, |),
+                Instruction::BitwiseXor(dst, lhs, rhs) => bitwise_operator!(self, dst, lhs, rhs, ^),
+                Instruction::BitwiseAnd(dst, lhs, rhs) => bitwise_operator!(self, dst, lhs, rhs, &),
+                Instruction::ShiftLeft(dst, lhs, rhs) => {
                     arithmetic_operator!(
                         self,
+                        dst,
+                        lhs,
+                        rhs,
                         checked_shl,
                         "{} << {} overflowed",
                         "Cannot shift {} by {}"
                     );
                 }
-                Instruction::ShiftRight => {
+                Instruction::ShiftRight(dst, lhs, rhs) => {
                     arithmetic_operator!(
                         self,
+                        dst,
+                        lhs,
+                        rhs,
                         checked_shr,
                         "{} >> {} underflowed",
                         "Cannot shift {} by {}"
                     );
                 }
-                Instruction::Add => {
+                Instruction::Add(dst, lhs, rhs) => {
                     arithmetic_operator!(
                         self,
+                        dst,
+                        lhs,
+                        rhs,
                         checked_add,
                         "{} + {} overflowed",
                         "Cannot add {} and {}",
                         +
                     );
                 }
-                Instruction::Subtract => {
+                Instruction::Subtract(dst, lhs, rhs) => {
                     arithmetic_operator!(
                         self,
+                        dst,
+                        lhs,
+                        rhs,
                         checked_sub,
                         "{} - {} underflowed",
                         "Cannot subtract {} and {}",
                         -
                     );
                 }
-                Instruction::Multiply => {
+                Instruction::Multiply(dst, lhs, rhs) => {
                     arithmetic_operator!(
                         self,
+                        dst,
+                        lhs,
+                        rhs,
                         checked_mul,
                         "{} * {} overflowed",
                         "Cannot multiply {} and {}",
                         *
                     );
                 }
-                Instruction::Divide => {
+                Instruction::Divide(dst, lhs, rhs) => {
                     arithmetic_operator!(
                         self,
+                        dst,
+                        lhs,
+                        rhs,
                         checked_div,
                         "Division by zero: {} / {}",
                         "Cannot divide {} and {}",
                         /
                     );
                 }
-                Instruction::Negate => {
-                    let Some(operand) = self.memory.pop() else {
-                        return self.runtime_error("Not enough arguments on the stack");
+                Instruction::Negate(dst, lhs) => {
+                    let lhs = match self.load(lhs) {
+                        Ok(value) => value,
+                        Err(e) => return e,
                     };
-
-                    let result = match operand {
+                    let result = match lhs {
                         Value::SignedInt(a) => Value::SignedInt(-a),
                         Value::Float(a) => Value::Float(-a),
 
@@ -625,15 +540,16 @@ impl<'p> EvalContext<'p> {
                                 .runtime_error(format_args!("Cannot negate {}", a.type_of()));
                         }
                     };
-
-                    self.memory.push(result);
+                    if let Err(e) = self.store(dst, result) {
+                        return e;
+                    }
                 }
-                Instruction::InvertBoolean => {
-                    let Some(operand) = self.memory.pop() else {
-                        return self.runtime_error("Not enough arguments on the stack");
+                Instruction::Not(dst, lhs) => {
+                    let lhs = match self.load(lhs) {
+                        Ok(value) => value,
+                        Err(e) => return e,
                     };
-
-                    let result = match operand {
+                    let result = match lhs {
                         Value::Bool(a) => Value::Bool(!a),
                         Value::Int(a) => Value::Int(!a),
                         a => {
@@ -641,61 +557,105 @@ impl<'p> EvalContext<'p> {
                                 .runtime_error(format_args!("Cannot invert {}", a.type_of()));
                         }
                     };
-
-                    self.memory.push(result);
+                    if let Err(e) = self.store(dst, result) {
+                        return e;
+                    }
                 }
-                Instruction::AddressOf(variable) => {
-                    let address = self.memory.address(variable);
-                    self.memory
-                        .push(Value::Address(VarId::Global(VariableIndex(address))))
+                Instruction::Address(dst, lhs) => {
+                    let value = Value::Address(MemoryAddress::Global(self.memory.address(lhs)));
+                    if let Err(e) = self.store(dst, value) {
+                        return e;
+                    }
                 }
-                Instruction::Dereference(variable) => match self.memory.load(variable) {
-                    Ok(Value::Address(address)) => match self.memory.load(address) {
-                        Ok(value) => self.memory.push(value),
-                        Err(e) => {
+                Instruction::Dereference(dst, lhs) => {
+                    let address = match self.load(lhs) {
+                        Ok(addr) => addr,
+                        Err(e) => return e,
+                    };
+                    let address = match address {
+                        Value::Address(addr) => addr,
+                        v => {
                             return self.runtime_error(format_args!(
-                                "Failed to dereference address {address:?}: {e}"
+                                "Expected address, found {}",
+                                v.type_of()
                             ));
                         }
-                    },
-                    Ok(value) => {
-                        return self
-                            .runtime_error(format!("Cannot dereference a {:?}", value.type_of()));
+                    };
+
+                    if let Err(e) = self.copy(address, dst) {
+                        return e;
                     }
-                    Err(e) => {
-                        return self
-                            .runtime_error(format_args!("Failed to dereference variable: {e}"));
+                }
+                Instruction::Copy(dst, from) => {
+                    if let Err(e) = self.copy(from, dst) {
+                        return e;
                     }
-                },
+                }
+                Instruction::DerefCopy(addr, from) => {
+                    let dst = match self.memory.load(addr) {
+                        Ok(Value::Address(addr)) => addr,
+                        Ok(v) => {
+                            return self.runtime_error(format_args!(
+                                "Expected address, found {}",
+                                v.type_of()
+                            ));
+                        }
+                        Err(e) => {
+                            return self.runtime_error(format_args!("Failed to load address: {e}"));
+                        }
+                    };
+
+                    if let Err(e) = self.copy(from, dst) {
+                        return e;
+                    }
+                }
+                Instruction::LoadValue(addr, value) => {
+                    if let Err(e) = self.store(addr, value) {
+                        return e;
+                    }
+                }
             }
 
             self.current_frame.step();
         }
     }
 
+    fn store(&mut self, addr: MemoryAddress, value: Value) -> Result<(), EvalEvent> {
+        self.memory
+            .store(addr, value)
+            .map_err(|e| self.runtime_error(format_args!("Failed to store value at address: {e}")))
+    }
+
+    fn load(&mut self, addr: MemoryAddress) -> Result<Value, EvalEvent> {
+        self.memory
+            .load(addr)
+            .map_err(|e| self.runtime_error(format_args!("Failed to load value from address: {e}")))
+    }
+
+    fn copy(&mut self, addr: MemoryAddress, dst: MemoryAddress) -> Result<(), EvalEvent> {
+        self.load(addr).and_then(|value| self.store(dst, value))
+    }
+
     pub fn unknown_function_info(&self) -> Option<(&str, &[Value])> {
-        if let EvalState::WaitingForFunctionResult(name, arg_count) = self.state {
-            let name = self.string(name);
-            let args = self.memory.peek_n(arg_count)?;
-            Some((name, args))
+        if let EvalState::WaitingForFunctionResult(name, sp, args) = self.state {
+            let function_name = self.string(name);
+            let args = self.memory.peek_from(sp + 1, args).unwrap_or_default();
+            Some((function_name, args))
         } else {
             None
         }
     }
 
     pub fn set_return_value(&mut self, value: Value) -> Result<(), EvalEvent> {
-        match std::mem::replace(&mut self.state, EvalState::Running) {
-            EvalState::WaitingForFunctionResult(_, arg_count) => {
-                self.state = EvalState::Running;
-                self.memory.remove_n(arg_count);
-                self.memory.push(value);
-                Ok(())
-            }
-            EvalState::Running => {
-                Err(self.runtime_error("Cannot set return value outside of a function call"))
-            }
-            EvalState::Idle => Err(self.runtime_error("Cannot set return value when not running")),
-        }
+        let EvalState::WaitingForFunctionResult(_, sp, _) = self.state else {
+            return Err(self.runtime_error("No function is currently waiting for a result"));
+        };
+
+        self.memory
+            .store(sp, value)
+            .map_err(|e| self.runtime_error(format_args!("Failed to store return value: {e}")))?;
+        self.state = EvalState::Running;
+        Ok(())
     }
 
     fn add_intrinsic(
@@ -704,7 +664,7 @@ impl<'p> EvalContext<'p> {
         fun: fn(&Self, &[Value]) -> Result<Value, EvalEvent>,
     ) {
         // If the name is not interned yet, the intrinsic is not used and not needed.
-        if let Some(name_index) = self.program.strings.lookup_index_by_value(name) {
+        if let Some(name_index) = self.strings.find(name) {
             self.intrinsics.insert(name_index, fun);
         }
     }
@@ -718,32 +678,15 @@ impl<'p> EvalContext<'p> {
         }
     }
 
-    fn call_function(&mut self, function: &'p Function, arg_count: usize) -> Result<(), EvalEvent> {
-        let Some(args) = self.memory.peek_n(arg_count) else {
-            return Err(self.runtime_error("Not enough arguments on the stack"));
-        };
-        if !self.typecheck_args(function, args) {
-            return Err(self.runtime_error(format_args!(
-                "Function '{}' called with incorrect argument types. Expected: ('{}'), found: ('{}')",
-                self.string(function.signature.name),
-                function
-                    .signature
-                    .args
-                    .iter()
-                    .map(|(_, t)| t.to_string())
-                    .collect::<Vec<_>>()
-                    .join("', '"),
-                args.iter()
-                    .map(|v| v.type_of().to_string())
-                    .collect::<Vec<_>>()
-                    .join("', '")
-            )));
-        }
+    fn call_function(
+        &mut self,
+        function: &'p Function,
+        sp: MemoryAddress,
+    ) -> Result<(), EvalEvent> {
         self.current_frame.frame_pointer = self.memory.sp;
+        self.memory.sp = self.memory.address(sp);
         // Allocate memory for the function's local variables.
-        self.memory.allocate(function.scope_size - arg_count);
-        // Massage the stack pointer so that arguments are in scope.
-        self.memory.sp -= arg_count;
+        self.memory.allocate(function.stack_size);
 
         let old_frame = std::mem::replace(&mut self.current_frame, function.stack_frame());
         self.call_stack.push(old_frame);
@@ -757,13 +700,12 @@ impl<'p> EvalContext<'p> {
     }
 
     fn current_instruction(&self) -> Instruction {
-        self.program.code[self.current_frame.program_counter]
+        self.program.code[self.current_frame.pc()]
     }
 
     fn current_location(&self) -> Location {
         let pc = self.current_frame.program_counter;
-        let location = self.program.debug_info.instruction_locations[pc];
-        self.program.location_at(location)
+        self.program.debug_info.instruction_locations[pc.0]
     }
 }
 
@@ -772,8 +714,5 @@ mod test {
     #[test]
     fn test_vm() {
         crate::test::run_eval_tests("tests/eval/");
-        //let program = crate::test::run_compile_test("tests/eval/multiply.sm", true).unwrap();
-        //println!("{}", program.disasm());
-        //crate::test::run_eval_test(&program, "tests/eval/multiply.sm", false);
     }
 }

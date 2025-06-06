@@ -1,43 +1,42 @@
-Function: main() -> bool
-  Code:
-    0:  push Bool(true)
-    1:  jump_forward_if 2 true
-    2:  call increment() -> void
-    3:  jump_forward 1
-    4:  push Bool(true)
-    5:  pop
-    6:  push Bool(false)
-    7:  jump_forward_if 2 true
-    8:  call increment() -> void
-    9:  jump_forward 1
-    10: push Bool(true)
-    11: pop
-    12: push Bool(false)
-    13: jump_forward_if 2 false
-    14: call increment() -> void
-    15: jump_forward 1
-    16: push Bool(false)
-    17: pop
-    18: push Bool(true)
-    19: jump_forward_if 2 false
-    20: call increment() -> void
-    21: jump_forward 1
-    22: push Bool(false)
-    23: pop
-    24: push Address(Global(VariableIndex(0)))
-    25: load
-    26: push Int(2)
-    27: equals
-    28: call_named external assert
-    29: return
-Function: increment() -> void
-  Code:
-    0: push Address(Global(VariableIndex(0)))
-    1: load
-    2: push Int(1)
-    3: add
-    4: push Address(Global(VariableIndex(0)))
-    5: store
-    6: push Void
-    7: pop
-    8: return
+Function main(...) -> bool (stack: 14)
+  0000: load Local(1) = Bool(true)
+  0001: load Local(2) = Bool(true)
+  0002: if Local(2) == false jump to 32
+  0003: load Local(3) = Bool(true)
+  0004: load Local(4) = Bool(false)
+  0005: if Local(4) == false jump to 28
+  0006: load Local(5) = Bool(false)
+  0007: load Local(6) = Bool(false)
+  0008: if Local(6) == false jump to 12
+  0009: call increment(..) with sp=Local(8)
+  0010: copy Local(7) = Local(8)
+  0011: copy Local(5) = Local(7)
+  0012: load Local(7) = Bool(false)
+  0013: load Local(8) = Bool(true)
+  0014: if Local(8) == false jump to 18
+  0015: call increment(..) with sp=Local(10)
+  0016: copy Local(9) = Local(10)
+  0017: copy Local(7) = Local(9)
+  0018: copy Local(11) = Global(0)
+  0019: call print(arg0) with sp=Local(10)
+  0020: copy Local(9) = Local(10)
+  0021: load Local(10) = Int(2)
+  0022: Local(11) = Global(0) == Local(10)
+  0023: copy Local(13) = Local(11)
+  0024: call assert(arg0) with sp=Local(12)
+  0025: copy Local(10) = Local(12)
+  0026: copy Local(0) = Local(10)
+  0027: return
+  0028: call increment(..) with sp=Local(6)
+  0029: copy Local(5) = Local(6)
+  0030: copy Local(3) = Local(5)
+  0031: jump to 6
+  0032: call increment(..) with sp=Local(4)
+  0033: copy Local(3) = Local(4)
+  0034: copy Local(1) = Local(3)
+  0035: jump to 3
+Function increment(...) -> void (stack: 3)
+  0036: load Local(1) = Int(1)
+  0037: Local(2) = Global(0) + Local(1)
+  0038: copy Global(0) = Local(2)
+  0039: return

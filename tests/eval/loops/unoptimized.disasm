@@ -1,0 +1,28 @@
+Function main(...) -> bool (stack: 8)
+  0000: load Local(2) = Int(7)
+  0001: copy Local(1) = Local(2)
+  0002: load Local(3) = Int(4)
+  0003: Local(4) = Local(3) < Local(1)
+  0004: if Local(4) == false jump to 26
+  0005: load Local(3) = Int(6)
+  0006: Local(5) = Local(1) == Local(3)
+  0007: if Local(5) == false jump to 22
+  0008: load Local(3) = Int(0)
+  0009: Local(4) = Local(3) < Local(1)
+  0010: if Local(4) == false jump to 15
+  0011: load Local(3) = Int(1)
+  0012: Local(5) = Local(1) - Local(3)
+  0013: copy Local(1) = Local(5)
+  0014: jump to 2
+  0015: load Local(3) = Int(0)
+  0016: Local(5) = Local(1) == Local(3)
+  0017: copy Local(7) = Local(5)
+  0018: call assert(arg0) with sp=Local(6)
+  0019: copy Local(3) = Local(6)
+  0020: copy Local(0) = Local(3)
+  0021: return
+  0022: load Local(3) = Int(1)
+  0023: Local(6) = Local(1) - Local(3)
+  0024: copy Local(1) = Local(6)
+  0025: jump to 2
+  0026: jump to 8

@@ -1,0 +1,1329 @@
+// Optimization ideas:
+// - Merge identical cleanup blocks
+
+use std::fmt::{Debug, Display, Write as _};
+
+use indexmap::IndexMap;
+
+use crate::{
+    error::CompileError,
+    lexer::{Location, Token},
+    parser,
+    string_interner::{StringIndex, StringInterner, Strings},
+    variable_tracker::{LocalVariableIndex, RestorePoint, ScopeData, VariableTracker},
+};
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Value {
+    Void,
+    Int(u64),
+    SignedInt(i64),
+    Float(f64),
+    Bool(bool),
+    String(StringIndex),
+}
+
+impl Value {
+    pub fn type_of(&self) -> Type {
+        match self {
+            Value::Void => Type::Void,
+            Value::Int(_) => Type::Int,
+            Value::SignedInt(_) => Type::SignedInt,
+            Value::Bool(_) => Type::Bool,
+            Value::String(_) => Type::String,
+            Value::Float(_) => Type::Float,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum Type {
+    Void,
+    Int,
+    SignedInt,
+    Float,
+    Bool,
+    String,
+    Address,
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Void => write!(f, "void"),
+            Type::Int => write!(f, "int"),
+            Type::SignedInt => write!(f, "signed"),
+            Type::Bool => write!(f, "bool"),
+            Type::String => write!(f, "string"),
+            Type::Float => write!(f, "float"),
+            Type::Address => write!(f, "address"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct BlockIndex(pub usize);
+
+impl Debug for BlockIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "block {}", self.0)
+    }
+}
+
+impl BlockIndex {
+    const RETURN_BLOCK: Self = BlockIndex(1);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VariableDeclaration {
+    pub index: LocalVariableIndex,
+    name: StringIndex,
+    var_ty: Option<Type>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VariableIndex {
+    Local(LocalVariableIndex),
+    Temporary(LocalVariableIndex),
+    Global(GlobalVariableIndex),
+}
+
+impl VariableIndex {
+    const RETURN_VALUE: Self = VariableIndex::Local(LocalVariableIndex::RETURN_VALUE);
+
+    fn name<'s>(&self, program: &'s Program, function: &Function) -> &'s str {
+        match self {
+            VariableIndex::Local(idx) => idx.name(program, function),
+            VariableIndex::Temporary(idx) => idx.name(program, function),
+            VariableIndex::Global(idx) => idx.name(program),
+        }
+    }
+}
+
+impl LocalVariableIndex {
+    fn name<'s>(&self, program: &'s Program, function: &Function) -> &'s str {
+        let var = function
+            .variables
+            .variable(*self)
+            .expect("Local variable index out of bounds");
+        program.strings.lookup(var.name)
+    }
+}
+
+#[derive(Debug)]
+pub struct IrWithLocation {
+    pub instruction: Ir,
+    pub source_location: Location,
+}
+
+impl IrWithLocation {
+    fn print(&self, program: &Program, function: &Function) -> String {
+        self.instruction.print(program, function)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Ir {
+    Declare(VariableDeclaration, Option<Value>), // when allocating, may reuse freed addresses
+    Assign(VariableIndex, VariableIndex),
+    DerefAssign(VariableIndex, VariableIndex),
+    FreeVariable(LocalVariableIndex), // only used for temporaries & scope ends
+
+    Call(StringIndex, VariableIndex, Vec<VariableIndex>), // function name, arguments
+    BinaryOperator(StringIndex, VariableIndex, VariableIndex, VariableIndex),
+    UnaryOperator(StringIndex, VariableIndex, VariableIndex),
+}
+
+impl Ir {
+    fn print(&self, program: &Program, function: &Function) -> String {
+        let mut output = String::new();
+        match self {
+            Self::Declare(var, init_value) => write!(
+                &mut output,
+                "var {}: {:?} = {:?}",
+                program.strings.lookup(var.name),
+                var.var_ty,
+                init_value
+            )
+            .unwrap(),
+            Self::Assign(dst, src) => {
+                let dst = dst.name(program, function);
+                let src = src.name(program, function);
+
+                write!(&mut output, "{dst} = {src}").unwrap()
+            }
+            Self::DerefAssign(dst, src) => {
+                let dst = dst.name(program, function);
+                let src = src.name(program, function);
+
+                write!(&mut output, "*{dst} = {src}").unwrap()
+            }
+            Self::FreeVariable(var) => {
+                let var = var.name(program, function);
+
+                write!(&mut output, "free({var})").unwrap()
+            }
+            Self::Call(f, retval, args) => {
+                let f = program.strings.lookup(*f);
+
+                let args = args
+                    .iter()
+                    .map(|arg| arg.name(program, function))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                let retval = retval.name(program, function);
+
+                write!(&mut output, "{retval} = call {f}({args})").unwrap()
+            }
+            Self::UnaryOperator(op, dst, operand) => {
+                let dst = dst.name(program, function);
+
+                let operand = operand.name(program, function);
+                let operator = program.strings.lookup(*op);
+
+                write!(&mut output, "{dst} = {operator}{operand}").unwrap()
+            }
+            Self::BinaryOperator(op, dst, left, right) => {
+                let dst = dst.name(program, function);
+                let left = left.name(program, function);
+                let right = right.name(program, function);
+
+                let operator = program.strings.lookup(*op);
+
+                write!(&mut output, "{dst} = {left} {operator} {right}").unwrap()
+            }
+        }
+        output
+    }
+}
+
+#[derive(Debug)]
+pub enum Termination {
+    Return(Location),
+    // Tries to lay out the next block linearly, jumps if its already laid out.
+    Jump {
+        source_location: Location,
+        to: BlockIndex,
+    },
+    If {
+        source_location: Location,
+        // The condition is a variable that is true or false
+        condition: VariableIndex,
+        // If condition == true
+        then_block: BlockIndex,
+        // If condition == false
+        else_block: BlockIndex,
+    },
+}
+
+#[derive(Debug)]
+pub struct Block {
+    pub instructions: Vec<IrWithLocation>,
+    pub terminator: Termination,
+}
+
+/// The compiler expects all globals to have been evaluated, but the IR compiler can't do that.
+pub enum GlobalInitializer {
+    Value(Value),
+    Expression(Vec<IrWithLocation>),
+}
+
+pub struct GlobalVariableInfo {
+    pub initial_value: GlobalInitializer,
+}
+
+impl GlobalVariableInfo {
+    const DUMMY: Self = GlobalVariableInfo {
+        initial_value: GlobalInitializer::Value(Value::Void),
+    };
+
+    fn print(&self, _program: &Program) -> String {
+        match &self.initial_value {
+            GlobalInitializer::Value(value) => format!("{value:?}"),
+            GlobalInitializer::Expression(_) => todo!(),
+        }
+    }
+}
+
+/// An index into the global variables in a program. This uniquely identifies a global, but
+/// it is not directly related to a variable's address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GlobalVariableIndex(pub usize);
+impl GlobalVariableIndex {
+    fn name<'s>(&self, program: &'s Program) -> &'s str {
+        let (name, _) = program
+            .globals
+            .get_index(self.0)
+            .expect("Global variable index out of bounds");
+        program.strings.lookup(*name)
+    }
+}
+
+pub struct Program {
+    pub globals: IndexMap<StringIndex, GlobalVariableInfo>,
+    pub functions: IndexMap<StringIndex, Function>,
+    pub strings: Strings,
+}
+
+impl Program {
+    pub fn print(&self) -> String {
+        let mut output = String::new();
+
+        writeln!(&mut output, "Globals:").unwrap();
+        for (name, global) in &self.globals {
+            let name = self.strings.lookup(*name);
+            writeln!(&mut output, "  {name} = {}", global.print(self)).unwrap();
+        }
+
+        writeln!(&mut output).unwrap();
+
+        writeln!(&mut output, "Functions:").unwrap();
+        for (_, function) in &self.functions {
+            output.push_str(&function.print(self));
+        }
+
+        output
+    }
+
+    pub fn compile<'s>(
+        source: &'s str,
+        ast: &parser::Program,
+    ) -> Result<Program, CompileError<'s>> {
+        let mut strings = StringInterner::new();
+        let mut functions = IndexMap::new();
+        let mut globals = IndexMap::new();
+
+        // Declare items first
+        for item in &ast.items {
+            match item {
+                parser::Item::GlobalVariable(global_variable) => {
+                    let name = global_variable.identifier.source(source);
+                    let name_idx = strings.intern(name);
+                    if globals.contains_key(&name_idx) {
+                        return Err(CompileError {
+                            source,
+                            location: global_variable.identifier.location,
+                            error: format!("Global variable `{name}` is already defined"),
+                        });
+                    }
+                    globals.insert(name_idx, GlobalVariableInfo::DUMMY);
+                }
+                parser::Item::Constant(constant) => {
+                    let name = constant.identifier.source(source);
+                    let name_idx = strings.intern(name);
+                    if globals.contains_key(&name_idx) {
+                        return Err(CompileError {
+                            source,
+                            location: constant.identifier.location,
+                            error: format!("Global variable `{name}` is already defined"),
+                        });
+                    }
+                    globals.insert(name_idx, GlobalVariableInfo::DUMMY);
+                }
+                parser::Item::Function(function) => {
+                    let name = function.name.source(source);
+                    let name_idx = strings.intern(name);
+                    if functions.contains_key(&name_idx) {
+                        return Err(CompileError {
+                            source,
+                            location: function.name.location,
+                            error: format!("Function `{name}` is already defined"),
+                        });
+                    }
+                    functions.insert(name_idx, Function::DUMMY);
+                }
+            }
+        }
+
+        for item in &ast.items {
+            match item {
+                parser::Item::GlobalVariable(global_variable) => {
+                    let name = global_variable.identifier.source(source);
+                    let name_idx = strings.intern(name);
+                    let initializer = Self::compile_initializer(
+                        source,
+                        &global_variable.initializer,
+                        &mut strings,
+                    )?;
+                    globals.insert(
+                        name_idx,
+                        GlobalVariableInfo {
+                            initial_value: initializer,
+                        },
+                    );
+                }
+                parser::Item::Constant(constant) => {
+                    let name = constant.identifier.source(source);
+                    let name_idx = strings.intern(name);
+                    let initializer =
+                        Self::compile_initializer(source, &constant.value, &mut strings)?;
+                    globals.insert(
+                        name_idx,
+                        GlobalVariableInfo {
+                            initial_value: initializer,
+                        },
+                    );
+                }
+                parser::Item::Function(function) => {
+                    let func = Function::compile(source, function, &mut strings, &globals)?;
+                    functions.insert(func.name, func);
+                }
+            }
+        }
+
+        Ok(Program {
+            globals,
+            functions,
+            strings: strings.finalize(),
+        })
+    }
+
+    fn compile_initializer<'s>(
+        source: &'s str,
+        value: &parser::Expression,
+        strings: &mut StringInterner,
+    ) -> Result<GlobalInitializer, CompileError<'s>> {
+        match value {
+            parser::Expression::Literal { value } => {
+                let literal_type = match value.value {
+                    parser::LiteralValue::Integer(_) => Type::Int,
+                    parser::LiteralValue::Float(_) => Type::Float,
+                    parser::LiteralValue::Boolean(_) => Type::Bool,
+                    parser::LiteralValue::String(_) => Type::String,
+                };
+                let literal_value =
+                    Self::compile_literal_value(source, strings, literal_type, value)?;
+                Ok(GlobalInitializer::Value(literal_value))
+            }
+            _ => {
+                // For now, we only support literals as global initializers.
+                Err(CompileError {
+                    source,
+                    location: value.location(),
+                    error: "Global variable initializers must be literals".to_string(),
+                })
+            }
+        }
+    }
+
+    fn compile_literal_value<'s>(
+        source: &'s str,
+        strings: &mut StringInterner,
+        literal_type: Type,
+        literal: &parser::Literal,
+    ) -> Result<Value, CompileError<'s>> {
+        let value = match (literal_type, &literal.value) {
+            (Type::Int, parser::LiteralValue::Integer(value)) => Value::Int(*value),
+            (Type::Float, parser::LiteralValue::Float(value)) => Value::Float(*value),
+            (Type::Bool, parser::LiteralValue::Boolean(value)) => Value::Bool(*value),
+            (Type::String, parser::LiteralValue::String(value)) => {
+                let string_index = strings.intern(value);
+                Value::String(string_index)
+            }
+            (Type::Void | Type::Address, _) => {
+                return Err(CompileError {
+                    source,
+                    location: literal.location,
+                    error: format!("{literal_type} is not supported in literals"),
+                });
+            }
+            _ => {
+                return Err(CompileError {
+                    source,
+                    location: literal.location,
+                    error: format!(
+                        "Expected {literal_type}, found {} literal",
+                        match literal.value {
+                            parser::LiteralValue::Integer(_) => "integer",
+                            parser::LiteralValue::Float(_) => "float",
+                            parser::LiteralValue::Boolean(_) => "boolean",
+                            parser::LiteralValue::String(_) => "string",
+                        }
+                    ),
+                });
+            }
+        };
+
+        Ok(value)
+    }
+}
+
+pub struct Function {
+    pub name: StringIndex,
+    pub variables: ScopeData,
+    pub return_type: Type,
+    pub blocks: Vec<Block>,
+}
+
+impl Function {
+    const DUMMY: Self = Function {
+        name: StringIndex::dummy(),
+        variables: ScopeData::empty(),
+        return_type: Type::Void,
+        blocks: vec![],
+    };
+
+    pub fn print(&self, program: &Program) -> String {
+        let mut output = String::new();
+        writeln!(
+            &mut output,
+            "Function: {}",
+            program.strings.lookup(self.name)
+        )
+        .unwrap();
+        for (idx, block) in self.blocks.iter().enumerate() {
+            if idx > 0 {
+                writeln!(&mut output).unwrap();
+            }
+
+            writeln!(&mut output, "{:?}", BlockIndex(idx)).unwrap();
+            for instruction in &block.instructions {
+                writeln!(&mut output, "  {}", instruction.print(program, self)).unwrap();
+            }
+
+            match block.terminator {
+                Termination::Return(_) => writeln!(&mut output, "  -> return").unwrap(),
+                Termination::Jump { to, .. } => writeln!(&mut output, "  -> {to:?}").unwrap(),
+                Termination::If {
+                    condition,
+                    then_block,
+                    else_block,
+                    ..
+                } => {
+                    let condition = condition.name(program, self);
+                    writeln!(
+                        &mut output,
+                        "  if {condition} -> {then_block:?} else {else_block:?}",
+                    )
+                    .unwrap()
+                }
+            }
+        }
+
+        output
+    }
+
+    pub fn compile<'s>(
+        source: &'s str,
+        func: &parser::Function,
+        strings: &mut StringInterner,
+        globals: &IndexMap<StringIndex, GlobalVariableInfo>,
+    ) -> Result<Function, CompileError<'s>> {
+        let mut this = FunctionCompiler {
+            source,
+            blocks: Blocks {
+                blocks: vec![
+                    // Enter function
+                    Block {
+                        instructions: vec![],
+                        terminator: Termination::Jump {
+                            source_location: func.name.location,
+                            to: BlockIndex::RETURN_BLOCK,
+                        }, // Jump to the first block
+                    },
+                    // Return from function
+                    Block {
+                        instructions: vec![],
+                        terminator: Termination::Return(func.closing_paren.location),
+                    },
+                ],
+                current_block: BlockIndex(0),
+            },
+            variables: VariableTracker::new(),
+            strings,
+            loop_stack: Vec::new(),
+            globals,
+        };
+
+        // Check that argument names are unique.
+        let arg_names = func.arguments.iter().map(|a| a.name.source(source));
+        let mut seen_names = std::collections::HashMap::new();
+        const RESERVED_NAMES: &[&str] = &["return_value"];
+        for (idx, name) in arg_names.enumerate() {
+            if seen_names.insert(name, idx).is_some() {
+                return Err(CompileError {
+                    source,
+                    location: func.arguments[idx].name.location,
+                    error: format!("Duplicate argument name `{name}`"),
+                });
+            }
+            if RESERVED_NAMES.contains(&name) {
+                return Err(CompileError {
+                    source,
+                    location: func.arguments[idx].name.location,
+                    error: format!("Argument name `{name}` is reserved"),
+                });
+            }
+        }
+
+        // Allocate a return variable, if the function has a return type.
+        let (return_ty, return_token) = if let Some(return_type) = &func.return_decl {
+            (
+                this.compile_type(&return_type.return_type)?,
+                return_type.return_type.type_name,
+            )
+        } else {
+            (Type::Void, func.fn_token)
+        };
+        this.declare_variable("return_value", return_ty, return_token.location)?;
+
+        // allocate variables for arguments
+        for argument in func.arguments.iter() {
+            let ty = this.compile_type(&argument.arg_type)?;
+            let name = argument.name.source(source);
+            this.declare_variable(name, ty, argument.name.location)?;
+        }
+
+        for statement in func.body.statements.iter() {
+            this.compile_statement(statement)?;
+        }
+
+        Ok(Function {
+            name: this.strings.intern(func.name.source(source)),
+            return_type: return_ty,
+            variables: this.variables.finalize(),
+            blocks: this.blocks.blocks,
+        })
+    }
+}
+
+struct Loop {
+    restore_point: RestorePoint,
+    body_block: BlockIndex,
+    next_block: BlockIndex,
+}
+
+struct Blocks {
+    blocks: Vec<Block>,
+    current_block: BlockIndex,
+}
+
+impl Blocks {
+    /// Allocates a new block in the function's block list.
+    ///
+    /// Blocks may be allocated in any order. Codegen will walk through the blocks in order,
+    /// and generate code for each block, in order. Codegen will make sure that jumps are
+    /// resolved to the correct block.
+    fn allocate_block(&mut self, next: BlockIndex) -> BlockIndex {
+        let index = BlockIndex(self.blocks.len());
+        self.blocks.push(Block {
+            instructions: Vec::new(),
+            terminator: Termination::Jump {
+                source_location: Location::dummy(),
+                to: next,
+            },
+        });
+        index
+    }
+
+    fn select_block(&mut self, index: BlockIndex) {
+        if index.0 >= self.blocks.len() {
+            panic!("Block index out of bounds: {}", index.0);
+        }
+        self.current_block = index;
+    }
+
+    fn push_instruction(&mut self, source_location: Location, instruction: Ir) {
+        self.blocks[self.current_block.0]
+            .instructions
+            .push(IrWithLocation {
+                instruction,
+                source_location,
+            });
+    }
+
+    fn set_terminator(&mut self, terminator: Termination) {
+        self.blocks[self.current_block.0].terminator = terminator;
+    }
+
+    fn current(&self) -> BlockIndex {
+        self.current_block
+    }
+}
+
+/// Compiles a function into an intermediate representation (IR).
+///
+/// The IR is consumed by the bytecode compiler, and the debuginfo compiler.
+struct FunctionCompiler<'s, 'c> {
+    source: &'s str,
+    strings: &'c mut StringInterner,
+    globals: &'c IndexMap<StringIndex, GlobalVariableInfo>,
+
+    blocks: Blocks,
+    variables: VariableTracker,
+    loop_stack: Vec<Loop>,
+}
+
+impl<'s> FunctionCompiler<'s, '_> {
+    fn declare_variable(
+        &mut self,
+        name: &str,
+        var_ty: Type,
+        source_location: Location,
+        // TODO: mutability?
+    ) -> Result<LocalVariableIndex, CompileError<'s>> {
+        let name_index = self.strings.intern(name);
+        let variable = self.variables.declare_variable(name_index);
+        self.blocks.push_instruction(
+            source_location,
+            Ir::Declare(
+                VariableDeclaration {
+                    index: variable,
+                    name: name_index,
+                    var_ty: Some(var_ty),
+                },
+                None,
+            ),
+        );
+        Ok(variable)
+    }
+
+    fn declare_temporary(&mut self, location: Location, init_value: Value) -> VariableIndex {
+        let temp_name = self
+            .strings
+            .intern(&format!("temp{}", self.variables.len()));
+        let temp = self.variables.declare_variable(temp_name);
+        self.blocks.push_instruction(
+            location,
+            Ir::Declare(
+                VariableDeclaration {
+                    index: temp,
+                    name: temp_name,
+                    var_ty: None,
+                },
+                (init_value != Value::Void).then_some(init_value),
+            ),
+        );
+
+        VariableIndex::Temporary(temp)
+    }
+
+    fn compile_statement(&mut self, statement: &parser::Statement) -> Result<(), CompileError<'s>> {
+        match statement {
+            parser::Statement::VariableDefinition(variable_def) => {
+                self.compile_variable_definition(variable_def)
+            }
+            parser::Statement::ConstantDefinition(constant_def) => {
+                self.compile_constant_definition(constant_def)
+            }
+            parser::Statement::Return(ret_with_value) => {
+                self.compile_return_with_value(ret_with_value)
+            }
+            parser::Statement::EmptyReturn(ret) => self.compile_empty_return(ret),
+            parser::Statement::If(if_statement) => self.compile_if_statement(if_statement),
+            parser::Statement::Loop(loop_statement) => self.compile_loop_statement(loop_statement),
+            parser::Statement::While(while_statement) => {
+                self.compile_while_statement(while_statement)
+            }
+            parser::Statement::Break(break_statement) => {
+                self.compile_break_statement(break_statement)
+            }
+            parser::Statement::Continue(continue_statement) => {
+                self.compile_continue_statement(continue_statement)
+            }
+            parser::Statement::Expression {
+                expression,
+                semicolon,
+            } => self.compile_expression_statement(expression, semicolon),
+        }
+    }
+
+    fn compile_variable_definition(
+        &mut self,
+        variable_def: &parser::VariableDefinition,
+    ) -> Result<(), CompileError<'s>> {
+        self.compile_variable(
+            variable_def.identifier,
+            variable_def.type_token.as_ref(),
+            &variable_def.initializer,
+            true,
+        )
+    }
+
+    fn compile_constant_definition(
+        &mut self,
+        constant_def: &parser::ConstantDefinition,
+    ) -> Result<(), CompileError<'s>> {
+        self.compile_variable(
+            constant_def.identifier,
+            constant_def.type_token.as_ref(),
+            &constant_def.initializer,
+            false,
+        )
+    }
+
+    fn compile_variable(
+        &mut self,
+        ident: Token,
+        ty: Option<&parser::Type>,
+        initializer: &parser::Expression,
+        _is_mutable: bool,
+    ) -> Result<(), CompileError<'s>> {
+        let name = ident.source(self.source);
+        let var_ty = if let Some(type_token) = ty {
+            self.compile_type(type_token)?
+        } else {
+            // TODO: change to unspecified type?
+            Type::Void
+        };
+        let variable = self.declare_variable(name, var_ty, ident.location)?;
+
+        let expr_result = self.compile_expression(initializer)?;
+        self.blocks.push_instruction(
+            ident.location,
+            Ir::Assign(VariableIndex::Local(variable), expr_result),
+        );
+
+        Ok(())
+    }
+
+    fn compile_if_statement(&mut self, if_statement: &parser::If) -> Result<(), CompileError<'s>> {
+        // Generate instructions for the condition, allocate then/else blocks and generate conditional jumps
+        let condition = self.compile_expression(&if_statement.condition)?;
+
+        // Allocate the next block, which is the block that will be executed after the branches.
+        // Point to the return block by default.
+        let next_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
+
+        // Save the current block so that we can update it later.
+        let condition_block = self.blocks.current();
+
+        // Compile the branches
+        let then_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
+        self.blocks.select_block(then_block);
+        self.compile_body(&if_statement.body)?;
+        self.blocks.set_terminator(Termination::Jump {
+            source_location: if_statement.body.closing_brace.location,
+            to: next_block,
+        });
+
+        let else_block = if let Some(else_branch) = if_statement.else_branch.as_ref() {
+            let else_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
+            self.blocks.select_block(else_block);
+            self.compile_body(&else_branch.else_body)?;
+            self.blocks.set_terminator(Termination::Jump {
+                source_location: else_branch.else_body.closing_brace.location,
+                to: next_block,
+            });
+            else_block
+        } else {
+            // If there is no else branch, we can just jump to the next block.
+            next_block
+        };
+
+        // Update the condition block's terminator to be a conditional jump.
+        self.blocks.select_block(condition_block);
+        self.blocks.set_terminator(Termination::If {
+            source_location: if_statement.if_token.location,
+            condition,
+            then_block,
+            else_block,
+        });
+
+        // Whatever happens, normal execution continues at the next block.
+        self.blocks.select_block(next_block);
+
+        Ok(())
+    }
+
+    fn compile_body(&mut self, body: &parser::Body) -> Result<(), CompileError<'s>> {
+        let restore_point = self.variables.create_restore_point();
+
+        for statement in body.statements.iter() {
+            self.compile_statement(statement)?;
+        }
+
+        self.rollback_scope(body.closing_brace.location, restore_point);
+
+        Ok(())
+    }
+
+    fn compile_loop_statement(
+        &mut self,
+        loop_statement: &parser::Loop,
+    ) -> Result<(), CompileError<'s>> {
+        let next_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
+
+        // Compile the body of the loop.
+        let body_block = self.blocks.allocate_block(next_block);
+
+        // Set up the loop structure.
+        self.blocks.set_terminator(Termination::Jump {
+            source_location: loop_statement.loop_token.location,
+            to: body_block,
+        });
+        self.loop_stack.push(Loop {
+            restore_point: self.variables.create_restore_point(),
+            body_block,
+            next_block,
+        });
+
+        self.blocks.select_block(body_block);
+        self.compile_body(&loop_statement.body)?;
+        self.blocks.set_terminator(Termination::Jump {
+            source_location: loop_statement.body.closing_brace.location,
+            to: body_block,
+        });
+
+        self.blocks.select_block(next_block);
+
+        Ok(())
+    }
+
+    fn compile_while_statement(
+        &mut self,
+        while_statement: &parser::While,
+    ) -> Result<(), CompileError<'s>> {
+        let desugared = parser::Loop {
+            loop_token: while_statement.while_token,
+            body: parser::Body {
+                opening_brace: while_statement.body.opening_brace,
+                closing_brace: while_statement.body.closing_brace,
+                statements: vec![parser::Statement::If(parser::If {
+                    if_token: while_statement.while_token,
+                    condition: while_statement.condition.clone(),
+                    body: while_statement.body.clone(),
+                    else_branch: Some(parser::Else {
+                        else_token: while_statement.while_token,
+                        else_body: parser::Body {
+                            opening_brace: while_statement.body.opening_brace,
+                            closing_brace: while_statement.body.closing_brace,
+                            statements: vec![parser::Statement::Break(parser::Break {
+                                break_token: while_statement.while_token,
+                                semicolon: while_statement.while_token,
+                            })],
+                        },
+                    }),
+                })],
+            },
+        };
+
+        self.compile_loop_statement(&desugared)
+    }
+
+    fn compile_break_statement(
+        &mut self,
+        break_statement: &parser::Break,
+    ) -> Result<(), CompileError<'s>> {
+        let Some(loop_entry) = self.loop_stack.last() else {
+            return Err(CompileError {
+                source: self.source,
+                location: break_statement.break_token.location,
+                error: "Cannot break outside of a loop.".to_string(),
+            });
+        };
+
+        self.compile_cleanup_block(
+            loop_entry.restore_point,
+            loop_entry.next_block,
+            break_statement.break_token.location,
+        )?;
+
+        Ok(())
+    }
+
+    fn compile_continue_statement(
+        &mut self,
+        continue_statement: &parser::Continue,
+    ) -> Result<(), CompileError<'s>> {
+        let Some(loop_entry) = self.loop_stack.last() else {
+            return Err(CompileError {
+                source: self.source,
+                location: continue_statement.continue_token.location,
+                error: "Cannot break outside of a loop.".to_string(),
+            });
+        };
+
+        // The cleanup block jumps to the next block after the loop.
+        self.compile_cleanup_block(
+            loop_entry.restore_point,
+            loop_entry.body_block,
+            continue_statement.continue_token.location,
+        )?;
+
+        Ok(())
+    }
+
+    fn compile_return_with_value(
+        &mut self,
+        ret: &parser::ReturnWithValue,
+    ) -> Result<(), CompileError<'s>> {
+        let return_value = self.compile_expression(&ret.expression)?;
+
+        // Store variable in the return variable.
+        self.blocks.push_instruction(
+            ret.location(),
+            Ir::Assign(VariableIndex::RETURN_VALUE, return_value),
+        );
+
+        self.compile_return(ret.return_token)
+    }
+
+    fn compile_empty_return(&mut self, ret: &parser::EmptyReturn) -> Result<(), CompileError<'s>> {
+        self.compile_return(ret.return_token)
+    }
+
+    fn compile_return(&mut self, ret: Token) -> Result<(), CompileError<'s>> {
+        // The cleanup block jumps to the next block after the loop.
+        self.compile_cleanup_block(
+            RestorePoint::RETURN_FROM_FN,
+            BlockIndex::RETURN_BLOCK,
+            ret.location,
+        )?;
+
+        Ok(())
+    }
+
+    fn compile_cleanup_block(
+        &mut self,
+        restore_point: RestorePoint,
+        next_block: BlockIndex,
+        source_location: Location,
+    ) -> Result<(), CompileError<'s>> {
+        let cleanup_block = self.blocks.allocate_block(next_block);
+
+        self.blocks.set_terminator(Termination::Jump {
+            source_location,
+            to: cleanup_block,
+        });
+
+        self.rollback_scope(source_location, restore_point);
+
+        // The rest of the body is unreachable, so we allocate a new block for the next statements.
+        // Nothing will actually jump to this block, but we want to handle compilation errors.
+        let next_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
+        self.blocks.select_block(next_block);
+
+        Ok(())
+    }
+
+    fn compile_expression_statement(
+        &mut self,
+        expression: &parser::Expression,
+        _semicolon: &Token,
+    ) -> Result<(), CompileError<'s>> {
+        // Compile the expression, which may be a variable assignment, function call,
+        // or other expression. Discard the result.
+        let result = self.compile_expression(expression)?;
+
+        if let VariableIndex::Local(result) | VariableIndex::Temporary(result) = result {
+            self.variables.free_variable(result);
+        }
+
+        Ok(())
+    }
+
+    fn compile_type(&self, type_token: &parser::Type) -> Result<Type, CompileError<'s>> {
+        match type_token.type_name.source(self.source) {
+            "int" => Ok(Type::Int),
+            "signed" => Ok(Type::SignedInt),
+            "float" => Ok(Type::Float),
+            "bool" => Ok(Type::Bool),
+            "string" => Ok(Type::String),
+            other => Err(CompileError {
+                source: self.source,
+                location: type_token.type_name.location,
+                error: format!("Unknown type `{other}`"),
+            }),
+        }
+    }
+
+    fn compile_expression(
+        &mut self,
+        expression: &parser::Expression,
+    ) -> Result<VariableIndex, CompileError<'s>> {
+        match &expression {
+            parser::Expression::Literal { value } => {
+                let val_type = match value.value {
+                    parser::LiteralValue::Integer(_) => Type::Int,
+                    parser::LiteralValue::Float(_) => Type::Float,
+                    parser::LiteralValue::Boolean(_) => Type::Bool,
+                    parser::LiteralValue::String(_) => Type::String,
+                };
+
+                let literal_value = self.compile_literal_value(val_type, value)?;
+                let temp = self.declare_temporary(value.location, literal_value);
+
+                Ok(temp)
+            }
+            parser::Expression::Variable { variable } => {
+                let name = variable.source(self.source);
+                match self.find_variable_by_name(name) {
+                    // If the variable is already declared, we can just return it.
+                    Some(index) => Ok(index),
+                    None => Err(CompileError {
+                        source: self.source,
+                        location: variable.location,
+                        error: format!("Variable `{name}` is not declared"),
+                    }),
+                }
+            }
+            parser::Expression::UnaryOperator { name, operand } => {
+                self.compile_unary_operator(*name, operand)
+            }
+            parser::Expression::BinaryOperator { name, operands } => {
+                self.compile_binary_operator(*name, operands)
+            }
+            parser::Expression::FunctionCall { name, arguments } => {
+                self.compile_function_call(*name, arguments)
+            }
+        }
+    }
+
+    fn compile_literal_value(
+        &mut self,
+        literal_type: Type,
+        literal: &parser::Literal,
+    ) -> Result<Value, CompileError<'s>> {
+        let value = match (literal_type, &literal.value) {
+            (Type::Int, parser::LiteralValue::Integer(value)) => Value::Int(*value),
+            (Type::Float, parser::LiteralValue::Float(value)) => Value::Float(*value),
+            (Type::Bool, parser::LiteralValue::Boolean(value)) => Value::Bool(*value),
+            (Type::String, parser::LiteralValue::String(value)) => {
+                let string_index = self.strings.intern(value);
+                Value::String(string_index)
+            }
+            (Type::Void | Type::Address, _) => {
+                return Err(CompileError {
+                    source: self.source,
+                    location: literal.location,
+                    error: format!("{literal_type} is not supported in literals"),
+                });
+            }
+            _ => {
+                return Err(CompileError {
+                    source: self.source,
+                    location: literal.location,
+                    error: format!(
+                        "Expected {literal_type}, found {} literal",
+                        match literal.value {
+                            parser::LiteralValue::Integer(_) => "integer",
+                            parser::LiteralValue::Float(_) => "float",
+                            parser::LiteralValue::Boolean(_) => "boolean",
+                            parser::LiteralValue::String(_) => "string",
+                        }
+                    ),
+                });
+            }
+        };
+
+        Ok(value)
+    }
+
+    fn compile_unary_operator(
+        &mut self,
+        operator: Token,
+        operand: &parser::Expression,
+    ) -> Result<VariableIndex, CompileError<'s>> {
+        let op = operator.source(self.source);
+
+        // Allocate a temporary variable for the result.
+        let temp = self.declare_temporary(operator.location, Value::Void);
+
+        // Compile the left and right operands.
+        let operand_result = self.compile_expression(operand)?;
+
+        if let VariableIndex::Local(local_idx) = operand_result {
+            if op == "&" {
+                self.variables.reference_variable(local_idx);
+            }
+        }
+
+        // Generate the instruction for the binary operator.
+        self.blocks.push_instruction(
+            operator.location,
+            Ir::UnaryOperator(self.strings.intern(op), temp, operand_result),
+        );
+        self.free_if_temporary(operand.location(), operand_result);
+
+        Ok(temp)
+    }
+
+    fn compile_binary_operator(
+        &mut self,
+        operator: Token,
+        operands: &[parser::Expression; 2],
+    ) -> Result<VariableIndex, CompileError<'s>> {
+        let op = operator.source(self.source);
+
+        if op == "&&" {
+            let temp = self.declare_temporary(operator.location, Value::Bool(false));
+
+            let condition = self.compile_expression(&operands[0])?;
+
+            // Allocate the next block, which is the block that will be executed after the branches.
+            // Point to the return block by default.
+            let next_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
+
+            // Save the current block so that we can update it later.
+            let condition_block = self.blocks.current();
+
+            // Compile the then branch
+            let then_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
+            self.blocks.select_block(then_block);
+            let rp = self.variables.create_restore_point();
+            let rhs = self.compile_expression(&operands[1])?;
+            self.blocks
+                .push_instruction(operator.location, Ir::Assign(temp, rhs));
+
+            self.rollback_scope(operator.location, rp);
+
+            self.blocks.set_terminator(Termination::Jump {
+                source_location: operator.location,
+                to: next_block,
+            });
+
+            // Update the condition block's terminator to be a conditional jump.
+            self.blocks.select_block(condition_block);
+            self.blocks.set_terminator(Termination::If {
+                source_location: operator.location,
+                condition,
+                then_block,
+                else_block: next_block,
+            });
+
+            // Whatever happens, normal execution continues at the next block.
+            self.blocks.select_block(next_block);
+
+            Ok(temp)
+        } else if op == "||" {
+            let temp = self.declare_temporary(operator.location, Value::Bool(true));
+
+            let condition = self.compile_expression(&operands[0])?;
+
+            // Allocate the next block, which is the block that will be executed after the branches.
+            // Point to the return block by default.
+            let next_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
+
+            // Save the current block so that we can update it later.
+            let condition_block = self.blocks.current();
+
+            // Compile the else branch
+            let else_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
+            self.blocks.select_block(else_block);
+            let rp = self.variables.create_restore_point();
+            let rhs = self.compile_expression(&operands[1])?;
+            self.blocks
+                .push_instruction(operator.location, Ir::Assign(temp, rhs));
+
+            self.rollback_scope(operator.location, rp);
+
+            self.blocks.set_terminator(Termination::Jump {
+                source_location: operator.location,
+                to: next_block,
+            });
+
+            // Update the condition block's terminator to be a conditional jump.
+            self.blocks.select_block(condition_block);
+            self.blocks.set_terminator(Termination::If {
+                source_location: operator.location,
+                condition,
+                then_block: next_block,
+                else_block,
+            });
+
+            // Whatever happens, normal execution continues at the next block.
+            self.blocks.select_block(next_block);
+
+            Ok(temp)
+        } else if op == "=" {
+            let left;
+            // Compile the right operand.
+            let right = self.compile_expression(&operands[1])?;
+
+            let instruction = match &operands[0] {
+                parser::Expression::UnaryOperator { name, operand }
+                    if name.source(self.source) == "*" =>
+                {
+                    left = self.compile_expression(operand)?;
+                    Ir::DerefAssign(left, right)
+                }
+                parser::Expression::Variable { .. } => {
+                    left = self.compile_expression(&operands[0])?;
+                    Ir::Assign(left, right)
+                }
+                _ => {
+                    return Err(CompileError {
+                        source: self.source,
+                        location: operands[0].location(),
+                        error: "Not a valid left-hand side of an assignment".to_string(),
+                    });
+                }
+            };
+
+            // Generate the instruction for the assignment.
+            self.blocks.push_instruction(operator.location, instruction);
+
+            self.free_if_temporary(operands[0].location(), left);
+            self.free_if_temporary(operands[1].location(), right);
+
+            // Allocate a temporary variable. For assignments this is not used, but
+            // we still need to return something.
+            Ok(self.declare_temporary(operator.location, Value::Void))
+        } else {
+            // Compile the left and right operands.
+            let left = self.compile_expression(&operands[0])?;
+            let right = self.compile_expression(&operands[1])?;
+
+            // Allocate a temporary variable for the result.
+            let temp = self.declare_temporary(operator.location, Value::Void);
+            // Generate the instruction for the binary operator.
+            self.blocks.push_instruction(
+                operator.location,
+                Ir::BinaryOperator(self.strings.intern(op), temp, left, right),
+            );
+            self.free_if_temporary(operands[0].location(), left);
+            self.free_if_temporary(operands[1].location(), right);
+
+            Ok(temp)
+        }
+    }
+
+    fn compile_function_call(
+        &mut self,
+        name: Token,
+        arguments: &[parser::Expression],
+    ) -> Result<VariableIndex, CompileError<'s>> {
+        let arguments = arguments
+            .iter()
+            .map(|arg| self.compile_expression(arg))
+            .collect::<Result<Vec<_>, _>>()?;
+        let function_name = name.source(self.source);
+        let function_index = self.strings.intern(function_name);
+        // Allocate a temporary variable for the result.
+        let temp = self.declare_temporary(name.location, Value::Void);
+        // Generate the instruction for the function call.
+        self.blocks
+            .push_instruction(name.location, Ir::Call(function_index, temp, arguments));
+
+        Ok(temp)
+    }
+
+    fn find_variable_by_name(&mut self, name: &str) -> Option<VariableIndex> {
+        let name = self.strings.intern(name);
+        if let Some(local) = self.variables.find(name) {
+            // If the variable is already declared, we can just return it.
+            Some(VariableIndex::Local(local))
+        } else {
+            self.globals
+                .get_index_of(&name)
+                .map(|index| VariableIndex::Global(GlobalVariableIndex(index)))
+        }
+    }
+
+    fn free_if_temporary(&mut self, location: Location, right: VariableIndex) {
+        if let VariableIndex::Temporary(operand) = right {
+            self.variables.free_variable(operand);
+            self.blocks
+                .push_instruction(location, Ir::FreeVariable(operand));
+        }
+    }
+
+    fn rollback_scope(&mut self, location: Location, rp: RestorePoint) {
+        for var in self.variables.rollback_to_restore_point(rp) {
+            self.blocks
+                .push_instruction(location, Ir::FreeVariable(var));
+        }
+    }
+}

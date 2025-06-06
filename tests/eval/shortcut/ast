@@ -283,21 +283,50 @@ Program {
                                 },
                             },
                         },
+                        Expression {
+                            expression: FunctionCall {
+                                name: Token {
+                                    kind: Identifier,
+                                    location: Location {
+                                        start: 154,
+                                        end: 159,
+                                    },
+                                },
+                                arguments: [
+                                    Variable {
+                                        variable: Token {
+                                            kind: Identifier,
+                                            location: Location {
+                                                start: 160,
+                                                end: 172,
+                                            },
+                                        },
+                                    },
+                                ],
+                            },
+                            semicolon: Token {
+                                kind: Symbol,
+                                location: Location {
+                                    start: 173,
+                                    end: 174,
+                                },
+                            },
+                        },
                         Return(
                             ReturnWithValue {
                                 return_token: Token {
                                     kind: Identifier,
                                     location: Location {
-                                        start: 154,
-                                        end: 160,
+                                        start: 179,
+                                        end: 185,
                                     },
                                 },
                                 expression: FunctionCall {
                                     name: Token {
                                         kind: Identifier,
                                         location: Location {
-                                            start: 161,
-                                            end: 167,
+                                            start: 186,
+                                            end: 192,
                                         },
                                     },
                                     arguments: [
@@ -305,8 +334,8 @@ Program {
                                             name: Token {
                                                 kind: Symbol,
                                                 location: Location {
-                                                    start: 181,
-                                                    end: 183,
+                                                    start: 206,
+                                                    end: 208,
                                                 },
                                             },
                                             operands: [
@@ -314,8 +343,8 @@ Program {
                                                     variable: Token {
                                                         kind: Identifier,
                                                         location: Location {
-                                                            start: 168,
-                                                            end: 180,
+                                                            start: 193,
+                                                            end: 205,
                                                         },
                                                     },
                                                 },
@@ -325,8 +354,8 @@ Program {
                                                             2,
                                                         ),
                                                         location: Location {
-                                                            start: 184,
-                                                            end: 185,
+                                                            start: 209,
+                                                            end: 210,
                                                         },
                                                     },
                                                 },
@@ -337,8 +366,8 @@ Program {
                                 semicolon: Token {
                                     kind: Symbol,
                                     location: Location {
-                                        start: 186,
-                                        end: 187,
+                                        start: 211,
+                                        end: 212,
                                     },
                                 },
                             },
@@ -347,8 +376,8 @@ Program {
                     closing_brace: Token {
                         kind: Symbol,
                         location: Location {
-                            start: 188,
-                            end: 189,
+                            start: 213,
+                            end: 214,
                         },
                     },
                 },
@@ -359,30 +388,30 @@ Program {
                 fn_token: Token {
                     kind: Identifier,
                     location: Location {
-                        start: 191,
-                        end: 193,
+                        start: 216,
+                        end: 218,
                     },
                 },
                 name: Token {
                     kind: Identifier,
                     location: Location {
-                        start: 194,
-                        end: 203,
+                        start: 219,
+                        end: 228,
                     },
                 },
                 opening_paren: Token {
                     kind: Symbol,
                     location: Location {
-                        start: 203,
-                        end: 204,
+                        start: 228,
+                        end: 229,
                     },
                 },
                 arguments: [],
                 closing_paren: Token {
                     kind: Symbol,
                     location: Location {
-                        start: 204,
-                        end: 205,
+                        start: 229,
+                        end: 230,
                     },
                 },
                 return_decl: None,
@@ -390,8 +419,8 @@ Program {
                     opening_brace: Token {
                         kind: Symbol,
                         location: Location {
-                            start: 206,
-                            end: 207,
+                            start: 231,
+                            end: 232,
                         },
                     },
                     statements: [
@@ -400,8 +429,8 @@ Program {
                                 name: Token {
                                     kind: Symbol,
                                     location: Location {
-                                        start: 225,
-                                        end: 226,
+                                        start: 250,
+                                        end: 251,
                                     },
                                 },
                                 operands: [
@@ -409,8 +438,8 @@ Program {
                                         variable: Token {
                                             kind: Identifier,
                                             location: Location {
-                                                start: 212,
-                                                end: 224,
+                                                start: 237,
+                                                end: 249,
                                             },
                                         },
                                     },
@@ -418,8 +447,8 @@ Program {
                                         name: Token {
                                             kind: Symbol,
                                             location: Location {
-                                                start: 240,
-                                                end: 241,
+                                                start: 265,
+                                                end: 266,
                                             },
                                         },
                                         operands: [
@@ -427,8 +456,8 @@ Program {
                                                 variable: Token {
                                                     kind: Identifier,
                                                     location: Location {
-                                                        start: 227,
-                                                        end: 239,
+                                                        start: 252,
+                                                        end: 264,
                                                     },
                                                 },
                                             },
@@ -438,8 +467,8 @@ Program {
                                                         1,
                                                     ),
                                                     location: Location {
-                                                        start: 242,
-                                                        end: 243,
+                                                        start: 267,
+                                                        end: 268,
                                                     },
                                                 },
                                             },
@@ -450,8 +479,8 @@ Program {
                             semicolon: Token {
                                 kind: Symbol,
                                 location: Location {
-                                    start: 243,
-                                    end: 244,
+                                    start: 268,
+                                    end: 269,
                                 },
                             },
                         },
@@ -459,8 +488,8 @@ Program {
                     closing_brace: Token {
                         kind: Symbol,
                         location: Location {
-                            start: 245,
-                            end: 246,
+                            start: 270,
+                            end: 271,
                         },
                     },
                 },

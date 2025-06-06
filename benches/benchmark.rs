@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use somni::{
-    compiler, lexer, parser,
+    codegen, ir, lexer, parser,
     vm::{EvalContext, EvalEvent},
 };
 
@@ -31,7 +31,16 @@ fn main() {
             panic!("Parsing failed");
         }
     };
-    let program = match compiler::compile(&source_code, &ast) {
+    let ir = match ir::Program::compile(&source_code, &ast) {
+        Ok(program) => program,
+        Err(e) => {
+            println!("Error compiling `{source_code}`");
+            println!("{:?}", e);
+            panic!("Compilation failed");
+        }
+    };
+    let strings = &ir.strings;
+    let program = match codegen::compile(&source_code, &ir) {
         Ok(program) => program,
         Err(e) => {
             println!("Error compiling `{source_code}`");
@@ -42,7 +51,7 @@ fn main() {
 
     c.bench_function("fib 20", |b| {
         b.iter(|| {
-            let mut context = EvalContext::new(&program);
+            let mut context = EvalContext::new(source_code, strings, &program);
 
             loop {
                 match context.run() {

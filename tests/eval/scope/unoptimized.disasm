@@ -1,24 +1,17 @@
-Function: main() -> bool
-  Code:
-    0:  push Int(10)
-    1:  push Address(Local(VariableIndex(0)))
-    2:  store
-    3:  push Bool(true)
-    4:  jump_forward_if 11 false
-    5:  push Int(20)
-    6:  push Address(Local(VariableIndex(1)))
-    7:  store
-    8:  push Address(Local(VariableIndex(1)))
-    9:  load
-    10: push Int(10)
-    11: add
-    12: push Address(Local(VariableIndex(1)))
-    13: store
-    14: push Void
-    15: pop
-    16: push Address(Local(VariableIndex(0)))
-    17: load
-    18: push Int(10)
-    19: equals
-    20: call_named external assert
-    21: return
+Function main(...) -> bool (stack: 9)
+  0000: load Local(2) = Int(10)
+  0001: copy Local(1) = Local(2)
+  0002: load Local(3) = Bool(true)
+  0003: if Local(3) == false jump to 9
+  0004: load Local(5) = Int(20)
+  0005: copy Local(4) = Local(5)
+  0006: load Local(6) = Int(10)
+  0007: Local(7) = Local(4) + Local(6)
+  0008: copy Local(4) = Local(7)
+  0009: load Local(4) = Int(10)
+  0010: Local(5) = Local(1) == Local(4)
+  0011: copy Local(8) = Local(5)
+  0012: call assert(arg0) with sp=Local(7)
+  0013: copy Local(4) = Local(7)
+  0014: copy Local(0) = Local(4)
+  0015: return

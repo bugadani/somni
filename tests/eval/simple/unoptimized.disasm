@@ -1,11 +1,10 @@
-Function: main() -> bool
-  Code:
-    0: push Int(2)
-    1: push Address(Local(VariableIndex(0)))
-    2: store
-    3: push Address(Local(VariableIndex(0)))
-    4: load
-    5: push Int(2)
-    6: equals
-    7: call_named external assert
-    8: return
+Function main(...) -> bool (stack: 7)
+  0000: load Local(2) = Int(2)
+  0001: copy Local(1) = Local(2)
+  0002: load Local(3) = Int(2)
+  0003: Local(4) = Local(1) == Local(3)
+  0004: copy Local(6) = Local(4)
+  0005: call assert(arg0) with sp=Local(5)
+  0006: copy Local(3) = Local(5)
+  0007: copy Local(0) = Local(3)
+  0008: return

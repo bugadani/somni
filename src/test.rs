@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use crate::{
-    compiler::{Value, compile},
+    codegen::{self, Value},
+    ir,
     lexer::tokenize,
     parser::parse,
     vm::{EvalContext, EvalEvent},
@@ -67,7 +68,7 @@ pub fn run_eval_tests(dir: impl AsRef<Path>) {
     }
 }
 
-pub fn run_eval_test(program: &crate::compiler::Program, path: impl AsRef<Path>, bless: bool) {
+pub fn run_eval_test(program: &codegen::Program, path: impl AsRef<Path>, bless: bool) {
     let stderr = path.as_ref().with_extension("stderr");
     let fail_expected = stderr.exists();
 
@@ -78,7 +79,11 @@ pub fn run_eval_test(program: &crate::compiler::Program, path: impl AsRef<Path>,
     //     .collect::<Vec<_>>();
 
     // TODO run expressions against the program
-    let mut context = EvalContext::new(&program);
+    let mut context = EvalContext::new(
+        &program.debug_info.source,
+        &program.debug_info.strings,
+        &program,
+    );
 
     loop {
         match context.run() {
@@ -98,7 +103,14 @@ pub fn run_eval_test(program: &crate::compiler::Program, path: impl AsRef<Path>,
                 }
                 break;
             }
-            EvalEvent::Complete(_) => break,
+            EvalEvent::Complete(value) => {
+                assert!(
+                    value == Value::Bool(true),
+                    "Test {} exited with an unexpected value: {value:?}",
+                    path.as_ref().display()
+                );
+                break;
+            }
             EvalEvent::UnknownFunctionCall => {
                 let (name, args) = context.unknown_function_info().expect("No function info");
                 if name == "assert" {
@@ -114,11 +126,7 @@ pub fn run_eval_test(program: &crate::compiler::Program, path: impl AsRef<Path>,
     }
 }
 
-#[track_caller]
-pub fn run_compile_test(
-    file: impl AsRef<Path>,
-    compile_test: bool,
-) -> Option<crate::compiler::Program> {
+pub fn run_compile_test(file: impl AsRef<Path>, compile_test: bool) -> Option<codegen::Program> {
     let bless = std::env::var("BLESS").as_deref() == Ok("1");
     let file = file.as_ref();
     let source = std::fs::read_to_string(file).unwrap();
@@ -158,9 +166,16 @@ pub fn run_compile_test(
     };
 
     if compile_test {
-        match compile(&source, &ast) {
+        let program = ir::Program::compile(&source, &ast).unwrap();
+
+        write_out_file(&out_path.join("ir.disasm"), program.print());
+
+        match codegen::compile(&source, &program) {
             Ok(p) => {
-                write_out_file(&out_path.join("unoptimized.disasm"), p.disasm());
+                write_out_file(
+                    &out_path.join("unoptimized.disasm"),
+                    p.disasm(&p.debug_info),
+                );
                 return Some(p);
             }
             Err(err) if fail_expected => {

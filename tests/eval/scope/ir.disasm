@@ -1,0 +1,51 @@
+Globals:
+
+Functions:
+Function: main
+block 0
+  var return_value: Some(Bool) = None
+  var x: Some(Void) = None
+  var temp2: None = Some(Int(10))
+  x = temp2
+  var temp3: None = Some(Bool(true))
+  if temp3 -> block 3 else block 2
+
+block 1
+  -> return
+
+block 2
+  var temp9: None = Some(Int(10))
+  var temp10: None = None
+  temp10 = x == temp9
+  free(temp9)
+  var temp11: None = None
+  temp11 = call assert(temp10)
+  return_value = temp11
+  free(temp11)
+  free(temp10)
+  free(temp3)
+  free(temp2)
+  free(x)
+  free(return_value)
+  -> block 4
+
+block 3
+  var x: Some(Void) = None
+  var temp5: None = Some(Int(20))
+  x = temp5
+  var temp6: None = Some(Int(10))
+  var temp7: None = None
+  temp7 = x + temp6
+  free(temp6)
+  x = temp7
+  free(temp7)
+  var temp8: None = None
+  free(temp5)
+  free(x)
+  -> block 2
+
+block 4
+  -> block 1
+
+block 5
+  -> block 1

@@ -1,0 +1,115 @@
+Globals:
+
+Functions:
+Function: main
+block 0
+  var return_value: Some(Bool) = None
+  var n: Some(Void) = None
+  var temp2: None = Some(Int(7))
+  n = temp2
+  -> block 3
+
+block 1
+  -> return
+
+block 2
+  -> block 1
+
+block 3
+  -> block 5
+
+block 4
+  var temp10: None = Some(Int(0))
+  var temp11: None = None
+  temp11 = n > temp10
+  free(temp10)
+  if temp11 -> block 16 else block 15
+
+block 5
+  var temp3: None = Some(Int(4))
+  var temp4: None = None
+  temp4 = n > temp3
+  free(temp3)
+  if temp4 -> block 7 else block 12
+
+block 6
+  free(temp4)
+  -> block 5
+
+block 7
+  var temp5: None = Some(Int(6))
+  var temp6: None = None
+  temp6 = n == temp5
+  free(temp5)
+  if temp6 -> block 9 else block 8
+
+block 8
+  var temp7: None = Some(Int(1))
+  var temp8: None = None
+  temp8 = n - temp7
+  free(temp7)
+  n = temp8
+  free(temp8)
+  var temp9: None = None
+  free(temp6)
+  -> block 6
+
+block 9
+  free(temp6)
+  free(temp4)
+  -> block 10
+
+block 10
+  -> block 4
+
+block 11
+  -> block 8
+
+block 12
+  free(temp4)
+  -> block 13
+
+block 13
+  -> block 4
+
+block 14
+  -> block 6
+
+block 15
+  var temp15: None = Some(Int(0))
+  var temp16: None = None
+  temp16 = n == temp15
+  free(temp15)
+  var temp17: None = None
+  temp17 = call assert(temp16)
+  return_value = temp17
+  free(temp17)
+  free(temp16)
+  free(temp11)
+  free(temp2)
+  free(n)
+  free(return_value)
+  -> block 19
+
+block 16
+  var temp12: None = Some(Int(1))
+  var temp13: None = None
+  temp13 = n - temp12
+  free(temp12)
+  n = temp13
+  free(temp13)
+  var temp14: None = None
+  free(temp11)
+  -> block 17
+
+block 17
+  -> block 5
+
+block 18
+  -> block 15
+
+block 19
+  -> block 1
+
+block 20
+  -> block 3

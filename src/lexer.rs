@@ -8,6 +8,12 @@ pub struct Location {
 }
 
 impl Location {
+    pub const fn dummy() -> Self {
+        Location { start: 0, end: 0 }
+    }
+}
+
+impl Location {
     pub fn extract(self, source: &str) -> &str {
         &source[self.start..self.end]
     }

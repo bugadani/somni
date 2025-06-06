@@ -5,6 +5,7 @@ fn main() -> bool {
     false && increment();
     true && increment();
 
+    print(do_not_touch);
     return assert(do_not_touch == 2);
 }
 

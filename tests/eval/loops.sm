@@ -1,0 +1,19 @@
+fn main() -> bool {
+    var n = 7;
+
+    loop {
+        while n > 4 {
+            if n == 6 {
+                break;
+            }
+            n = n - 1;
+        }
+
+        if n > 0 {
+            n = n - 1;
+            continue;
+        }
+
+        return assert(n == 0);
+    }
+}

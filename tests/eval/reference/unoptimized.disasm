@@ -1,25 +1,20 @@
-Function: take_by_reference(address) -> void
-  Code:
-    0: push Int(2)
-    1: dereference Local(VariableIndex(0))
-    2: multiply
-    3: push Address(Local(VariableIndex(0)))
-    4: load
-    5: store
-    6: push Void
-    7: pop
-    8: return
-Function: main() -> bool
-  Code:
-    0:  push Int(5)
-    1:  push Address(Local(VariableIndex(0)))
-    2:  store
-    3:  address_of Local(VariableIndex(0))
-    4:  call take_by_reference(address) -> void
-    5:  pop
-    6:  push Address(Local(VariableIndex(0)))
-    7:  load
-    8:  push Int(10)
-    9:  equals
-    10: call_named external assert
-    11: return
+Function take_by_reference(...) -> void (stack: 5)
+  0000: load Local(2) = Int(2)
+  0001: Local(3) = *Local(1)
+  0002: Local(4) = Local(2) * Local(3)
+  0003: copy *Local(1) = Local(4)
+  0004: return
+Function main(...) -> bool (stack: 9)
+  0005: load Local(2) = Int(5)
+  0006: copy Local(1) = Local(2)
+  0007: Local(3) = &Local(1)
+  0008: copy Local(6) = Local(3)
+  0009: call take_by_reference(..) with sp=Local(5)
+  0010: copy Local(4) = Local(5)
+  0011: load Local(5) = Int(10)
+  0012: Local(6) = Local(1) == Local(5)
+  0013: copy Local(8) = Local(6)
+  0014: call assert(arg0) with sp=Local(7)
+  0015: copy Local(5) = Local(7)
+  0016: copy Local(0) = Local(5)
+  0017: return

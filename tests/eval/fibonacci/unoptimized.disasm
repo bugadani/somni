@@ -1,30 +1,31 @@
-Function: fib(int) -> int
-  Code:
-    0:  push Address(Local(VariableIndex(0)))
-    1:  load
-    2:  push Int(1)
-    3:  less than or equal
-    4:  jump_forward_if 3 false
-    5:  push Address(Local(VariableIndex(0)))
-    6:  load
-    7:  return
-    8:  push Address(Local(VariableIndex(0)))
-    9:  load
-    10: push Int(1)
-    11: subtract
-    12: call fib(int) -> int
-    13: push Address(Local(VariableIndex(0)))
-    14: load
-    15: push Int(2)
-    16: subtract
-    17: call fib(int) -> int
-    18: add
-    19: return
-Function: main() -> bool
-  Code:
-    0: push Int(20)
-    1: call fib(int) -> int
-    2: push Int(6765)
-    3: equals
-    4: call_named external assert
-    5: return
+Function fib(...) -> int (stack: 9)
+  0000: load Local(2) = Int(1)
+  0001: Local(3) = Local(1) <= Local(2)
+  0002: if Local(3) == false jump to 5
+  0003: copy Local(0) = Local(1)
+  0004: return
+  0005: load Local(2) = Int(1)
+  0006: Local(4) = Local(1) - Local(2)
+  0007: copy Local(6) = Local(4)
+  0008: call fib(..) with sp=Local(5)
+  0009: copy Local(2) = Local(5)
+  0010: load Local(5) = Int(2)
+  0011: Local(6) = Local(1) - Local(5)
+  0012: copy Local(8) = Local(6)
+  0013: call fib(..) with sp=Local(7)
+  0014: copy Local(5) = Local(7)
+  0015: Local(7) = Local(2) + Local(5)
+  0016: copy Local(0) = Local(7)
+  0017: jump to 4
+Function main(...) -> bool (stack: 7)
+  0018: load Local(1) = Int(20)
+  0019: copy Local(4) = Local(1)
+  0020: call fib(..) with sp=Local(3)
+  0021: copy Local(2) = Local(3)
+  0022: load Local(3) = Int(6765)
+  0023: Local(4) = Local(2) == Local(3)
+  0024: copy Local(6) = Local(4)
+  0025: call assert(arg0) with sp=Local(5)
+  0026: copy Local(2) = Local(5)
+  0027: copy Local(0) = Local(2)
+  0028: return

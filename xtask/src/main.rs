@@ -30,6 +30,7 @@ fn main() {
             let mut args = vec!["test", "--all-features"];
             if filter.is_some() {
                 args.push("--");
+                args.push("--test-threads=1");
                 args.push("--nocapture");
             }
 

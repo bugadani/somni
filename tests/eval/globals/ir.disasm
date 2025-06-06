@@ -1,0 +1,47 @@
+Globals:
+  n = Int(10)
+  M = Int(32)
+
+Functions:
+Function: double
+block 0
+  var return_value: Some(Void) = None
+  var temp1: None = Some(Int(2))
+  var temp2: None = None
+  temp2 = n * temp1
+  free(temp1)
+  n = temp2
+  free(temp2)
+  var temp3: None = None
+  -> block 1
+
+block 1
+  -> return
+Function: main
+block 0
+  var return_value: Some(Bool) = None
+  var temp1: None = None
+  temp1 = call double()
+  var temp2: None = None
+  temp2 = n + M
+  var temp3: None = Some(Int(52))
+  var temp4: None = None
+  temp4 = temp2 == temp3
+  free(temp2)
+  free(temp3)
+  var temp5: None = None
+  temp5 = call assert(temp4)
+  return_value = temp5
+  free(temp5)
+  free(temp4)
+  free(return_value)
+  -> block 2
+
+block 1
+  -> return
+
+block 2
+  -> block 1
+
+block 3
+  -> block 1
