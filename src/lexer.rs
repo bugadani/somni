@@ -69,8 +69,7 @@ impl CharProvider<'_> {
         let start = self.chars.offset();
         self.chars
             .clone()
-            .skip(n)
-            .next()
+            .nth(n)
             .map(|(idx, _)| &self.chars.as_str()[..idx - start])
     }
 

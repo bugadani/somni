@@ -621,7 +621,7 @@ impl Literal {
         })
     }
 
-    fn parse_integer_literal<'s>(
+    fn parse_integer_literal(
         token_source: &str,
         radix: u32,
     ) -> Result<LiteralValue, ParseIntError> {
@@ -631,10 +631,8 @@ impl Literal {
 
 fn unescape(s: &str) -> Result<String, usize> {
     let mut result = String::new();
-    let mut chars = s.char_indices().peekable();
-
     let mut escaped = false;
-    while let Some((i, c)) = chars.next() {
+    for (i, c) in s.char_indices().peekable() {
         if escaped {
             match c {
                 'n' => result.push('\n'),
@@ -738,7 +736,7 @@ impl Expression {
         match token.kind {
             TokenKind::Identifier => Self::parse_call(stream),
             TokenKind::Symbol if stream.source(token.location) == "(" => {
-                stream.take_match(token.kind.clone(), &[]).unwrap();
+                stream.take_match(token.kind, &[]).unwrap();
                 let expr = Self::parse(stream)?;
                 stream.expect_match(TokenKind::Symbol, &[")"])?;
                 Ok(expr)

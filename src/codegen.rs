@@ -84,10 +84,7 @@ impl Instruction {
                     .map(|i| format!("arg{i}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                format!(
-                    "call {fn_name}({}) with sp={stack_frame:?}",
-                    arg_placeholders
-                )
+                format!("call {fn_name}({arg_placeholders}) with sp={stack_frame:?}")
             }
             Instruction::Negate(dst, src) => format!("{dst:?} = -{src:?}"),
             Instruction::Not(dst, src) => format!("{dst:?} = !{src:?}"),
