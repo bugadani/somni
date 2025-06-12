@@ -183,6 +183,49 @@ pub enum Expression {
         arguments: Box<[Expression]>,
     },
 }
+impl Expression {
+    pub fn location(&self) -> Location {
+        match self {
+            Expression::Variable { variable } => variable.location,
+            Expression::Literal { value } => value.location,
+            Expression::FunctionCall { name, arguments } => {
+                let mut location = name.location;
+                for arg in arguments {
+                    location.start = location.start.min(arg.location().start);
+                    location.end = location.end.max(arg.location().end);
+                }
+                location
+            }
+            Expression::UnaryOperator { name, operand: rhs } => {
+                let mut location = name.location;
+
+                location.start = location.start.min(rhs.location().start);
+                location.end = location.end.max(rhs.location().end);
+
+                location
+            }
+            Expression::BinaryOperator {
+                name,
+                operands: arguments,
+            } => {
+                let mut location = name.location;
+                for arg in arguments.iter() {
+                    location.start = location.start.min(arg.location().start);
+                    location.end = location.end.max(arg.location().end);
+                }
+                location
+            }
+        }
+    }
+
+    pub fn as_variable(&self) -> Option<Token> {
+        if let Expression::Variable { variable } = self {
+            Some(*variable)
+        } else {
+            None
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Literal {
