@@ -48,7 +48,7 @@ Program {
                                 },
                             },
                         ),
-                        arg_type: Type {
+                        arg_type: TypeHint {
                             type_name: Token {
                                 kind: Identifier,
                                 location: Location {
@@ -205,7 +205,7 @@ Program {
                                 end: 64,
                             },
                         },
-                        return_type: Type {
+                        return_type: TypeHint {
                             type_name: Token {
                                 kind: Identifier,
                                 location: Location {
@@ -227,13 +227,14 @@ Program {
                     statements: [
                         VariableDefinition(
                             VariableDefinition {
-                                var_token: Token {
+                                decl_token: Token {
                                     kind: Identifier,
                                     location: Location {
                                         start: 76,
                                         end: 79,
                                     },
                                 },
+                                is_mutable: true,
                                 identifier: Token {
                                     kind: Identifier,
                                     location: Location {

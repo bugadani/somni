@@ -2,13 +2,14 @@ Program {
     items: [
         GlobalVariable(
             GlobalVariable {
-                var_token: Token {
+                decl_token: Token {
                     kind: Identifier,
                     location: Location {
                         start: 0,
                         end: 3,
                     },
                 },
+                is_mutable: true,
                 identifier: Token {
                     kind: Identifier,
                     location: Location {
@@ -23,7 +24,7 @@ Program {
                         end: 17,
                     },
                 },
-                type_token: Type {
+                type_token: TypeHint {
                     type_name: Token {
                         kind: Identifier,
                         location: Location {
@@ -99,7 +100,7 @@ Program {
                                 end: 39,
                             },
                         },
-                        return_type: Type {
+                        return_type: TypeHint {
                             type_name: Token {
                                 kind: Identifier,
                                 location: Location {

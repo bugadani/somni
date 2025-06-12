@@ -46,14 +46,14 @@
 use std::num::ParseIntError;
 
 use crate::{
+    ast::{
+        Body, Break, Continue, Else, EmptyReturn, Expression, Function, FunctionArgument,
+        GlobalVariable, If, Item, Literal, LiteralValue, Loop, Program, ReturnDecl,
+        ReturnWithValue, Statement, TypeHint, VariableDefinition, While,
+    },
     error::CompileError,
     lexer::{Location, Token, TokenKind},
 };
-
-#[derive(Debug)]
-pub struct Program {
-    pub items: Vec<Item>,
-}
 
 impl Program {
     fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
@@ -67,32 +67,28 @@ impl Program {
     }
 }
 
-#[derive(Debug)]
-pub enum Item {
-    Function(Function),
-    GlobalVariable(GlobalVariable),
-    Constant(Constant),
+impl Item {
+    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
+        if let Some(global_var) = GlobalVariable::try_parse(stream)? {
+            return Ok(Item::GlobalVariable(global_var));
+        }
+        if let Some(function) = Function::try_parse(stream)? {
+            return Ok(Item::Function(function));
+        }
+
+        Err(stream.error("Expected constant, global variable or function definition"))
+    }
 }
 
-#[derive(Debug)]
-pub struct GlobalVariable {
-    pub var_token: Token,
-    pub identifier: Token,
-    pub colon: Token,
-    pub type_token: Type,
-    pub equals_token: Token,
-    pub initializer: Expression,
-    pub semicolon: Token,
-}
 impl GlobalVariable {
     fn try_parse<'s>(stream: &mut TokenStream<'s>) -> Result<Option<Self>, CompileError<'s>> {
-        let Some(var_token) = stream.take_match(TokenKind::Identifier, &["var"]) else {
+        let Some(decl_token) = stream.take_match(TokenKind::Identifier, &["var", "const"]) else {
             return Ok(None);
         };
 
         let identifier = stream.expect_match(TokenKind::Identifier, &[])?;
         let colon = stream.expect_match(TokenKind::Symbol, &[":"])?;
-        let type_token = Type::parse(stream)?;
+        let type_token = TypeHint::parse(stream)?;
         let equals_token = stream.expect_match(TokenKind::Symbol, &["="])?;
         let initializer = Expression::Literal {
             value: Literal::parse(stream)?,
@@ -100,7 +96,8 @@ impl GlobalVariable {
         let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
 
         Ok(Some(GlobalVariable {
-            var_token,
+            decl_token,
+            is_mutable: decl_token.source(stream.source) == "var",
             identifier,
             colon,
             type_token,
@@ -109,73 +106,8 @@ impl GlobalVariable {
             semicolon,
         }))
     }
-
-    pub fn location(&self) -> Location {
-        let start = self.var_token.location.start;
-        let end = self.semicolon.location.end;
-        Location { start, end }
-    }
 }
 
-#[derive(Debug)]
-pub struct Constant {
-    pub const_token: Token,
-    pub identifier: Token,
-    pub colon: Token,
-    pub type_token: Type,
-    pub equals_token: Token,
-    pub value: Expression,
-    pub semicolon: Token,
-}
-impl Constant {
-    fn try_parse<'s>(stream: &mut TokenStream<'s>) -> Result<Option<Self>, CompileError<'s>> {
-        let Some(const_token) = stream.take_match(TokenKind::Identifier, &["const"]) else {
-            return Ok(None);
-        };
-
-        let identifier = stream.expect_match(TokenKind::Identifier, &[])?;
-        let colon = stream.expect_match(TokenKind::Symbol, &[":"])?;
-        let type_token = Type::parse(stream)?;
-        let equals_token = stream.expect_match(TokenKind::Symbol, &["="])?;
-        let value = Expression::Literal {
-            value: Literal::parse(stream)?,
-        };
-        let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
-
-        Ok(Some(Constant {
-            const_token,
-            identifier,
-            colon,
-            type_token,
-            equals_token,
-            value,
-            semicolon,
-        }))
-    }
-
-    pub fn location(&self) -> Location {
-        let start = self.const_token.location.start;
-        let end = self.semicolon.location.end;
-        Location { start, end }
-    }
-}
-
-#[derive(Debug)]
-pub struct ReturnDecl {
-    pub return_token: Token,
-    pub return_type: Type,
-}
-
-#[derive(Debug)]
-pub struct Function {
-    pub fn_token: Token,
-    pub name: Token,
-    pub opening_paren: Token,
-    pub arguments: Vec<FunctionArgument>,
-    pub closing_paren: Token,
-    pub return_decl: Option<ReturnDecl>,
-    pub body: Body,
-}
 impl Function {
     fn try_parse<'s>(stream: &mut TokenStream<'s>) -> Result<Option<Self>, CompileError<'s>> {
         let Some(fn_token) = stream.take_match(TokenKind::Identifier, &["fn"]) else {
@@ -189,7 +121,7 @@ impl Function {
         while let Some(arg_name) = stream.take_match(TokenKind::Identifier, &[]) {
             let colon = stream.expect_match(TokenKind::Symbol, &[":"])?;
             let reference_token = stream.take_match(TokenKind::Symbol, &["&"]);
-            let type_token = Type::parse(stream)?;
+            let type_token = TypeHint::parse(stream)?;
 
             arguments.push(FunctionArgument {
                 name: arg_name,
@@ -209,7 +141,7 @@ impl Function {
         {
             Some(ReturnDecl {
                 return_token,
-                return_type: Type::parse(stream)?,
+                return_type: TypeHint::parse(stream)?,
             })
         } else {
             None
@@ -227,13 +159,6 @@ impl Function {
             body,
         }))
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct Body {
-    pub opening_brace: Token,
-    pub statements: Vec<Statement>,
-    pub closing_brace: Token,
 }
 
 impl Body {
@@ -255,157 +180,12 @@ impl Body {
     }
 }
 
-#[derive(Debug)]
-pub struct FunctionArgument {
-    pub name: Token,
-    pub colon: Token,
-    pub reference_token: Option<Token>,
-    pub arg_type: Type,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Type {
-    pub type_name: Token,
-}
-impl Type {
+impl TypeHint {
     fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
         let type_name = stream.expect_match(TokenKind::Identifier, &[])?;
 
-        Ok(Type { type_name })
+        Ok(TypeHint { type_name })
     }
-}
-
-impl Item {
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
-        if let Some(constant) = Constant::try_parse(stream)? {
-            return Ok(Item::Constant(constant));
-        }
-        if let Some(global_var) = GlobalVariable::try_parse(stream)? {
-            return Ok(Item::GlobalVariable(global_var));
-        }
-        if let Some(function) = Function::try_parse(stream)? {
-            return Ok(Item::Function(function));
-        }
-
-        Err(stream.error("Expected constant, global variable or function definition"))
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ConstantDefinition {
-    pub const_token: Token,
-    pub identifier: Token,
-    pub type_token: Option<Type>,
-    pub equals_token: Token,
-    pub initializer: Expression,
-    pub semicolon: Token,
-}
-impl ConstantDefinition {
-    pub fn location(&self) -> Location {
-        let start = self.const_token.location.start;
-        let end = self.semicolon.location.end;
-        Location { start, end }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct VariableDefinition {
-    pub var_token: Token,
-    pub identifier: Token,
-    pub type_token: Option<Type>,
-    pub equals_token: Token,
-    pub initializer: Expression,
-    pub semicolon: Token,
-}
-impl VariableDefinition {
-    pub fn location(&self) -> Location {
-        let start = self.var_token.location.start;
-        let end = self.semicolon.location.end;
-        Location { start, end }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ReturnWithValue {
-    pub return_token: Token,
-    pub expression: Expression,
-    pub semicolon: Token,
-}
-impl ReturnWithValue {
-    pub fn location(&self) -> Location {
-        let start = self.return_token.location.start;
-        let end = self.semicolon.location.end;
-        Location { start, end }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct EmptyReturn {
-    pub return_token: Token,
-    pub semicolon: Token,
-}
-impl EmptyReturn {
-    pub fn location(&self) -> Location {
-        let start = self.return_token.location.start;
-        let end = self.semicolon.location.end;
-        Location { start, end }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct If {
-    pub if_token: Token,
-    pub condition: Expression,
-    pub body: Body,
-    pub else_branch: Option<Else>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Loop {
-    pub loop_token: Token,
-    pub body: Body,
-}
-
-#[derive(Debug, Clone)]
-pub struct While {
-    pub while_token: Token,
-    pub condition: Expression,
-    pub body: Body,
-}
-
-#[derive(Debug, Clone)]
-pub struct Break {
-    pub break_token: Token,
-    pub semicolon: Token,
-}
-
-#[derive(Debug, Clone)]
-pub struct Continue {
-    pub continue_token: Token,
-    pub semicolon: Token,
-}
-
-#[derive(Debug, Clone)]
-pub enum Statement {
-    VariableDefinition(VariableDefinition),
-    ConstantDefinition(ConstantDefinition),
-    Return(ReturnWithValue),
-    EmptyReturn(EmptyReturn),
-    If(If),
-    Loop(Loop),
-    While(While),
-    Break(Break),
-    Continue(Continue),
-    Expression {
-        expression: Expression,
-        semicolon: Token,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub struct Else {
-    pub else_token: Token,
-    pub else_body: Body,
 }
 
 impl Statement {
@@ -431,11 +211,11 @@ impl Statement {
             }));
         }
 
-        if let Some(var_token) = stream.take_match(TokenKind::Identifier, &["var"]) {
+        if let Some(decl_token) = stream.take_match(TokenKind::Identifier, &["var", "const"]) {
             let identifier = stream.expect_match(TokenKind::Identifier, &[])?;
 
             let type_token = if stream.take_match(TokenKind::Symbol, &[":"]).is_some() {
-                Some(Type::parse(stream)?)
+                Some(TypeHint::parse(stream)?)
             } else {
                 None
             };
@@ -445,30 +225,8 @@ impl Statement {
             let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
 
             return Ok(Statement::VariableDefinition(VariableDefinition {
-                var_token,
-                identifier,
-                type_token,
-                equals_token,
-                initializer: expression,
-                semicolon,
-            }));
-        }
-
-        if let Some(const_token) = stream.take_match(TokenKind::Identifier, &["const"]) {
-            let identifier = stream.expect_match(TokenKind::Identifier, &[])?;
-
-            let type_token = if stream.take_match(TokenKind::Symbol, &[":"]).is_some() {
-                Some(Type::parse(stream)?)
-            } else {
-                None
-            };
-
-            let equals_token = stream.expect_match(TokenKind::Symbol, &["="])?;
-            let expression = Expression::parse(stream)?;
-            let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
-
-            return Ok(Statement::ConstantDefinition(ConstantDefinition {
-                const_token,
+                decl_token,
+                is_mutable: decl_token.source(stream.source) == "var",
                 identifier,
                 type_token,
                 equals_token,
@@ -538,42 +296,6 @@ impl Statement {
             semicolon,
         })
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum Expression {
-    Variable {
-        variable: Token,
-    },
-    Literal {
-        value: Literal,
-    },
-    UnaryOperator {
-        name: Token,
-        operand: Box<Expression>,
-    },
-    BinaryOperator {
-        name: Token,
-        operands: Box<[Expression; 2]>,
-    },
-    FunctionCall {
-        name: Token,
-        arguments: Box<[Expression]>,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub struct Literal {
-    pub value: LiteralValue,
-    pub location: Location,
-}
-
-#[derive(Debug, Clone)]
-pub enum LiteralValue {
-    Integer(u64),
-    Float(f64),
-    String(String),
-    Boolean(bool),
 }
 
 impl Literal {

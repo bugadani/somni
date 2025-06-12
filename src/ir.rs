@@ -6,9 +6,9 @@ use std::fmt::{Debug, Display, Write as _};
 use indexmap::IndexMap;
 
 use crate::{
+    ast,
     error::CompileError,
     lexer::{Location, Token},
-    parser,
     string_interner::{StringIndex, StringInterner, Strings},
     variable_tracker::{LocalVariableIndex, RestorePoint, ScopeData, VariableTracker},
 };
@@ -286,10 +286,7 @@ impl Program {
         output
     }
 
-    pub fn compile<'s>(
-        source: &'s str,
-        ast: &parser::Program,
-    ) -> Result<Program, CompileError<'s>> {
+    pub fn compile<'s>(source: &'s str, ast: &ast::Program) -> Result<Program, CompileError<'s>> {
         let mut strings = StringInterner::new();
         let mut functions = IndexMap::new();
         let mut globals = IndexMap::new();
@@ -297,7 +294,7 @@ impl Program {
         // Declare items first
         for item in &ast.items {
             match item {
-                parser::Item::GlobalVariable(global_variable) => {
+                ast::Item::GlobalVariable(global_variable) => {
                     let name = global_variable.identifier.source(source);
                     let name_idx = strings.intern(name);
                     if globals.contains_key(&name_idx) {
@@ -309,19 +306,7 @@ impl Program {
                     }
                     globals.insert(name_idx, GlobalVariableInfo::DUMMY);
                 }
-                parser::Item::Constant(constant) => {
-                    let name = constant.identifier.source(source);
-                    let name_idx = strings.intern(name);
-                    if globals.contains_key(&name_idx) {
-                        return Err(CompileError {
-                            source,
-                            location: constant.identifier.location,
-                            error: format!("Global variable `{name}` is already defined"),
-                        });
-                    }
-                    globals.insert(name_idx, GlobalVariableInfo::DUMMY);
-                }
-                parser::Item::Function(function) => {
+                ast::Item::Function(function) => {
                     let name = function.name.source(source);
                     let name_idx = strings.intern(name);
                     if functions.contains_key(&name_idx) {
@@ -338,34 +323,17 @@ impl Program {
 
         for item in &ast.items {
             match item {
-                parser::Item::GlobalVariable(global_variable) => {
+                ast::Item::GlobalVariable(global_variable) => {
                     let name = global_variable.identifier.source(source);
                     let name_idx = strings.intern(name);
-                    let initializer = Self::compile_initializer(
+                    let initial_value = Self::compile_initializer(
                         source,
                         &global_variable.initializer,
                         &mut strings,
                     )?;
-                    globals.insert(
-                        name_idx,
-                        GlobalVariableInfo {
-                            initial_value: initializer,
-                        },
-                    );
+                    globals.insert(name_idx, GlobalVariableInfo { initial_value });
                 }
-                parser::Item::Constant(constant) => {
-                    let name = constant.identifier.source(source);
-                    let name_idx = strings.intern(name);
-                    let initializer =
-                        Self::compile_initializer(source, &constant.value, &mut strings)?;
-                    globals.insert(
-                        name_idx,
-                        GlobalVariableInfo {
-                            initial_value: initializer,
-                        },
-                    );
-                }
-                parser::Item::Function(function) => {
+                ast::Item::Function(function) => {
                     let func = Function::compile(source, function, &mut strings, &globals)?;
                     functions.insert(func.name, func);
                 }
@@ -381,16 +349,16 @@ impl Program {
 
     fn compile_initializer<'s>(
         source: &'s str,
-        value: &parser::Expression,
+        value: &ast::Expression,
         strings: &mut StringInterner,
     ) -> Result<GlobalInitializer, CompileError<'s>> {
         match value {
-            parser::Expression::Literal { value } => {
+            ast::Expression::Literal { value } => {
                 let literal_type = match value.value {
-                    parser::LiteralValue::Integer(_) => Type::Int,
-                    parser::LiteralValue::Float(_) => Type::Float,
-                    parser::LiteralValue::Boolean(_) => Type::Bool,
-                    parser::LiteralValue::String(_) => Type::String,
+                    ast::LiteralValue::Integer(_) => Type::Int,
+                    ast::LiteralValue::Float(_) => Type::Float,
+                    ast::LiteralValue::Boolean(_) => Type::Bool,
+                    ast::LiteralValue::String(_) => Type::String,
                 };
                 let literal_value =
                     Self::compile_literal_value(source, strings, literal_type, value)?;
@@ -411,13 +379,13 @@ impl Program {
         source: &'s str,
         strings: &mut StringInterner,
         literal_type: Type,
-        literal: &parser::Literal,
+        literal: &ast::Literal,
     ) -> Result<Value, CompileError<'s>> {
         let value = match (literal_type, &literal.value) {
-            (Type::Int, parser::LiteralValue::Integer(value)) => Value::Int(*value),
-            (Type::Float, parser::LiteralValue::Float(value)) => Value::Float(*value),
-            (Type::Bool, parser::LiteralValue::Boolean(value)) => Value::Bool(*value),
-            (Type::String, parser::LiteralValue::String(value)) => {
+            (Type::Int, ast::LiteralValue::Integer(value)) => Value::Int(*value),
+            (Type::Float, ast::LiteralValue::Float(value)) => Value::Float(*value),
+            (Type::Bool, ast::LiteralValue::Boolean(value)) => Value::Bool(*value),
+            (Type::String, ast::LiteralValue::String(value)) => {
                 let string_index = strings.intern(value);
                 Value::String(string_index)
             }
@@ -435,10 +403,10 @@ impl Program {
                     error: format!(
                         "Expected {literal_type}, found {} literal",
                         match literal.value {
-                            parser::LiteralValue::Integer(_) => "integer",
-                            parser::LiteralValue::Float(_) => "float",
-                            parser::LiteralValue::Boolean(_) => "boolean",
-                            parser::LiteralValue::String(_) => "string",
+                            ast::LiteralValue::Integer(_) => "integer",
+                            ast::LiteralValue::Float(_) => "float",
+                            ast::LiteralValue::Boolean(_) => "boolean",
+                            ast::LiteralValue::String(_) => "string",
                         }
                     ),
                 });
@@ -506,7 +474,7 @@ impl Function {
 
     pub fn compile<'s>(
         source: &'s str,
-        func: &parser::Function,
+        func: &ast::Function,
         strings: &mut StringInterner,
         globals: &IndexMap<StringIndex, GlobalVariableInfo>,
     ) -> Result<Function, CompileError<'s>> {
@@ -699,30 +667,23 @@ impl<'s> FunctionCompiler<'s, '_> {
         VariableIndex::Temporary(temp)
     }
 
-    fn compile_statement(&mut self, statement: &parser::Statement) -> Result<(), CompileError<'s>> {
+    fn compile_statement(&mut self, statement: &ast::Statement) -> Result<(), CompileError<'s>> {
         match statement {
-            parser::Statement::VariableDefinition(variable_def) => {
+            ast::Statement::VariableDefinition(variable_def) => {
                 self.compile_variable_definition(variable_def)
             }
-            parser::Statement::ConstantDefinition(constant_def) => {
-                self.compile_constant_definition(constant_def)
-            }
-            parser::Statement::Return(ret_with_value) => {
+            ast::Statement::Return(ret_with_value) => {
                 self.compile_return_with_value(ret_with_value)
             }
-            parser::Statement::EmptyReturn(ret) => self.compile_empty_return(ret),
-            parser::Statement::If(if_statement) => self.compile_if_statement(if_statement),
-            parser::Statement::Loop(loop_statement) => self.compile_loop_statement(loop_statement),
-            parser::Statement::While(while_statement) => {
-                self.compile_while_statement(while_statement)
-            }
-            parser::Statement::Break(break_statement) => {
-                self.compile_break_statement(break_statement)
-            }
-            parser::Statement::Continue(continue_statement) => {
+            ast::Statement::EmptyReturn(ret) => self.compile_empty_return(ret),
+            ast::Statement::If(if_statement) => self.compile_if_statement(if_statement),
+            ast::Statement::Loop(loop_statement) => self.compile_loop_statement(loop_statement),
+            ast::Statement::While(while_statement) => self.compile_while_statement(while_statement),
+            ast::Statement::Break(break_statement) => self.compile_break_statement(break_statement),
+            ast::Statement::Continue(continue_statement) => {
                 self.compile_continue_statement(continue_statement)
             }
-            parser::Statement::Expression {
+            ast::Statement::Expression {
                 expression,
                 semicolon,
             } => self.compile_expression_statement(expression, semicolon),
@@ -731,35 +692,13 @@ impl<'s> FunctionCompiler<'s, '_> {
 
     fn compile_variable_definition(
         &mut self,
-        variable_def: &parser::VariableDefinition,
+        variable_def: &ast::VariableDefinition,
     ) -> Result<(), CompileError<'s>> {
-        self.compile_variable(
-            variable_def.identifier,
-            variable_def.type_token.as_ref(),
-            &variable_def.initializer,
-            true,
-        )
-    }
+        let ident = variable_def.identifier;
+        let ty = variable_def.type_token.as_ref();
+        let initializer = &variable_def.initializer;
+        let _is_mutable = variable_def.is_mutable;
 
-    fn compile_constant_definition(
-        &mut self,
-        constant_def: &parser::ConstantDefinition,
-    ) -> Result<(), CompileError<'s>> {
-        self.compile_variable(
-            constant_def.identifier,
-            constant_def.type_token.as_ref(),
-            &constant_def.initializer,
-            false,
-        )
-    }
-
-    fn compile_variable(
-        &mut self,
-        ident: Token,
-        ty: Option<&parser::Type>,
-        initializer: &parser::Expression,
-        _is_mutable: bool,
-    ) -> Result<(), CompileError<'s>> {
         let name = ident.source(self.source);
         let var_ty = if let Some(type_token) = ty {
             self.compile_type(type_token)?
@@ -778,7 +717,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         Ok(())
     }
 
-    fn compile_if_statement(&mut self, if_statement: &parser::If) -> Result<(), CompileError<'s>> {
+    fn compile_if_statement(&mut self, if_statement: &ast::If) -> Result<(), CompileError<'s>> {
         // Generate instructions for the condition, allocate then/else blocks and generate conditional jumps
         let condition = self.compile_expression(&if_statement.condition)?;
 
@@ -827,7 +766,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         Ok(())
     }
 
-    fn compile_body(&mut self, body: &parser::Body) -> Result<(), CompileError<'s>> {
+    fn compile_body(&mut self, body: &ast::Body) -> Result<(), CompileError<'s>> {
         let restore_point = self.variables.create_restore_point();
 
         for statement in body.statements.iter() {
@@ -841,7 +780,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
     fn compile_loop_statement(
         &mut self,
-        loop_statement: &parser::Loop,
+        loop_statement: &ast::Loop,
     ) -> Result<(), CompileError<'s>> {
         let next_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
 
@@ -873,23 +812,23 @@ impl<'s> FunctionCompiler<'s, '_> {
 
     fn compile_while_statement(
         &mut self,
-        while_statement: &parser::While,
+        while_statement: &ast::While,
     ) -> Result<(), CompileError<'s>> {
-        let desugared = parser::Loop {
+        let desugared = ast::Loop {
             loop_token: while_statement.while_token,
-            body: parser::Body {
+            body: ast::Body {
                 opening_brace: while_statement.body.opening_brace,
                 closing_brace: while_statement.body.closing_brace,
-                statements: vec![parser::Statement::If(parser::If {
+                statements: vec![ast::Statement::If(ast::If {
                     if_token: while_statement.while_token,
                     condition: while_statement.condition.clone(),
                     body: while_statement.body.clone(),
-                    else_branch: Some(parser::Else {
+                    else_branch: Some(ast::Else {
                         else_token: while_statement.while_token,
-                        else_body: parser::Body {
+                        else_body: ast::Body {
                             opening_brace: while_statement.body.opening_brace,
                             closing_brace: while_statement.body.closing_brace,
-                            statements: vec![parser::Statement::Break(parser::Break {
+                            statements: vec![ast::Statement::Break(ast::Break {
                                 break_token: while_statement.while_token,
                                 semicolon: while_statement.while_token,
                             })],
@@ -904,7 +843,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
     fn compile_break_statement(
         &mut self,
-        break_statement: &parser::Break,
+        break_statement: &ast::Break,
     ) -> Result<(), CompileError<'s>> {
         let Some(loop_entry) = self.loop_stack.last() else {
             return Err(CompileError {
@@ -925,7 +864,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
     fn compile_continue_statement(
         &mut self,
-        continue_statement: &parser::Continue,
+        continue_statement: &ast::Continue,
     ) -> Result<(), CompileError<'s>> {
         let Some(loop_entry) = self.loop_stack.last() else {
             return Err(CompileError {
@@ -947,7 +886,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
     fn compile_return_with_value(
         &mut self,
-        ret: &parser::ReturnWithValue,
+        ret: &ast::ReturnWithValue,
     ) -> Result<(), CompileError<'s>> {
         let return_value = self.compile_expression(&ret.expression)?;
 
@@ -960,7 +899,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         self.compile_return(ret.return_token)
     }
 
-    fn compile_empty_return(&mut self, ret: &parser::EmptyReturn) -> Result<(), CompileError<'s>> {
+    fn compile_empty_return(&mut self, ret: &ast::EmptyReturn) -> Result<(), CompileError<'s>> {
         self.compile_return(ret.return_token)
     }
 
@@ -1000,7 +939,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
     fn compile_expression_statement(
         &mut self,
-        expression: &parser::Expression,
+        expression: &ast::Expression,
         _semicolon: &Token,
     ) -> Result<(), CompileError<'s>> {
         // Compile the expression, which may be a variable assignment, function call,
@@ -1014,7 +953,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         Ok(())
     }
 
-    fn compile_type(&self, type_token: &parser::Type) -> Result<Type, CompileError<'s>> {
+    fn compile_type(&self, type_token: &ast::TypeHint) -> Result<Type, CompileError<'s>> {
         match type_token.type_name.source(self.source) {
             "int" => Ok(Type::Int),
             "signed" => Ok(Type::SignedInt),
@@ -1031,15 +970,15 @@ impl<'s> FunctionCompiler<'s, '_> {
 
     fn compile_expression(
         &mut self,
-        expression: &parser::Expression,
+        expression: &ast::Expression,
     ) -> Result<VariableIndex, CompileError<'s>> {
         match &expression {
-            parser::Expression::Literal { value } => {
+            ast::Expression::Literal { value } => {
                 let val_type = match value.value {
-                    parser::LiteralValue::Integer(_) => Type::Int,
-                    parser::LiteralValue::Float(_) => Type::Float,
-                    parser::LiteralValue::Boolean(_) => Type::Bool,
-                    parser::LiteralValue::String(_) => Type::String,
+                    ast::LiteralValue::Integer(_) => Type::Int,
+                    ast::LiteralValue::Float(_) => Type::Float,
+                    ast::LiteralValue::Boolean(_) => Type::Bool,
+                    ast::LiteralValue::String(_) => Type::String,
                 };
 
                 let literal_value = self.compile_literal_value(val_type, value)?;
@@ -1047,7 +986,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
                 Ok(temp)
             }
-            parser::Expression::Variable { variable } => {
+            ast::Expression::Variable { variable } => {
                 let name = variable.source(self.source);
                 match self.find_variable_by_name(name) {
                     // If the variable is already declared, we can just return it.
@@ -1059,13 +998,13 @@ impl<'s> FunctionCompiler<'s, '_> {
                     }),
                 }
             }
-            parser::Expression::UnaryOperator { name, operand } => {
+            ast::Expression::UnaryOperator { name, operand } => {
                 self.compile_unary_operator(*name, operand)
             }
-            parser::Expression::BinaryOperator { name, operands } => {
+            ast::Expression::BinaryOperator { name, operands } => {
                 self.compile_binary_operator(*name, operands)
             }
-            parser::Expression::FunctionCall { name, arguments } => {
+            ast::Expression::FunctionCall { name, arguments } => {
                 self.compile_function_call(*name, arguments)
             }
         }
@@ -1074,13 +1013,13 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_literal_value(
         &mut self,
         literal_type: Type,
-        literal: &parser::Literal,
+        literal: &ast::Literal,
     ) -> Result<Value, CompileError<'s>> {
         let value = match (literal_type, &literal.value) {
-            (Type::Int, parser::LiteralValue::Integer(value)) => Value::Int(*value),
-            (Type::Float, parser::LiteralValue::Float(value)) => Value::Float(*value),
-            (Type::Bool, parser::LiteralValue::Boolean(value)) => Value::Bool(*value),
-            (Type::String, parser::LiteralValue::String(value)) => {
+            (Type::Int, ast::LiteralValue::Integer(value)) => Value::Int(*value),
+            (Type::Float, ast::LiteralValue::Float(value)) => Value::Float(*value),
+            (Type::Bool, ast::LiteralValue::Boolean(value)) => Value::Bool(*value),
+            (Type::String, ast::LiteralValue::String(value)) => {
                 let string_index = self.strings.intern(value);
                 Value::String(string_index)
             }
@@ -1098,10 +1037,10 @@ impl<'s> FunctionCompiler<'s, '_> {
                     error: format!(
                         "Expected {literal_type}, found {} literal",
                         match literal.value {
-                            parser::LiteralValue::Integer(_) => "integer",
-                            parser::LiteralValue::Float(_) => "float",
-                            parser::LiteralValue::Boolean(_) => "boolean",
-                            parser::LiteralValue::String(_) => "string",
+                            ast::LiteralValue::Integer(_) => "integer",
+                            ast::LiteralValue::Float(_) => "float",
+                            ast::LiteralValue::Boolean(_) => "boolean",
+                            ast::LiteralValue::String(_) => "string",
                         }
                     ),
                 });
@@ -1114,7 +1053,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_unary_operator(
         &mut self,
         operator: Token,
-        operand: &parser::Expression,
+        operand: &ast::Expression,
     ) -> Result<VariableIndex, CompileError<'s>> {
         let op = operator.source(self.source);
 
@@ -1143,7 +1082,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_binary_operator(
         &mut self,
         operator: Token,
-        operands: &[parser::Expression; 2],
+        operands: &[ast::Expression; 2],
     ) -> Result<VariableIndex, CompileError<'s>> {
         let op = operator.source(self.source);
 
@@ -1233,13 +1172,13 @@ impl<'s> FunctionCompiler<'s, '_> {
             let right = self.compile_expression(&operands[1])?;
 
             let instruction = match &operands[0] {
-                parser::Expression::UnaryOperator { name, operand }
+                ast::Expression::UnaryOperator { name, operand }
                     if name.source(self.source) == "*" =>
                 {
                     left = self.compile_expression(operand)?;
                     Ir::DerefAssign(left, right)
                 }
-                parser::Expression::Variable { .. } => {
+                ast::Expression::Variable { .. } => {
                     left = self.compile_expression(&operands[0])?;
                     Ir::Assign(left, right)
                 }
@@ -1283,7 +1222,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_function_call(
         &mut self,
         name: Token,
-        arguments: &[parser::Expression],
+        arguments: &[ast::Expression],
     ) -> Result<VariableIndex, CompileError<'s>> {
         let arguments = arguments
             .iter()

@@ -2,13 +2,14 @@ Program {
     items: [
         GlobalVariable(
             GlobalVariable {
-                var_token: Token {
+                decl_token: Token {
                     kind: Identifier,
                     location: Location {
                         start: 0,
                         end: 3,
                     },
                 },
+                is_mutable: true,
                 identifier: Token {
                     kind: Identifier,
                     location: Location {
@@ -23,7 +24,7 @@ Program {
                         end: 6,
                     },
                 },
-                type_token: Type {
+                type_token: TypeHint {
                     type_name: Token {
                         kind: Identifier,
                         location: Location {
@@ -59,15 +60,16 @@ Program {
                 },
             },
         ),
-        Constant(
-            Constant {
-                const_token: Token {
+        GlobalVariable(
+            GlobalVariable {
+                decl_token: Token {
                     kind: Identifier,
                     location: Location {
                         start: 17,
                         end: 22,
                     },
                 },
+                is_mutable: false,
                 identifier: Token {
                     kind: Identifier,
                     location: Location {
@@ -82,7 +84,7 @@ Program {
                         end: 25,
                     },
                 },
-                type_token: Type {
+                type_token: TypeHint {
                     type_name: Token {
                         kind: Identifier,
                         location: Location {
@@ -98,7 +100,7 @@ Program {
                         end: 31,
                     },
                 },
-                value: Literal {
+                initializer: Literal {
                     value: Literal {
                         value: Integer(
                             32,
@@ -270,7 +272,7 @@ Program {
                                 end: 81,
                             },
                         },
-                        return_type: Type {
+                        return_type: TypeHint {
                             type_name: Token {
                                 kind: Identifier,
                                 location: Location {
