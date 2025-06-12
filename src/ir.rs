@@ -678,7 +678,6 @@ impl<'s> FunctionCompiler<'s, '_> {
             ast::Statement::EmptyReturn(ret) => self.compile_empty_return(ret),
             ast::Statement::If(if_statement) => self.compile_if_statement(if_statement),
             ast::Statement::Loop(loop_statement) => self.compile_loop_statement(loop_statement),
-            ast::Statement::While(while_statement) => self.compile_while_statement(while_statement),
             ast::Statement::Break(break_statement) => self.compile_break_statement(break_statement),
             ast::Statement::Continue(continue_statement) => {
                 self.compile_continue_statement(continue_statement)
@@ -808,37 +807,6 @@ impl<'s> FunctionCompiler<'s, '_> {
         self.blocks.select_block(next_block);
 
         Ok(())
-    }
-
-    fn compile_while_statement(
-        &mut self,
-        while_statement: &ast::While,
-    ) -> Result<(), CompileError<'s>> {
-        let desugared = ast::Loop {
-            loop_token: while_statement.while_token,
-            body: ast::Body {
-                opening_brace: while_statement.body.opening_brace,
-                closing_brace: while_statement.body.closing_brace,
-                statements: vec![ast::Statement::If(ast::If {
-                    if_token: while_statement.while_token,
-                    condition: while_statement.condition.clone(),
-                    body: while_statement.body.clone(),
-                    else_branch: Some(ast::Else {
-                        else_token: while_statement.while_token,
-                        else_body: ast::Body {
-                            opening_brace: while_statement.body.opening_brace,
-                            closing_brace: while_statement.body.closing_brace,
-                            statements: vec![ast::Statement::Break(ast::Break {
-                                break_token: while_statement.while_token,
-                                semicolon: while_statement.while_token,
-                            })],
-                        },
-                    }),
-                })],
-            },
-        };
-
-        self.compile_loop_statement(&desugared)
     }
 
     fn compile_break_statement(

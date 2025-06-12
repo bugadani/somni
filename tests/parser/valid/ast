@@ -1003,24 +1003,13 @@ Program {
                                                         },
                                                     },
                                                 ),
-                                                While(
-                                                    While {
-                                                        while_token: Token {
+                                                Loop(
+                                                    Loop {
+                                                        loop_token: Token {
                                                             kind: Identifier,
                                                             location: Location {
                                                                 start: 855,
                                                                 end: 860,
-                                                            },
-                                                        },
-                                                        condition: Literal {
-                                                            value: Literal {
-                                                                value: Boolean(
-                                                                    false,
-                                                                ),
-                                                                location: Location {
-                                                                    start: 861,
-                                                                    end: 866,
-                                                                },
                                                             },
                                                         },
                                                         body: Body {
@@ -1032,22 +1021,109 @@ Program {
                                                                 },
                                                             },
                                                             statements: [
-                                                                Continue(
-                                                                    Continue {
-                                                                        continue_token: Token {
+                                                                If(
+                                                                    If {
+                                                                        if_token: Token {
                                                                             kind: Identifier,
                                                                             location: Location {
-                                                                                start: 881,
-                                                                                end: 889,
+                                                                                start: 855,
+                                                                                end: 860,
                                                                             },
                                                                         },
-                                                                        semicolon: Token {
-                                                                            kind: Symbol,
-                                                                            location: Location {
-                                                                                start: 889,
-                                                                                end: 890,
+                                                                        condition: Literal {
+                                                                            value: Literal {
+                                                                                value: Boolean(
+                                                                                    false,
+                                                                                ),
+                                                                                location: Location {
+                                                                                    start: 861,
+                                                                                    end: 866,
+                                                                                },
                                                                             },
                                                                         },
+                                                                        body: Body {
+                                                                            opening_brace: Token {
+                                                                                kind: Symbol,
+                                                                                location: Location {
+                                                                                    start: 867,
+                                                                                    end: 868,
+                                                                                },
+                                                                            },
+                                                                            statements: [
+                                                                                Continue(
+                                                                                    Continue {
+                                                                                        continue_token: Token {
+                                                                                            kind: Identifier,
+                                                                                            location: Location {
+                                                                                                start: 881,
+                                                                                                end: 889,
+                                                                                            },
+                                                                                        },
+                                                                                        semicolon: Token {
+                                                                                            kind: Symbol,
+                                                                                            location: Location {
+                                                                                                start: 889,
+                                                                                                end: 890,
+                                                                                            },
+                                                                                        },
+                                                                                    },
+                                                                                ),
+                                                                            ],
+                                                                            closing_brace: Token {
+                                                                                kind: Symbol,
+                                                                                location: Location {
+                                                                                    start: 899,
+                                                                                    end: 900,
+                                                                                },
+                                                                            },
+                                                                        },
+                                                                        else_branch: Some(
+                                                                            Else {
+                                                                                else_token: Token {
+                                                                                    kind: Identifier,
+                                                                                    location: Location {
+                                                                                        start: 855,
+                                                                                        end: 860,
+                                                                                    },
+                                                                                },
+                                                                                else_body: Body {
+                                                                                    opening_brace: Token {
+                                                                                        kind: Symbol,
+                                                                                        location: Location {
+                                                                                            start: 867,
+                                                                                            end: 868,
+                                                                                        },
+                                                                                    },
+                                                                                    statements: [
+                                                                                        Break(
+                                                                                            Break {
+                                                                                                break_token: Token {
+                                                                                                    kind: Identifier,
+                                                                                                    location: Location {
+                                                                                                        start: 855,
+                                                                                                        end: 860,
+                                                                                                    },
+                                                                                                },
+                                                                                                semicolon: Token {
+                                                                                                    kind: Identifier,
+                                                                                                    location: Location {
+                                                                                                        start: 855,
+                                                                                                        end: 860,
+                                                                                                    },
+                                                                                                },
+                                                                                            },
+                                                                                        ),
+                                                                                    ],
+                                                                                    closing_brace: Token {
+                                                                                        kind: Symbol,
+                                                                                        location: Location {
+                                                                                            start: 899,
+                                                                                            end: 900,
+                                                                                        },
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                        ),
                                                                     },
                                                                 ),
                                                             ],

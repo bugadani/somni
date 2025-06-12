@@ -49,7 +49,7 @@ use crate::{
     ast::{
         Body, Break, Continue, Else, EmptyReturn, Expression, Function, FunctionArgument,
         GlobalVariable, If, Item, Literal, LiteralValue, Loop, Program, ReturnDecl,
-        ReturnWithValue, Statement, TypeHint, VariableDefinition, While,
+        ReturnWithValue, Statement, TypeHint, VariableDefinition,
     },
     error::CompileError,
     lexer::{Location, Token, TokenKind},
@@ -265,12 +265,31 @@ impl Statement {
         }
 
         if let Some(while_token) = stream.take_match(TokenKind::Identifier, &["while"]) {
+            // Desugar while into loop { if condition { loop_body; } else { break; } }
             let condition = Expression::parse(stream)?;
             let body = Body::parse(stream)?;
-            return Ok(Statement::While(While {
-                while_token,
-                condition,
-                body,
+            return Ok(Statement::Loop(Loop {
+                loop_token: while_token,
+                body: Body {
+                    opening_brace: body.opening_brace,
+                    closing_brace: body.closing_brace,
+                    statements: vec![Statement::If(If {
+                        if_token: while_token,
+                        condition: condition.clone(),
+                        body: body.clone(),
+                        else_branch: Some(Else {
+                            else_token: while_token,
+                            else_body: Body {
+                                opening_brace: body.opening_brace,
+                                closing_brace: body.closing_brace,
+                                statements: vec![Statement::Break(Break {
+                                    break_token: while_token,
+                                    semicolon: while_token,
+                                })],
+                            },
+                        }),
+                    })],
+                },
             }));
         }
 

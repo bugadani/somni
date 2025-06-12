@@ -130,13 +130,6 @@ pub struct Loop {
 }
 
 #[derive(Debug, Clone)]
-pub struct While {
-    pub while_token: Token,
-    pub condition: Expression,
-    pub body: Body,
-}
-
-#[derive(Debug, Clone)]
 pub struct Break {
     pub break_token: Token,
     pub semicolon: Token,
@@ -155,7 +148,6 @@ pub enum Statement {
     EmptyReturn(EmptyReturn),
     If(If),
     Loop(Loop),
-    While(While),
     Break(Break),
     Continue(Continue),
     Expression {
