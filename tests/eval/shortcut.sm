@@ -1,12 +1,14 @@
+//@ main() == 2
+
 var do_not_touch: int = 0;
-fn main() -> bool {
+fn main() -> int {
     true || increment();
     false || increment();
     false && increment();
     true && increment();
 
     print(do_not_touch);
-    return assert(do_not_touch == 2);
+    return do_not_touch;
 }
 
 fn increment() {

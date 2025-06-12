@@ -21,7 +21,7 @@ block 1
   -> return
 Function: main
 block 0
-  var return_value: Some(Bool) = None
+  var return_value: Some(Int) = None
   var input: Some(Void) = None
   var temp2: None = Some(Int(5))
   input = temp2
@@ -29,15 +29,7 @@ block 0
   temp3 = &input
   var temp4: None = None
   temp4 = call take_by_reference(temp3)
-  var temp5: None = Some(Int(10))
-  var temp6: None = None
-  temp6 = input == temp5
-  free(temp5)
-  var temp7: None = None
-  temp7 = call assert(temp6)
-  return_value = temp7
-  free(temp7)
-  free(temp6)
+  return_value = input
   free(temp3)
   free(temp2)
   free(input)

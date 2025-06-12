@@ -1,3 +1,6 @@
+//@ doubled() == 52
+//@ n + M == 42
+
 var n: int = 10;
 const M: int = 32;
 
@@ -5,7 +8,7 @@ fn double() {
     n = n * 2;
 }
 
-fn main() -> bool {
+fn doubled() -> int {
     double();
-    return assert(n + M == 52);
+    return n + M;
 }

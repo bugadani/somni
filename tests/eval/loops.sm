@@ -1,4 +1,6 @@
-fn main() -> bool {
+//@ loopy() == 0
+
+fn loopy() -> int {
     var n = 7;
 
     loop {
@@ -14,6 +16,6 @@ fn main() -> bool {
             continue;
         }
 
-        return assert(n == 0);
+        return n;
     }
 }

@@ -1,5 +1,7 @@
 // Regression test
 
+//@ multiply(10, 5, false) == multiply(10, 5, true)
+
 // This function shouldn't affect `multiply`.
 fn noop() {
     var n = 2;return 0;
@@ -17,8 +19,4 @@ fn multiply(number: int, n: int, add: bool) -> int {
         noop();
         return number * n;
     }
-}
-
-fn main() -> bool {
-    return assert(multiply(10, 5, false) == multiply(10, 5, true));
 }

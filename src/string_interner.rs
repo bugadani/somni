@@ -20,7 +20,7 @@ impl Strings {
         Strings::default()
     }
 
-    fn intern(&mut self, value: &str) -> StringIndex {
+    pub(crate) fn intern(&mut self, value: &str) -> StringIndex {
         let start = self.strings.len();
         let length = value.len();
         self.strings.push_str(value);

@@ -4,7 +4,7 @@ Globals:
 Functions:
 Function: main
 block 0
-  var return_value: Some(Bool) = None
+  var return_value: Some(Int) = None
   var temp1: None = Some(Bool(true))
   var temp2: None = Some(Bool(true))
   if temp2 -> block 2 else block 3
@@ -51,15 +51,7 @@ block 7
 block 8
   var temp13: None = None
   temp13 = call print(do_not_touch)
-  var temp14: None = Some(Int(2))
-  var temp15: None = None
-  temp15 = do_not_touch == temp14
-  free(temp14)
-  var temp16: None = None
-  temp16 = call assert(temp15)
-  return_value = temp16
-  free(temp16)
-  free(temp15)
+  return_value = do_not_touch
   free(temp11)
   free(temp8)
   free(temp5)

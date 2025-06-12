@@ -17,23 +17,15 @@ block 0
 
 block 1
   -> return
-Function: main
+Function: doubled
 block 0
-  var return_value: Some(Bool) = None
+  var return_value: Some(Int) = None
   var temp1: None = None
   temp1 = call double()
   var temp2: None = None
   temp2 = n + M
-  var temp3: None = Some(Int(52))
-  var temp4: None = None
-  temp4 = temp2 == temp3
+  return_value = temp2
   free(temp2)
-  free(temp3)
-  var temp5: None = None
-  temp5 = call assert(temp4)
-  return_value = temp5
-  free(temp5)
-  free(temp4)
   free(return_value)
   -> block 2
 

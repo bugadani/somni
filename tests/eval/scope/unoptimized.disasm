@@ -1,4 +1,4 @@
-Function main(...) -> bool (stack: 9)
+Function main(...) -> int (stack: 8)
   0000: load Local(2) = Int(10)
   0001: copy Local(1) = Local(2)
   0002: load Local(3) = Bool(true)
@@ -8,10 +8,5 @@ Function main(...) -> bool (stack: 9)
   0006: load Local(6) = Int(10)
   0007: Local(7) = Local(4) + Local(6)
   0008: copy Local(4) = Local(7)
-  0009: load Local(4) = Int(10)
-  0010: Local(5) = Local(1) == Local(4)
-  0011: copy Local(8) = Local(5)
-  0012: call assert(arg0) with sp=Local(7)
-  0013: copy Local(4) = Local(7)
-  0014: copy Local(0) = Local(4)
-  0015: return
+  0009: copy Local(0) = Local(1)
+  0010: return

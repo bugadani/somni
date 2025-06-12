@@ -1,4 +1,6 @@
+//@ main() == true
+
 fn main() -> bool {
     var n = 2;
-    return assert(n == 2);
+    return n == 2;
 }

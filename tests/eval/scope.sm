@@ -1,8 +1,10 @@
-fn main() -> bool {
+//@ main() == 10
+
+fn main() -> int {
     var x = 10;
     if true {
         var x = 20;
         x = x + 10; // This should modify the inner x
     }
-    return assert(x == 10);
+    return x;
 }

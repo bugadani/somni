@@ -6,7 +6,7 @@ use crate::{
     ir,
     lexer::tokenize,
     parser::parse,
-    vm::{EvalContext, EvalEvent},
+    vm::EvalContext,
 };
 
 fn walk(dir: &Path, on_file: &impl Fn(&Path)) {
@@ -48,46 +48,27 @@ pub fn run_eval_tests(dir: impl AsRef<Path>) {
 pub fn run_eval_test(program: codegen::Program, path: impl AsRef<Path>) {
     let ctx = TestContext::from_path(path.as_ref());
 
-    // let expressions = program
-    //     .source
-    //     .lines()
-    //     .filter_map(|line| line.trim().strip_prefix("//@"))
-    //     .collect::<Vec<_>>();
+    let expressions = program
+        .debug_info
+        .source
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("//@"))
+        .collect::<Vec<_>>();
 
-    // TODO run expressions against the program
     let mut context = EvalContext::new(
         &program.debug_info.source,
         &program.debug_info.strings,
         &program,
     );
 
-    loop {
-        match context.run() {
-            EvalEvent::Error(e) => {
-                let error = e.mark(&context, "Runtime error");
-
-                ctx.handle_error_string("Runtime error", error.to_string());
-                break;
-            }
-            EvalEvent::Complete(value) => {
-                assert!(
-                    value == Value::Bool(true),
-                    "Test {} exited with an unexpected value: {value:?}",
-                    ctx.file.display()
-                );
-                break;
-            }
-            EvalEvent::UnknownFunctionCall => {
-                let (name, args) = context.unknown_function_info().expect("No function info");
-                if name == "assert" {
-                    // TODO: generating a type error is not a great way to handle failures
-                    match args[0] {
-                        Value::Bool(true) => context.set_return_value(Value::Bool(true)).unwrap(),
-                        Value::Bool(false) => context.set_return_value(Value::Void).unwrap(),
-                        _ => {}
-                    }
-                }
-            }
+    for expression in &expressions {
+        context.reset();
+        let value = context.eval_expression(expression);
+        if value != Value::Bool(true) {
+            ctx.handle_error_string(
+                "Expression did not evaluate to true",
+                format!("Expression `{expression}` evaluated to {value:?}"),
+            );
         }
     }
 }

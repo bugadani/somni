@@ -3,7 +3,7 @@ Globals:
 Functions:
 Function: main
 block 0
-  var return_value: Some(Bool) = None
+  var return_value: Some(Int) = None
   var n: Some(Void) = None
   var temp2: None = Some(Int(7))
   n = temp2
@@ -76,15 +76,7 @@ block 14
   -> block 6
 
 block 15
-  var temp15: None = Some(Int(0))
-  var temp16: None = None
-  temp16 = n == temp15
-  free(temp15)
-  var temp17: None = None
-  temp17 = call assert(temp16)
-  return_value = temp17
-  free(temp17)
-  free(temp16)
+  return_value = n
   free(temp11)
   free(temp2)
   free(n)

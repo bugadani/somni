@@ -1,10 +1,10 @@
-Function main(...) -> bool (stack: 14)
+Function main(...) -> int (stack: 12)
   0000: load Local(1) = Bool(true)
   0001: load Local(2) = Bool(true)
-  0002: if Local(2) == false jump to 32
+  0002: if Local(2) == false jump to 27
   0003: load Local(3) = Bool(true)
   0004: load Local(4) = Bool(false)
-  0005: if Local(4) == false jump to 28
+  0005: if Local(4) == false jump to 23
   0006: load Local(5) = Bool(false)
   0007: load Local(6) = Bool(false)
   0008: if Local(6) == false jump to 12
@@ -20,23 +20,18 @@ Function main(...) -> bool (stack: 14)
   0018: copy Local(11) = Global(0)
   0019: call print(arg0) with sp=Local(10)
   0020: copy Local(9) = Local(10)
-  0021: load Local(10) = Int(2)
-  0022: Local(11) = Global(0) == Local(10)
-  0023: copy Local(13) = Local(11)
-  0024: call assert(arg0) with sp=Local(12)
-  0025: copy Local(10) = Local(12)
-  0026: copy Local(0) = Local(10)
-  0027: return
-  0028: call increment(..) with sp=Local(6)
-  0029: copy Local(5) = Local(6)
-  0030: copy Local(3) = Local(5)
-  0031: jump to 6
-  0032: call increment(..) with sp=Local(4)
-  0033: copy Local(3) = Local(4)
-  0034: copy Local(1) = Local(3)
-  0035: jump to 3
+  0021: copy Local(0) = Global(0)
+  0022: return
+  0023: call increment(..) with sp=Local(6)
+  0024: copy Local(5) = Local(6)
+  0025: copy Local(3) = Local(5)
+  0026: jump to 6
+  0027: call increment(..) with sp=Local(4)
+  0028: copy Local(3) = Local(4)
+  0029: copy Local(1) = Local(3)
+  0030: jump to 3
 Function increment(...) -> void (stack: 3)
-  0036: load Local(1) = Int(1)
-  0037: Local(2) = Global(0) + Local(1)
-  0038: copy Global(0) = Local(2)
-  0039: return
+  0031: load Local(1) = Int(1)
+  0032: Local(2) = Global(0) + Local(1)
+  0033: copy Global(0) = Local(2)
+  0034: return

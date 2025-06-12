@@ -1,9 +1,11 @@
+//@ main() == 10
+
 fn take_by_reference(x: &int) {
     *x = 2 * *x;
 }
 
-fn main() -> bool {
+fn main() -> int {
     var input = 5;
     take_by_reference(&input);
-    return assert(input == 10);
+    return input;
 }

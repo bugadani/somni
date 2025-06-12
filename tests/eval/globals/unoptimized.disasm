@@ -3,14 +3,9 @@ Function double(...) -> void (stack: 3)
   0001: Local(2) = Global(0) * Local(1)
   0002: copy Global(0) = Local(2)
   0003: return
-Function main(...) -> bool (stack: 7)
+Function doubled(...) -> int (stack: 3)
   0004: call double(..) with sp=Local(2)
   0005: copy Local(1) = Local(2)
   0006: Local(2) = Global(0) + Global(1)
-  0007: load Local(3) = Int(52)
-  0008: Local(4) = Local(2) == Local(3)
-  0009: copy Local(6) = Local(4)
-  0010: call assert(arg0) with sp=Local(5)
-  0011: copy Local(2) = Local(5)
-  0012: copy Local(0) = Local(2)
-  0013: return
+  0007: copy Local(0) = Local(2)
+  0008: return

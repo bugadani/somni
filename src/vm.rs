@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
+    ast::Expression,
     codegen::{self, CodeAddress, Function, Instruction, MemoryAddress, Value},
     error::MarkInSource,
     lexer::Location,
@@ -60,8 +61,9 @@ type IntrinsicFn<'p> = fn(&EvalContext<'p>, &[Value]) -> Result<Value, EvalEvent
 
 pub struct EvalContext<'p> {
     source: &'p str,
-    strings: &'p Strings,
+    orig_strings: &'p Strings,
     program: &'p codegen::Program,
+    strings: Strings,
     intrinsics: HashMap<StringIndex, IntrinsicFn<'p>>,
     state: EvalState,
 
@@ -274,7 +276,8 @@ impl<'p> EvalContext<'p> {
             memory: Memory::new(),
             call_stack: vec![],
             source,
-            strings,
+            strings: strings.clone(),
+            orig_strings: strings,
             current_frame: Frame {
                 program_counter: CodeAddress(0),
                 name: StringIndex::dummy(), // Will be set when the first function is called
@@ -297,13 +300,6 @@ impl<'p> EvalContext<'p> {
             Ok(Value::Void)
         });
 
-        this.memory.allocate(program.globals.len());
-        for (address, (_, def)) in program.globals.iter().enumerate() {
-            this.memory
-                .store(MemoryAddress::Global(address), *def.value())
-                .unwrap();
-        }
-
         this
     }
 
@@ -317,10 +313,26 @@ impl<'p> EvalContext<'p> {
     /// to continue execution.
     pub fn run(&mut self) -> EvalEvent {
         if matches!(self.state, EvalState::Idle) {
+            // Restore VM state.
+            self.reset();
+
             // Initialize the first frame with the main program
             self.call("main", &[])
         } else {
             self.execute()
+        }
+    }
+
+    pub fn reset(&mut self) {
+        // TODO: only if eval_expression is supported
+        self.strings = self.orig_strings.clone();
+        self.state = EvalState::Idle;
+        self.memory = Memory::new();
+        self.memory.allocate(self.program.globals.len());
+        for (address, (_, def)) in self.program.globals.iter().enumerate() {
+            self.memory
+                .store(MemoryAddress::Global(address), *def.value())
+                .unwrap();
         }
     }
 
@@ -355,6 +367,31 @@ impl<'p> EvalContext<'p> {
         self.state = EvalState::Running;
 
         self.execute()
+    }
+
+    /// Evaluates an expression and returns the result.
+    ///
+    /// An expression can use globals and functions defined in the program, but it cannot
+    /// call functions that are not defined in the program.
+    pub fn eval_expression(&mut self, expression: &str) -> Value {
+        // TODO: handle errors
+        if !matches!(self.state, EvalState::Idle) {
+            panic!("Cannot evaluate expression while the VM is running");
+        }
+
+        // TODO: we can allow new globals to be defined in the expression, but that would require
+        // storing a copy of the original globals, so that they can be reset?
+        let tokens = crate::lexer::tokenize(expression)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        let ast = crate::parser::parse_expression(expression, &tokens).unwrap();
+
+        let mut visitor = ExpressionVisitor {
+            context: self,
+            source: expression,
+        };
+        visitor.visit_expression(&ast)
     }
 
     fn execute(&mut self) -> EvalEvent {
@@ -706,6 +743,323 @@ impl<'p> EvalContext<'p> {
     fn current_location(&self) -> Location {
         let pc = self.current_frame.program_counter;
         self.program.debug_info.instruction_locations[pc.0]
+    }
+}
+
+struct ExpressionVisitor<'a, 's> {
+    context: &'a mut EvalContext<'s>,
+    source: &'a str,
+}
+
+impl<'a> ExpressionVisitor<'a, '_> {
+    fn visit_expression(&mut self, expression: &Expression) -> Value {
+        // TODO: errors
+        match expression {
+            Expression::Variable { variable } => {
+                let name = variable.source(self.source);
+                let name_idx = self.context.strings.find(name).unwrap_or_else(|| {
+                    panic!("Variable '{name}' not found");
+                });
+                let addr = self
+                    .context
+                    .program
+                    .globals
+                    .get_index_of(&name_idx)
+                    .unwrap_or_else(|| {
+                        panic!("Variable '{name}' not found in program");
+                    });
+
+                self.context
+                    .memory
+                    .load(MemoryAddress::Global(addr))
+                    .unwrap_or_else(|_| {
+                        panic!("Variable '{name}' not found in memory");
+                    })
+            }
+            Expression::Literal { value } => match &value.value {
+                crate::ast::LiteralValue::Integer(value) => Value::Int(*value),
+                crate::ast::LiteralValue::Float(value) => Value::Float(*value),
+                crate::ast::LiteralValue::String(value) => {
+                    if let Some(string_index) = self.context.strings.find(value) {
+                        Value::String(string_index)
+                    } else {
+                        let string_index = self.context.strings.intern(value);
+                        Value::String(string_index)
+                    }
+                }
+                crate::ast::LiteralValue::Boolean(value) => Value::Bool(*value),
+            },
+            Expression::UnaryOperator { name, operand } => match name.source(self.source) {
+                "!" => match self.visit_expression(operand) {
+                    Value::Bool(b) => Value::Bool(!b),
+                    value => panic!("Expected boolean, found {}", value.type_of()),
+                },
+                "-" => match self.visit_expression(operand) {
+                    Value::SignedInt(i) => Value::SignedInt(-i),
+                    Value::Float(f) => Value::Float(-f),
+                    value => panic!("Cannot negate {}", value.type_of()),
+                },
+                "&" => match operand.as_variable() {
+                    Some(variable) => {
+                        let name = variable.source(self.source);
+                        let name_idx = self.context.strings.find(name).unwrap_or_else(|| {
+                            panic!("Variable '{name}' not found");
+                        });
+                        let addr = self
+                            .context
+                            .program
+                            .globals
+                            .get_index_of(&name_idx)
+                            .unwrap_or_else(|| {
+                                panic!("Variable '{name}' not found in program");
+                            });
+                        let addr = MemoryAddress::Global(addr);
+                        Value::Address(addr)
+                    }
+                    None => panic!("Cannot take address of non-variable expression"),
+                },
+                "*" => match self.visit_expression(operand) {
+                    Value::Address(addr) => self.context.memory.load(addr).unwrap_or_else(|_| {
+                        panic!("Cannot dereference address: {:?}", addr);
+                    }),
+                    value => panic!("Expected address, found {}", value.type_of()),
+                },
+                _ => panic!("Unknown unary operator: {}", name.source(self.source)),
+            },
+            Expression::BinaryOperator { name, operands } => match name.source(self.source) {
+                "&&" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    if let Value::Bool(false) = lhs {
+                        return Value::Bool(false);
+                    }
+                    self.visit_expression(&operands[1])
+                }
+                "||" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    if let Value::Bool(true) = lhs {
+                        return Value::Bool(true);
+                    }
+                    self.visit_expression(&operands[1])
+                }
+                "+" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a + b),
+                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a + b),
+                        (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
+                        (a, b) => panic!("Cannot add {} and {}", a.type_of(), b.type_of()),
+                    }
+                }
+                "-" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a - b),
+                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a - b),
+                        (Value::Float(a), Value::Float(b)) => Value::Float(a - b),
+                        (a, b) => panic!("Cannot subtract {} and {}", a.type_of(), b.type_of()),
+                    }
+                }
+                "*" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a * b),
+                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a * b),
+                        (Value::Float(a), Value::Float(b)) => Value::Float(a * b),
+                        (a, b) => panic!("Cannot multiply {} and {}", a.type_of(), b.type_of()),
+                    }
+                }
+                "/" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => {
+                            if b == 0 {
+                                panic!("Division by zero: {a} / {b}");
+                            }
+                            Value::Int(a / b)
+                        }
+                        (Value::SignedInt(a), Value::SignedInt(b)) => {
+                            if b == 0 {
+                                panic!("Division by zero: {a} / {b}");
+                            }
+                            Value::SignedInt(a / b)
+                        }
+                        (Value::Float(a), Value::Float(b)) => {
+                            if b == 0.0 {
+                                panic!("Division by zero: {a} / {b}");
+                            }
+                            Value::Float(a / b)
+                        }
+                        (a, b) => panic!("Cannot divide {} and {}", a.type_of(), b.type_of()),
+                    }
+                }
+                "<" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => Value::Bool(a < b),
+                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a < b),
+                        (Value::Float(a), Value::Float(b)) => Value::Bool(a < b),
+                        (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
+                    }
+                }
+                ">" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => Value::Bool(a > b),
+                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a > b),
+                        (Value::Float(a), Value::Float(b)) => Value::Bool(a > b),
+                        (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
+                    }
+                }
+                "<=" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => Value::Bool(a <= b),
+                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a <= b),
+                        (Value::Float(a), Value::Float(b)) => Value::Bool(a <= b),
+                        (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
+                    }
+                }
+                ">=" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => Value::Bool(a >= b),
+                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a >= b),
+                        (Value::Float(a), Value::Float(b)) => Value::Bool(a >= b),
+                        (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
+                    }
+                }
+                "==" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => Value::Bool(a == b),
+                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a == b),
+                        (Value::Float(a), Value::Float(b)) => Value::Bool(a == b),
+                        (Value::String(a), Value::String(b)) => Value::Bool(
+                            self.context.strings.lookup(a) == self.context.strings.lookup(b),
+                        ),
+                        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a == b),
+                        (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
+                    }
+                }
+                "!=" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => Value::Bool(a != b),
+                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a != b),
+                        (Value::Float(a), Value::Float(b)) => Value::Bool(a != b),
+                        (Value::String(a), Value::String(b)) => Value::Bool(
+                            self.context.strings.lookup(a) != self.context.strings.lookup(b),
+                        ),
+                        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a != b),
+                        (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
+                    }
+                }
+                "|" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a | b),
+                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a | b),
+                        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a | b),
+                        (a, b) => panic!("Cannot bitwise OR {} and {}", a.type_of(), b.type_of()),
+                    }
+                }
+                "^" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a ^ b),
+                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a ^ b),
+                        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a ^ b),
+                        (a, b) => panic!("Cannot bitwise XOR {} and {}", a.type_of(), b.type_of()),
+                    }
+                }
+                "&" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a & b),
+                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a & b),
+                        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a & b),
+                        (a, b) => panic!("Cannot bitwise AND {} and {}", a.type_of(), b.type_of()),
+                    }
+                }
+                "<<" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => {
+                            Value::Int(a.checked_shl(b as u32).unwrap_or_else(|| {
+                                panic!("{} << {} overflowed", a, b);
+                            }))
+                        }
+                        (Value::SignedInt(a), Value::SignedInt(b)) => {
+                            Value::SignedInt(a.checked_shl(b as u32).unwrap_or_else(|| {
+                                panic!("{} << {} overflowed", a, b);
+                            }))
+                        }
+                        (a, b) => panic!("Cannot shift {} by {}", a.type_of(), b.type_of()),
+                    }
+                }
+                ">>" => {
+                    let lhs = self.visit_expression(&operands[0]);
+                    let rhs = self.visit_expression(&operands[1]);
+
+                    match (lhs, rhs) {
+                        (Value::Int(a), Value::Int(b)) => {
+                            Value::Int(a.checked_shr(b as u32).unwrap_or_else(|| {
+                                panic!("{} >> {} underflowed", a, b);
+                            }))
+                        }
+                        (Value::SignedInt(a), Value::SignedInt(b)) => {
+                            Value::SignedInt(a.checked_shr(b as u32).unwrap_or_else(|| {
+                                panic!("{} >> {} underflowed", a, b);
+                            }))
+                        }
+                        (a, b) => panic!("Cannot shift {} by {}", a.type_of(), b.type_of()),
+                    }
+                }
+
+                other => panic!("Unknown binary operator: {}", other),
+            },
+            Expression::FunctionCall { name, arguments } => {
+                let function_name = name.source(self.source);
+                let mut args = Vec::new();
+                for arg in arguments {
+                    args.push(self.visit_expression(arg));
+                }
+
+                match self.context.call(function_name, &args) {
+                    EvalEvent::UnknownFunctionCall => todo!(),
+                    EvalEvent::Error(e) => todo!("{e:?}"),
+                    EvalEvent::Complete(value) => value,
+                }
+            }
+        }
     }
 }
 
