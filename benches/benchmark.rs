@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use somni::{
     codegen, ir, lexer, parser,
+    transform_ir::transform_ir,
     vm::{EvalContext, EvalEvent},
 };
 
@@ -31,7 +32,7 @@ fn main() {
             panic!("Parsing failed");
         }
     };
-    let ir = match ir::Program::compile(&source_code, &ast) {
+    let mut ir = match ir::Program::compile(&source_code, &ast) {
         Ok(program) => program,
         Err(e) => {
             println!("Error compiling `{source_code}`");
@@ -39,6 +40,11 @@ fn main() {
             panic!("Compilation failed");
         }
     };
+    if let Err(e) = transform_ir(&source_code, &mut ir) {
+        println!("Error transforming IR for `{source_code}`");
+        println!("{:?}", e);
+        panic!("Transformation failed");
+    }
     let strings = &ir.strings;
     let program = match codegen::compile(&source_code, &ir) {
         Ok(program) => program,

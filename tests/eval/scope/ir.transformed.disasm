@@ -4,7 +4,7 @@ Functions:
 Function: main
 block 0
   var return_value: Int = None
-  var x: Void = None
+  var x: Int = None
   var temp2: Int = Some(Int(10))
   x = temp2
   free(temp2)
@@ -22,12 +22,12 @@ block 2
   -> block 4
 
 block 3
-  var x: Void = None
+  var x: Int = None
   var temp5: Int = Some(Int(20))
   x = temp5
   free(temp5)
   var temp6: Int = Some(Int(10))
-  var temp7: Void = None
+  var temp7: Int = None
   temp7 = x + temp6
   free(temp6)
   x = temp7

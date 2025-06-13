@@ -1,14 +1,15 @@
 Program {
     items: [
-        Constant(
-            Constant {
-                const_token: Token {
+        GlobalVariable(
+            GlobalVariable {
+                decl_token: Token {
                     kind: Identifier,
                     location: Location {
                         start: 0,
                         end: 5,
                     },
                 },
+                is_mutable: false,
                 identifier: Token {
                     kind: Identifier,
                     location: Location {
@@ -23,7 +24,7 @@ Program {
                         end: 8,
                     },
                 },
-                type_token: Type {
+                type_token: TypeHint {
                     type_name: Token {
                         kind: Identifier,
                         location: Location {
@@ -39,7 +40,7 @@ Program {
                         end: 14,
                     },
                 },
-                value: Literal {
+                initializer: Literal {
                     value: Literal {
                         value: Integer(
                             10,

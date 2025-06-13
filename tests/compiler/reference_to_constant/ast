@@ -41,15 +41,16 @@ Program {
                         },
                     },
                     statements: [
-                        ConstantDefinition(
-                            ConstantDefinition {
-                                const_token: Token {
+                        VariableDefinition(
+                            VariableDefinition {
+                                decl_token: Token {
                                     kind: Identifier,
                                     location: Location {
                                         start: 84,
                                         end: 89,
                                     },
                                 },
+                                is_mutable: false,
                                 identifier: Token {
                                     kind: Identifier,
                                     location: Location {
@@ -58,7 +59,7 @@ Program {
                                     },
                                 },
                                 type_token: Some(
-                                    Type {
+                                    TypeHint {
                                         type_name: Token {
                                             kind: Identifier,
                                             location: Location {
@@ -192,7 +193,7 @@ Program {
                                 },
                             },
                         ),
-                        arg_type: Type {
+                        arg_type: TypeHint {
                             type_name: Token {
                                 kind: Identifier,
                                 location: Location {

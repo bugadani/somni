@@ -6,6 +6,7 @@ use crate::{
     ir,
     lexer::tokenize,
     parser::parse,
+    transform_ir::transform_ir,
     vm::EvalContext,
 };
 
@@ -87,11 +88,16 @@ pub fn run_compile_test(file: impl AsRef<Path>, compile_test: bool) -> Option<co
 
     if compile_test {
         // Compile the program to IR.
-        let ir = match ir::Program::compile(&source, &ast) {
+        let mut ir = match ir::Program::compile(&source, &ast) {
             Ok(ir) => ir,
             Err(err) => return ctx.handle_error("Failed to compile to IR", err),
         };
         write_out_file(&ctx.out_path.join("ir.disasm"), ir.print());
+
+        if let Err(e) = transform_ir(&source, &mut ir) {
+            return ctx.handle_error("Failed to transform IR", e);
+        }
+        write_out_file(&ctx.out_path.join("ir.transformed.disasm"), ir.print());
 
         // Compile the IR to a program.
         let program = match codegen::compile(&source, &ir) {

@@ -1,0 +1,6 @@
+Function main(...) -> void (stack: 3)
+  0000: load Local(2) = Int(10)
+  0001: copy Local(1) = Local(2)
+  0002: load Local(2) = Int(20)
+  0003: copy Local(1) = Local(2)
+  0004: return

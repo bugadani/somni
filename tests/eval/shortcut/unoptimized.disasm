@@ -1,30 +1,30 @@
-Function main(...) -> int (stack: 12)
+Function main(...) -> int (stack: 5)
   0000: load Local(1) = Bool(true)
   0001: load Local(2) = Bool(true)
   0002: if Local(2) == false jump to 27
-  0003: load Local(3) = Bool(true)
-  0004: load Local(4) = Bool(false)
-  0005: if Local(4) == false jump to 23
-  0006: load Local(5) = Bool(false)
-  0007: load Local(6) = Bool(false)
-  0008: if Local(6) == false jump to 12
-  0009: call increment(..) with sp=Local(8)
-  0010: copy Local(7) = Local(8)
-  0011: copy Local(5) = Local(7)
-  0012: load Local(7) = Bool(false)
-  0013: load Local(8) = Bool(true)
-  0014: if Local(8) == false jump to 18
-  0015: call increment(..) with sp=Local(10)
-  0016: copy Local(9) = Local(10)
-  0017: copy Local(7) = Local(9)
-  0018: copy Local(11) = Global(0)
-  0019: call print(arg0) with sp=Local(10)
-  0020: copy Local(9) = Local(10)
+  0003: load Local(1) = Bool(true)
+  0004: load Local(2) = Bool(false)
+  0005: if Local(2) == false jump to 23
+  0006: load Local(1) = Bool(false)
+  0007: load Local(2) = Bool(false)
+  0008: if Local(2) == false jump to 12
+  0009: call increment(..) with sp=Local(4)
+  0010: copy Local(3) = Local(4)
+  0011: copy Local(1) = Local(3)
+  0012: load Local(1) = Bool(false)
+  0013: load Local(2) = Bool(true)
+  0014: if Local(2) == false jump to 18
+  0015: call increment(..) with sp=Local(4)
+  0016: copy Local(3) = Local(4)
+  0017: copy Local(1) = Local(3)
+  0018: copy Local(3) = Global(0)
+  0019: call print(arg0) with sp=Local(2)
+  0020: copy Local(1) = Local(2)
   0021: copy Local(0) = Global(0)
   0022: return
-  0023: call increment(..) with sp=Local(6)
-  0024: copy Local(5) = Local(6)
-  0025: copy Local(3) = Local(5)
+  0023: call increment(..) with sp=Local(4)
+  0024: copy Local(3) = Local(4)
+  0025: copy Local(1) = Local(3)
   0026: jump to 6
   0027: call increment(..) with sp=Local(4)
   0028: copy Local(3) = Local(4)

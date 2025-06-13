@@ -1,5 +1,5 @@
 Compile error
- ---> at line 4 column 5
+ ---> at line 2 column 11
   |
-4 |     C = 20; // Should cause a compile error
-  |     ^^^^^^ Cannot assign to a constant
+2 |     const C = 10;
+  |           ^ Type mismatch: expected Void, found Int

@@ -78,7 +78,6 @@ impl BlockIndex {
 pub struct VariableDeclaration {
     pub index: LocalVariableIndex,
     name: StringIndex,
-    var_ty: Option<Type>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -96,6 +95,13 @@ impl VariableIndex {
             VariableIndex::Local(idx) => idx.name(program, function),
             VariableIndex::Temporary(idx) => idx.name(program, function),
             VariableIndex::Global(idx) => idx.name(program),
+        }
+    }
+
+    pub fn local_index(self) -> Option<LocalVariableIndex> {
+        match self {
+            VariableIndex::Local(idx) | VariableIndex::Temporary(idx) => Some(idx),
+            VariableIndex::Global(_) => None,
         }
     }
 }
@@ -142,7 +148,12 @@ impl Ir {
                 &mut output,
                 "var {}: {:?} = {:?}",
                 program.strings.lookup(var.name),
-                var.var_ty,
+                function
+                    .variables
+                    .variable(var.index)
+                    .unwrap()
+                    .ty
+                    .unwrap_or(Type::Void),
                 init_value
             )
             .unwrap(),
@@ -528,19 +539,23 @@ impl Function {
         // Allocate a return variable, if the function has a return type.
         let (return_ty, return_token) = if let Some(return_type) = &func.return_decl {
             (
-                this.compile_type(&return_type.return_type)?,
+                Some(this.compile_type(&return_type.return_type)?),
                 return_type.return_type.type_name,
             )
         } else {
-            (Type::Void, func.fn_token)
+            (None, func.fn_token)
         };
         this.declare_variable("return_value", return_ty, return_token.location)?;
 
         // allocate variables for arguments
         for argument in func.arguments.iter() {
-            let ty = this.compile_type(&argument.arg_type)?;
+            let ty = if argument.reference_token.is_some() {
+                Type::Address
+            } else {
+                this.compile_type(&argument.arg_type)?
+            };
             let name = argument.name.source(source);
-            this.declare_variable(name, ty, argument.name.location)?;
+            this.declare_variable(name, Some(ty), argument.name.location)?;
         }
 
         for statement in func.body.statements.iter() {
@@ -549,7 +564,7 @@ impl Function {
 
         Ok(Function {
             name: this.strings.intern(func.name.source(source)),
-            return_type: return_ty,
+            return_type: return_ty.unwrap_or(Type::Void),
             variables: this.variables.finalize(),
             blocks: this.blocks.blocks,
         })
@@ -627,19 +642,18 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn declare_variable(
         &mut self,
         name: &str,
-        var_ty: Type,
+        var_ty: Option<Type>,
         source_location: Location,
         // TODO: mutability?
     ) -> Result<LocalVariableIndex, CompileError<'s>> {
         let name_index = self.strings.intern(name);
-        let variable = self.variables.declare_variable(name_index);
+        let variable = self.variables.declare_variable(name_index, var_ty);
         self.blocks.push_instruction(
             source_location,
             Ir::Declare(
                 VariableDeclaration {
                     index: variable,
                     name: name_index,
-                    var_ty: Some(var_ty),
                 },
                 None,
             ),
@@ -651,16 +665,18 @@ impl<'s> FunctionCompiler<'s, '_> {
         let temp_name = self
             .strings
             .intern(&format!("temp{}", self.variables.len()));
-        let temp = self.variables.declare_variable(temp_name);
+        let init_value = (init_value != Value::Void).then_some(init_value);
+        let temp = self
+            .variables
+            .declare_variable(temp_name, init_value.map(|v| v.type_of()));
         self.blocks.push_instruction(
             location,
             Ir::Declare(
                 VariableDeclaration {
                     index: temp,
                     name: temp_name,
-                    var_ty: None,
                 },
-                (init_value != Value::Void).then_some(init_value),
+                init_value,
             ),
         );
 
@@ -700,10 +716,9 @@ impl<'s> FunctionCompiler<'s, '_> {
 
         let name = ident.source(self.source);
         let var_ty = if let Some(type_token) = ty {
-            self.compile_type(type_token)?
+            Some(self.compile_type(type_token)?)
         } else {
-            // TODO: change to unspecified type?
-            Type::Void
+            None
         };
         let variable = self.declare_variable(name, var_ty, ident.location)?;
 
@@ -712,6 +727,7 @@ impl<'s> FunctionCompiler<'s, '_> {
             ident.location,
             Ir::Assign(VariableIndex::Local(variable), expr_result),
         );
+        self.free_if_temporary(initializer.location(), expr_result);
 
         Ok(())
     }
@@ -761,6 +777,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
         // Whatever happens, normal execution continues at the next block.
         self.blocks.select_block(next_block);
+        self.free_if_temporary(if_statement.condition.location(), condition);
 
         Ok(())
     }
@@ -864,6 +881,8 @@ impl<'s> FunctionCompiler<'s, '_> {
             Ir::Assign(VariableIndex::RETURN_VALUE, return_value),
         );
 
+        self.free_if_temporary(ret.expression.location(), return_value);
+
         self.compile_return(ret.return_token)
     }
 
@@ -908,7 +927,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_expression_statement(
         &mut self,
         expression: &ast::Expression,
-        _semicolon: &Token,
+        semicolon: &Token,
     ) -> Result<(), CompileError<'s>> {
         // Compile the expression, which may be a variable assignment, function call,
         // or other expression. Discard the result.
@@ -916,6 +935,8 @@ impl<'s> FunctionCompiler<'s, '_> {
 
         if let VariableIndex::Local(result) | VariableIndex::Temporary(result) = result {
             self.variables.free_variable(result);
+            self.blocks
+                .push_instruction(semicolon.location, Ir::FreeVariable(result));
         }
 
         Ok(())
@@ -1073,6 +1094,7 @@ impl<'s> FunctionCompiler<'s, '_> {
             let rhs = self.compile_expression(&operands[1])?;
             self.blocks
                 .push_instruction(operator.location, Ir::Assign(temp, rhs));
+            self.free_if_temporary(operands[1].location(), rhs);
 
             self.rollback_scope(operator.location, rp);
 
@@ -1092,6 +1114,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
             // Whatever happens, normal execution continues at the next block.
             self.blocks.select_block(next_block);
+            self.free_if_temporary(operands[0].location(), condition);
 
             Ok(temp)
         } else if op == "||" {
@@ -1113,6 +1136,7 @@ impl<'s> FunctionCompiler<'s, '_> {
             let rhs = self.compile_expression(&operands[1])?;
             self.blocks
                 .push_instruction(operator.location, Ir::Assign(temp, rhs));
+            self.free_if_temporary(operands[1].location(), rhs);
 
             self.rollback_scope(operator.location, rp);
 
@@ -1132,6 +1156,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
             // Whatever happens, normal execution continues at the next block.
             self.blocks.select_block(next_block);
+            self.free_if_temporary(operands[0].location(), condition);
 
             Ok(temp)
         } else if op == "=" {
@@ -1201,8 +1226,14 @@ impl<'s> FunctionCompiler<'s, '_> {
         // Allocate a temporary variable for the result.
         let temp = self.declare_temporary(name.location, Value::Void);
         // Generate the instruction for the function call.
-        self.blocks
-            .push_instruction(name.location, Ir::Call(function_index, temp, arguments));
+        self.blocks.push_instruction(
+            name.location,
+            Ir::Call(function_index, temp, arguments.clone()),
+        );
+
+        for argument in arguments {
+            self.free_if_temporary(name.location, argument);
+        }
 
         Ok(temp)
     }

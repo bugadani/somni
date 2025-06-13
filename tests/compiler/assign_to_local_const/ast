@@ -41,15 +41,16 @@ Program {
                         },
                     },
                     statements: [
-                        ConstantDefinition(
-                            ConstantDefinition {
-                                const_token: Token {
+                        VariableDefinition(
+                            VariableDefinition {
+                                decl_token: Token {
                                     kind: Identifier,
                                     location: Location {
                                         start: 16,
                                         end: 21,
                                     },
                                 },
+                                is_mutable: false,
                                 identifier: Token {
                                     kind: Identifier,
                                     location: Location {

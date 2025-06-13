@@ -1,14 +1,15 @@
 Program {
     items: [
-        Constant(
-            Constant {
-                const_token: Token {
+        GlobalVariable(
+            GlobalVariable {
+                decl_token: Token {
                     kind: Identifier,
                     location: Location {
                         start: 0,
                         end: 5,
                     },
                 },
+                is_mutable: false,
                 identifier: Token {
                     kind: Identifier,
                     location: Location {
@@ -23,7 +24,7 @@ Program {
                         end: 9,
                     },
                 },
-                type_token: Type {
+                type_token: TypeHint {
                     type_name: Token {
                         kind: Identifier,
                         location: Location {
@@ -39,7 +40,7 @@ Program {
                         end: 17,
                     },
                 },
-                value: Literal {
+                initializer: Literal {
                     value: Literal {
                         value: Float(
                             3.14,
@@ -61,13 +62,14 @@ Program {
         ),
         GlobalVariable(
             GlobalVariable {
-                var_token: Token {
+                decl_token: Token {
                     kind: Identifier,
                     location: Location {
                         start: 25,
                         end: 28,
                     },
                 },
+                is_mutable: true,
                 identifier: Token {
                     kind: Identifier,
                     location: Location {
@@ -82,7 +84,7 @@ Program {
                         end: 50,
                     },
                 },
-                type_token: Type {
+                type_token: TypeHint {
                     type_name: Token {
                         kind: Identifier,
                         location: Location {
@@ -158,7 +160,7 @@ Program {
                             },
                         },
                         reference_token: None,
-                        arg_type: Type {
+                        arg_type: TypeHint {
                             type_name: Token {
                                 kind: Identifier,
                                 location: Location {
@@ -184,7 +186,7 @@ Program {
                             },
                         },
                         reference_token: None,
-                        arg_type: Type {
+                        arg_type: TypeHint {
                             type_name: Token {
                                 kind: Identifier,
                                 location: Location {
@@ -211,7 +213,7 @@ Program {
                                 end: 87,
                             },
                         },
-                        return_type: Type {
+                        return_type: TypeHint {
                             type_name: Token {
                                 kind: Identifier,
                                 location: Location {

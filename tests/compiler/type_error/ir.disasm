@@ -1,0 +1,34 @@
+Globals:
+
+Functions:
+Function: foo
+block 0
+  var return_value: String = None
+  var x: Void = None
+  var temp2: Int = Some(Int(3))
+  x = temp2
+  free(temp2)
+  var y: Void = None
+  var temp4: Int = Some(Int(2))
+  y = temp4
+  free(temp4)
+  var z: Void = None
+  var temp6: Void = None
+  temp6 = x + y
+  z = temp6
+  free(temp6)
+  return_value = z
+  free(z)
+  free(y)
+  free(x)
+  free(return_value)
+  -> block 2
+
+block 1
+  -> return
+
+block 2
+  -> block 1
+
+block 3
+  -> block 1

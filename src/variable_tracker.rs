@@ -1,6 +1,6 @@
 use indexmap::{IndexMap, IndexSet};
 
-use crate::string_interner::StringIndex;
+use crate::{ir::Type, string_interner::StringIndex};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RestorePoint(usize);
@@ -29,6 +29,7 @@ pub enum Event {
 pub struct LocalVariableInfo {
     pub name: StringIndex,
     pub has_reference: bool,
+    pub ty: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +55,10 @@ impl ScopeData {
     pub fn variable(&self, index: LocalVariableIndex) -> Option<&LocalVariableInfo> {
         self.all_variables.get(index.0)
     }
+
+    pub fn variable_mut(&mut self, index: LocalVariableIndex) -> Option<&mut LocalVariableInfo> {
+        self.all_variables.get_mut(index.0)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -76,7 +81,7 @@ impl VariableTracker {
         }
     }
 
-    pub fn declare_variable(&mut self, name: StringIndex) -> LocalVariableIndex {
+    pub fn declare_variable(&mut self, name: StringIndex, ty: Option<Type>) -> LocalVariableIndex {
         let index = LocalVariableIndex(self.data.all_variables.len());
         if let Some(old) = self.currently_visible_variables.insert(name, index) {
             if !self.data.all_variables[old.0].has_reference {
@@ -88,6 +93,7 @@ impl VariableTracker {
         self.data.all_variables.push(LocalVariableInfo {
             name,
             has_reference: false,
+            ty,
         });
         self.data.events.push(Event::VariableDeclared(index));
         index
@@ -203,18 +209,18 @@ mod tests {
         // }
         // ```
 
-        tracker.declare_variable(interner.intern("x"));
-        tracker.declare_variable(interner.intern("y"));
+        tracker.declare_variable(interner.intern("x"), None);
+        tracker.declare_variable(interner.intern("y"), None);
         let restore_point = tracker.create_restore_point();
         assert!(tracker.find(interner.intern("x")).is_some());
         assert!(tracker.find(interner.intern("y")).is_some());
-        let z = tracker.declare_variable(interner.intern("z"));
-        let z2 = tracker.declare_variable(interner.intern("z"));
+        let z = tracker.declare_variable(interner.intern("z"), None);
+        let z2 = tracker.declare_variable(interner.intern("z"), None);
         assert_ne!(z, z2);
         assert!(!tracker.is_visible(z));
-        let w = tracker.declare_variable(interner.intern("w"));
+        let w = tracker.declare_variable(interner.intern("w"), None);
         tracker.reference_variable(z2);
-        let z3 = tracker.declare_variable(interner.intern("z"));
+        let z3 = tracker.declare_variable(interner.intern("z"), None);
         assert_ne!(z, z3);
         assert_eq!(tracker.find(interner.intern("z")), Some(z3));
         assert!(tracker.find(interner.intern("w")).is_some());

@@ -1,0 +1,27 @@
+Globals:
+  PI = Float(3.14)
+  some_static_variable = Int(42)
+
+Functions:
+Function: add
+block 0
+  var return_value: Int = None
+  var a: Int = None
+  var b: Int = None
+  var temp3: Int = None
+  temp3 = a + b
+  return_value = temp3
+  free(temp3)
+  free(b)
+  free(a)
+  free(return_value)
+  -> block 2
+
+block 1
+  -> return
+
+block 2
+  -> block 1
+
+block 3
+  -> block 1

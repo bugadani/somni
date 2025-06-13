@@ -20,7 +20,7 @@ block 2
   if temp5 -> block 4 else block 5
 
 block 3
-  var temp3: Void = None
+  var temp3: Bool = None
   temp3 = call increment()
   temp1 = temp3
   free(temp3)
@@ -34,7 +34,7 @@ block 4
   if temp8 -> block 7 else block 6
 
 block 5
-  var temp6: Void = None
+  var temp6: Bool = None
   temp6 = call increment()
   temp4 = temp6
   free(temp6)
@@ -48,7 +48,7 @@ block 6
   if temp11 -> block 9 else block 8
 
 block 7
-  var temp9: Void = None
+  var temp9: Bool = None
   temp9 = call increment()
   temp7 = temp9
   free(temp9)
@@ -65,7 +65,7 @@ block 8
   -> block 10
 
 block 9
-  var temp12: Void = None
+  var temp12: Bool = None
   temp12 = call increment()
   temp10 = temp12
   free(temp12)
@@ -80,7 +80,7 @@ Function: increment
 block 0
   var return_value: Void = None
   var temp1: Int = Some(Int(1))
-  var temp2: Void = None
+  var temp2: Int = None
   temp2 = do_not_touch + temp1
   free(temp1)
   do_not_touch = temp2

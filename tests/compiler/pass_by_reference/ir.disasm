@@ -1,0 +1,46 @@
+Globals:
+
+Functions:
+Function: pass_by_reference
+block 0
+  var return_value: SignedInt = None
+  var x: SignedInt = None
+  var temp2: Void = None
+  temp2 = &x
+  var temp3: Void = None
+  temp3 = call take_by_reference(temp2)
+  free(temp2)
+  return_value = temp3
+  free(temp3)
+  free(x)
+  free(return_value)
+  -> block 2
+
+block 1
+  -> return
+
+block 2
+  -> block 1
+
+block 3
+  -> block 1
+Function: take_by_reference
+block 0
+  var return_value: SignedInt = None
+  var x: Address = None
+  var temp2: Void = None
+  temp2 = *x
+  return_value = temp2
+  free(temp2)
+  free(x)
+  free(return_value)
+  -> block 2
+
+block 1
+  -> return
+
+block 2
+  -> block 1
+
+block 3
+  -> block 1

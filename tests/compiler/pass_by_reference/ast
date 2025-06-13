@@ -40,7 +40,7 @@ Program {
                             },
                         },
                         reference_token: None,
-                        arg_type: Type {
+                        arg_type: TypeHint {
                             type_name: Token {
                                 kind: Identifier,
                                 location: Location {
@@ -67,7 +67,7 @@ Program {
                                 end: 34,
                             },
                         },
-                        return_type: Type {
+                        return_type: TypeHint {
                             type_name: Token {
                                 kind: Identifier,
                                 location: Location {
@@ -193,7 +193,7 @@ Program {
                                 },
                             },
                         ),
-                        arg_type: Type {
+                        arg_type: TypeHint {
                             type_name: Token {
                                 kind: Identifier,
                                 location: Location {
@@ -220,7 +220,7 @@ Program {
                                 end: 116,
                             },
                         },
-                        return_type: Type {
+                        return_type: TypeHint {
                             type_name: Token {
                                 kind: Identifier,
                                 location: Location {

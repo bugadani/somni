@@ -6,7 +6,7 @@ block 0
   var return_value: Int = None
   var n: Int = None
   var temp2: Int = Some(Int(1))
-  var temp3: Void = None
+  var temp3: Bool = None
   temp3 = n <= temp2
   free(temp2)
   if temp3 -> block 3 else block 2
@@ -17,20 +17,20 @@ block 1
 block 2
   free(temp3)
   var temp4: Int = Some(Int(1))
-  var temp5: Void = None
+  var temp5: Int = None
   temp5 = n - temp4
   free(temp4)
-  var temp6: Void = None
+  var temp6: Int = None
   temp6 = call fib(temp5)
   free(temp5)
   var temp7: Int = Some(Int(2))
-  var temp8: Void = None
+  var temp8: Int = None
   temp8 = n - temp7
   free(temp7)
-  var temp9: Void = None
+  var temp9: Int = None
   temp9 = call fib(temp8)
   free(temp8)
-  var temp10: Void = None
+  var temp10: Int = None
   temp10 = temp6 + temp9
   free(temp6)
   free(temp9)

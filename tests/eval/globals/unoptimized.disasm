@@ -6,6 +6,6 @@ Function double(...) -> void (stack: 3)
 Function doubled(...) -> int (stack: 3)
   0004: call double(..) with sp=Local(2)
   0005: copy Local(1) = Local(2)
-  0006: Local(2) = Global(0) + Global(1)
-  0007: copy Local(0) = Local(2)
+  0006: Local(1) = Global(0) + Global(1)
+  0007: copy Local(0) = Local(1)
   0008: return
