@@ -1,6 +1,14 @@
 Globals:
 
 Functions:
+Function: f
+block 0
+  var return_value: Void = None
+  var x: Float = None
+  -> block 1
+
+block 1
+  -> return
 Function: foo
 block 0
   var return_value: String = None
@@ -17,6 +25,9 @@ block 0
   temp6 = x + y
   z = temp6
   free(temp6)
+  var temp7: Void = None
+  temp7 = call f(x)
+  free(temp7)
   return_value = z
   free(z)
   free(y)

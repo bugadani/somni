@@ -1,6 +1,9 @@
+fn f(x: float) {}
+
 fn foo() -> string {
     var x = 3;
     var y = 2;
     var z = x + y;
+    f(x); // TODO: should fail
     return z;
 }

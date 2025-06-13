@@ -86,6 +86,7 @@ pub fn run_compile_test(file: impl AsRef<Path>, compile_test: bool) -> Option<co
     };
     write_out_file(&ctx.out_path.join("ast"), format!("{:#?}", ast));
 
+    let mut program = None;
     if compile_test {
         // Compile the program to IR.
         let mut ir = match ir::Program::compile(&source, &ast) {
@@ -100,16 +101,16 @@ pub fn run_compile_test(file: impl AsRef<Path>, compile_test: bool) -> Option<co
         write_out_file(&ctx.out_path.join("ir.transformed.disasm"), ir.print());
 
         // Compile the IR to a program.
-        let program = match codegen::compile(&source, &ir) {
+        let p = match codegen::compile(&source, &ir) {
             Ok(program) => program,
             Err(err) => return ctx.handle_error("Failed to compile", err),
         };
         write_out_file(
             &ctx.out_path.join("unoptimized.disasm"),
-            program.disasm(&program.debug_info),
+            p.disasm(&p.debug_info),
         );
 
-        return Some(program);
+        program = Some(p);
     }
 
     if ctx.fail_expected() {
@@ -119,7 +120,7 @@ pub fn run_compile_test(file: impl AsRef<Path>, compile_test: bool) -> Option<co
         );
     }
 
-    None
+    program
 }
 
 struct TestContext<'a> {
