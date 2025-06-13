@@ -694,3 +694,11 @@ impl StackAllocator {
         MemoryAddress::Local(start_address)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_compile() {
+        crate::test::run_compile_tests("tests/compiler/");
+    }
+}
