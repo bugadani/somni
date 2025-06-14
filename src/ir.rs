@@ -1,6 +1,3 @@
-// Optimization ideas:
-// - Merge identical cleanup blocks
-
 use std::fmt::{Debug, Display, Write as _};
 
 use indexmap::IndexMap;

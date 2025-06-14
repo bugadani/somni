@@ -73,9 +73,6 @@ block 9
 
 block 10
   -> block 1
-
-block 11
-  -> block 1
 Function: increment
 block 0
   var return_value: Bool = None
@@ -97,7 +94,4 @@ block 1
   -> return
 
 block 2
-  -> block 1
-
-block 3
   -> block 1

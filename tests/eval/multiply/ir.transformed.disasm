@@ -20,51 +20,45 @@ block 1
 
 block 2
   -> block 1
-
-block 3
-  -> block 1
 Function: multiply
 block 0
   var return_value: Int = None
   var number: Int = None
   var n: Int = None
   var add: Bool = None
-  if add -> block 3 else block 13
+  if add -> block 2 else block 10
 
 block 1
   -> return
 
 block 2
-  -> block 1
-
-block 3
   var acc: Int = None
   var temp5: Int = Some(Int(0))
   acc = temp5
   free(temp5)
-  -> block 5
+  -> block 4
 
-block 4
+block 3
   return_value = acc
   free(acc)
   free(add)
   free(n)
   free(number)
   free(return_value)
-  -> block 11
+  -> block 9
 
-block 5
+block 4
   var temp6: Int = Some(Int(0))
   var temp7: Bool = None
   temp7 = n > temp6
   free(temp6)
-  if temp7 -> block 7 else block 8
+  if temp7 -> block 6 else block 7
+
+block 5
+  free(temp7)
+  -> block 4
 
 block 6
-  free(temp7)
-  -> block 5
-
-block 7
   var temp8: Int = None
   temp8 = acc + number
   acc = temp8
@@ -79,25 +73,19 @@ block 7
   free(temp11)
   var temp12: Void = None
   free(temp12)
-  -> block 6
+  -> block 5
+
+block 7
+  free(temp7)
+  -> block 8
 
 block 8
-  free(temp7)
-  -> block 9
+  -> block 3
 
 block 9
-  -> block 4
-
-block 10
-  -> block 6
-
-block 11
   -> block 1
 
-block 12
-  -> block 2
-
-block 13
+block 10
   var temp13: Void = None
   temp13 = call noop()
   free(temp13)
@@ -109,10 +97,7 @@ block 13
   free(n)
   free(number)
   free(return_value)
-  -> block 14
+  -> block 11
 
-block 14
+block 11
   -> block 1
-
-block 15
-  -> block 2

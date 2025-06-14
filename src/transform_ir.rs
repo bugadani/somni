@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 
 use crate::{
     error::CompileError,
-    ir::{self, GlobalInitializer, Type, VariableIndex},
+    ir::{self, BlockIndex, GlobalInitializer, Type, VariableIndex},
     lexer::Location,
     string_interner::StringIndex,
     variable_tracker::ScopeData,
@@ -201,9 +201,78 @@ impl<'a, 's> TypeResolver<'a, 's> {
 }
 
 pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), CompileError<'s>> {
+    // TODO: Jump threading
+    // TODO: merge identical blocks
+    remove_unreachable_blocks(ir);
     propagate_variable_types(source, ir)?;
 
+    // Remove unnecessary assignments (assignments without reads after them).
+    // Remove unused variables.
+
     Ok(())
+}
+
+fn remove_unreachable_blocks(ir: &mut ir::Program) {
+    for func in ir.functions.values_mut() {
+        let mut reachable = vec![false; func.blocks.len()];
+        let mut stack = vec![BlockIndex(0)]; // Start with the first block.
+
+        while let Some(BlockIndex(block_index)) = stack.pop() {
+            if reachable[block_index] {
+                continue; // Already visited this block.
+            }
+            reachable[block_index] = true;
+
+            let block = &func.blocks[block_index];
+
+            match block.terminator {
+                ir::Termination::Return { .. } => {}
+                ir::Termination::Jump { to, .. } => {
+                    stack.push(to);
+                }
+                ir::Termination::If {
+                    then_block,
+                    else_block,
+                    ..
+                } => {
+                    stack.push(then_block);
+                    stack.push(else_block);
+                }
+            }
+        }
+
+        // Renumber reachable blocks.
+        let remap = |idx: &BlockIndex| {
+            let new_idx = reachable.iter().take(idx.0 + 1).filter(|&&r| r).count() - 1;
+
+            BlockIndex(new_idx)
+        };
+
+        for block in &mut func.blocks {
+            match &mut block.terminator {
+                ir::Termination::Jump { to, .. } => {
+                    *to = remap(to);
+                }
+                ir::Termination::If {
+                    then_block,
+                    else_block,
+                    ..
+                } => {
+                    *then_block = remap(then_block);
+                    *else_block = remap(else_block);
+                }
+                ir::Termination::Return(..) => {}
+            }
+        }
+
+        // Remove unreachable blocks.
+        let mut current = 0;
+        func.blocks.retain(|_| {
+            let retain = reachable[current];
+            current += 1;
+            retain
+        });
+    }
 }
 
 fn propagate_variable_types<'s>(
