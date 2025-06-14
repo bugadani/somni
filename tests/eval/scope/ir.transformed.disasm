@@ -19,7 +19,7 @@ block 2
   return_value = x
   free(x)
   free(return_value)
-  -> block 4
+  -> block 1
 
 block 3
   var x: Int = None
@@ -36,6 +36,3 @@ block 3
   free(temp8)
   free(x)
   -> block 2
-
-block 4
-  -> block 1

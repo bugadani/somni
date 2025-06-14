@@ -58,7 +58,7 @@ impl Display for Type {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlockIndex(pub usize);
 
 impl Debug for BlockIndex {

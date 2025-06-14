@@ -38,14 +38,11 @@ block 2
   free(temp10)
   free(n)
   free(return_value)
-  -> block 4
+  -> block 1
 
 block 3
   return_value = n
   free(temp3)
   free(n)
   free(return_value)
-  -> block 4
-
-block 4
   -> block 1

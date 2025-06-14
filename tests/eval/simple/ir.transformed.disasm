@@ -16,10 +16,7 @@ block 0
   free(temp4)
   free(n)
   free(return_value)
-  -> block 2
+  -> block 1
 
 block 1
   -> return
-
-block 2
-  -> block 1

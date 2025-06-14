@@ -201,9 +201,12 @@ impl<'a, 's> TypeResolver<'a, 's> {
 }
 
 pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), CompileError<'s>> {
-    // TODO: Jump threading
-    merge_identical_blocks(ir);
-    remove_unreachable_blocks(ir);
+    for func in ir.functions.values_mut() {
+        bypass_redundant_jump_blocks(func);
+        merge_identical_blocks(func);
+        remove_unreachable_blocks(func);
+    }
+
     propagate_variable_types(source, ir)?;
 
     // Remove unnecessary assignments (assignments without reads after them).
@@ -212,104 +215,123 @@ pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), Com
     Ok(())
 }
 
-fn remove_unreachable_blocks(ir: &mut ir::Program) {
-    for func in ir.functions.values_mut() {
-        let mut reachable = vec![false; func.blocks.len()];
-        let mut stack = vec![BlockIndex(0)]; // Start with the first block.
+/// This function removes blocks that only contain a jump to another block,
+/// effectively bypassing them. The bypassed blocks will be removed by `remove_unreachable_blocks`.
+fn bypass_redundant_jump_blocks(func: &mut ir::Function) {
+    // We will keep track of replacements for blocks that are bypassed.
+    let mut replacements = HashMap::new();
 
-        while let Some(BlockIndex(block_index)) = stack.pop() {
-            if reachable[block_index] {
-                continue; // Already visited this block.
-            }
-            reachable[block_index] = true;
-
-            let block = &func.blocks[block_index];
-
-            match block.terminator {
-                ir::Termination::Return { .. } => {}
-                ir::Termination::Jump { to, .. } => {
-                    stack.push(to);
+    for (index, block) in func.blocks.iter().enumerate() {
+        if let ir::Termination::Jump { to, .. } = block.terminator {
+            // If the block only contains a jump, we can bypass it.
+            if block.instructions.is_empty() {
+                // If the target block is already replaced, we use that replacement.
+                let new_target = replacements.get(&to).copied().unwrap_or(to);
+                // If this block is a target of another replacement, update that replacement.
+                if let Some(to_update) =
+                    replacements.values_mut().find(|v| **v == BlockIndex(index))
+                {
+                    *to_update = new_target;
                 }
-                ir::Termination::If {
-                    then_block,
-                    else_block,
-                    ..
-                } => {
-                    stack.push(then_block);
-                    stack.push(else_block);
-                }
+
+                replacements.insert(BlockIndex(index), new_target);
             }
         }
+    }
 
-        // Renumber reachable blocks.
-        let remap = |idx: &BlockIndex| {
-            let new_idx = reachable.iter().take(idx.0 + 1).filter(|&&r| r).count() - 1;
+    let remap = |idx: &BlockIndex| replacements.get(idx).copied().unwrap_or(*idx);
 
-            BlockIndex(new_idx)
-        };
+    remap_block_idxs(func, remap);
+}
 
-        for block in &mut func.blocks {
-            match &mut block.terminator {
-                ir::Termination::Jump { to, .. } => {
-                    *to = remap(to);
-                }
-                ir::Termination::If {
-                    then_block,
-                    else_block,
-                    ..
-                } => {
-                    *then_block = remap(then_block);
-                    *else_block = remap(else_block);
-                }
-                ir::Termination::Return(..) => {}
+fn remap_block_idxs<F>(func: &mut ir::Function, remap: F)
+where
+    F: Fn(&BlockIndex) -> BlockIndex,
+{
+    for block in &mut func.blocks {
+        match &mut block.terminator {
+            ir::Termination::Jump { to, .. } => *to = remap(to),
+            ir::Termination::If {
+                then_block,
+                else_block,
+                ..
+            } => {
+                *then_block = remap(then_block);
+                *else_block = remap(else_block);
             }
+            ir::Termination::Return { .. } => {}
         }
-
-        // Remove unreachable blocks.
-        let mut current = 0;
-        func.blocks.retain(|_| {
-            let retain = reachable[current];
-            current += 1;
-            retain
-        });
     }
 }
 
-fn merge_identical_blocks(ir: &mut ir::Program) {
-    for func in ir.functions.values_mut() {
-        let mut identical_to = (0..).take(func.blocks.len()).collect::<Vec<_>>();
+fn remove_unreachable_blocks(func: &mut ir::Function) {
+    let mut reachable = vec![false; func.blocks.len()];
+    let mut stack = vec![BlockIndex(0)]; // Start with the first block.
 
-        for (idx, block) in func.blocks.iter().enumerate() {
-            // Check if this block is identical to any previous block.
-            for (prev_idx, prev_block) in func.blocks.iter().enumerate().take(idx) {
-                if block == prev_block {
-                    // Mark this block as identical to the previous one.
-                    identical_to[idx] = prev_idx;
-                    break;
-                }
+    while let Some(BlockIndex(block_index)) = stack.pop() {
+        if reachable[block_index] {
+            continue; // Already visited this block.
+        }
+        reachable[block_index] = true;
+
+        let block = &func.blocks[block_index];
+
+        match block.terminator {
+            ir::Termination::Return { .. } => {}
+            ir::Termination::Jump { to, .. } => {
+                stack.push(to);
+            }
+            ir::Termination::If {
+                then_block,
+                else_block,
+                ..
+            } => {
+                stack.push(then_block);
+                stack.push(else_block);
             }
         }
-
-        // Remap blocks to their first occurrence.
-        for block in &mut func.blocks {
-            match &mut block.terminator {
-                ir::Termination::Jump { to, .. } => {
-                    *to = BlockIndex(identical_to[to.0]);
-                }
-                ir::Termination::If {
-                    then_block,
-                    else_block,
-                    ..
-                } => {
-                    *then_block = BlockIndex(identical_to[then_block.0]);
-                    *else_block = BlockIndex(identical_to[else_block.0]);
-                }
-                ir::Termination::Return { .. } => {}
-            }
-        }
-
-        // remove_unreachable_blocks will trim the blocks
     }
+
+    // Renumber reachable blocks.
+    let remap = |idx: &BlockIndex| {
+        let new_idx = reachable.iter().take(idx.0 + 1).filter(|&&r| r).count() - 1;
+
+        BlockIndex(new_idx)
+    };
+
+    remap_block_idxs(func, remap);
+
+    // Remove unreachable blocks.
+    let mut current = 0;
+    func.blocks.retain(|_| {
+        let retain = reachable[current];
+        current += 1;
+        retain
+    });
+}
+
+fn merge_identical_blocks(func: &mut ir::Function) {
+    let mut identical_to = (0..).take(func.blocks.len()).collect::<Vec<_>>();
+
+    for (idx, block) in func.blocks.iter().enumerate() {
+        // Check if this block is identical to any previous block.
+        for (prev_idx, prev_block) in func.blocks.iter().enumerate().take(idx) {
+            if block == prev_block {
+                // Mark this block as identical to the previous one.
+                identical_to[idx] = prev_idx;
+                break;
+            }
+        }
+    }
+
+    let remap = |idx: &BlockIndex| {
+        // If the block is identical to another, use the first occurrence.
+        BlockIndex(identical_to[idx.0])
+    };
+
+    remap_block_idxs(func, remap);
+
+    // remove_unreachable_blocks will trim the blocks
 }
 
 fn propagate_variable_types<'s>(

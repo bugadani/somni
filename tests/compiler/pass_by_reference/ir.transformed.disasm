@@ -14,13 +14,10 @@ block 0
   free(temp3)
   free(x)
   free(return_value)
-  -> block 2
+  -> block 1
 
 block 1
   -> return
-
-block 2
-  -> block 1
 Function: take_by_reference
 block 0
   var return_value: SignedInt = None
@@ -31,10 +28,7 @@ block 0
   free(temp2)
   free(x)
   free(return_value)
-  -> block 2
+  -> block 1
 
 block 1
   -> return
-
-block 2
-  -> block 1

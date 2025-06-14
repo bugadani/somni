@@ -36,10 +36,7 @@ block 0
   return_value = input
   free(input)
   free(return_value)
-  -> block 2
+  -> block 1
 
 block 1
   -> return
-
-block 2
-  -> block 1
