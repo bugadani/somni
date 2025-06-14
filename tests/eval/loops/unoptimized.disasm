@@ -3,21 +3,19 @@ Function loopy(...) -> int (stack: 5)
   0001: copy Local(1) = Local(2)
   0002: load Local(2) = Int(4)
   0003: Local(3) = Local(2) < Local(1)
-  0004: if Local(3) == false jump to 21
+  0004: if Local(3) == false jump to 19
   0005: load Local(2) = Int(6)
   0006: Local(4) = Local(1) == Local(2)
-  0007: if Local(4) == false jump to 17
+  0007: if Local(4) == false jump to 16
   0008: load Local(2) = Int(0)
   0009: Local(3) = Local(2) < Local(1)
-  0010: if Local(3) == false jump to 15
+  0010: if Local(3) == false jump to 14
   0011: load Local(2) = Int(1)
-  0012: Local(4) = Local(1) - Local(2)
-  0013: copy Local(1) = Local(4)
-  0014: jump to 2
-  0015: copy Local(0) = Local(1)
-  0016: return
-  0017: load Local(2) = Int(1)
-  0018: Local(4) = Local(1) - Local(2)
-  0019: copy Local(1) = Local(4)
-  0020: jump to 2
-  0021: jump to 8
+  0012: Local(1) = Local(1) - Local(2)
+  0013: jump to 2
+  0014: copy Local(0) = Local(1)
+  0015: return
+  0016: load Local(2) = Int(1)
+  0017: Local(1) = Local(1) - Local(2)
+  0018: jump to 2
+  0019: jump to 8

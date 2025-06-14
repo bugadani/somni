@@ -2,11 +2,10 @@ Function main(...) -> int (stack: 6)
   0000: load Local(2) = Int(10)
   0001: copy Local(1) = Local(2)
   0002: load Local(2) = Bool(true)
-  0003: if Local(2) == false jump to 9
+  0003: if Local(2) == false jump to 8
   0004: load Local(4) = Int(20)
   0005: copy Local(3) = Local(4)
   0006: load Local(4) = Int(10)
-  0007: Local(5) = Local(3) + Local(4)
-  0008: copy Local(3) = Local(5)
-  0009: copy Local(0) = Local(1)
-  0010: return
+  0007: Local(3) = Local(3) + Local(4)
+  0008: copy Local(0) = Local(1)
+  0009: return

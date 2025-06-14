@@ -210,6 +210,9 @@ pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), Com
     propagate_variable_types(source, ir)?;
 
     // Remove unnecessary assignments (assignments without reads after them).
+    for func in ir.functions.values_mut() {
+        propagate_destination(func);
+    }
     // Remove unused variables.
 
     Ok(())
@@ -485,4 +488,42 @@ fn propagate_variable_types_inner<'s>(
     }
 
     Ok(())
+}
+
+fn propagate_destination(func: &mut ir::Function) {
+    for block in &mut func.blocks {
+        // Ending with 1, because we don't need to check the
+        // first instruction - we can't remove it anyway.
+        for idx in (1..block.instructions.len()).rev() {
+            if let ir::Ir::Assign(dst, src) = block.instructions[idx].instruction {
+                // If we find an assignment, let's try to remove it. We can remove it if we find the
+                // src written previously in the block.
+                for prev_idx in (0..idx - 1).rev() {
+                    let read = match &block.instructions[prev_idx].instruction {
+                        ir::Ir::Assign(_, assign_source) => *assign_source == src,
+                        ir::Ir::Call(_, _, args) => args.contains(&src),
+                        ir::Ir::BinaryOperator(_, _, lhs, rhs) => *lhs == src || *rhs == src,
+                        ir::Ir::UnaryOperator(_, _, operand) => *operand == src,
+                        _ => false,
+                    };
+                    if read {
+                        break;
+                    }
+                    let written = match &mut block.instructions[prev_idx].instruction {
+                        ir::Ir::Assign(dst, _) => dst,
+                        ir::Ir::Call(_, dst, _) => dst,
+                        ir::Ir::BinaryOperator(_, dst, _, _) => dst,
+                        ir::Ir::UnaryOperator(_, dst, _) => dst,
+                        _ => continue,
+                    };
+
+                    if *written == src {
+                        *written = dst; // Replace the written variable with the destination.
+                        block.instructions.remove(idx); // Remove the assignment.
+                        break;
+                    }
+                }
+            }
+        }
+    }
 }

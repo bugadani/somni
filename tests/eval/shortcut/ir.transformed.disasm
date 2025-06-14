@@ -75,9 +75,8 @@ block 0
   var return_value: Bool = None
   var temp1: Int = Some(Int(1))
   var temp2: Int = None
-  temp2 = do_not_touch + temp1
+  do_not_touch = do_not_touch + temp1
   free(temp1)
-  do_not_touch = temp2
   free(temp2)
   var temp3: Void = None
   free(temp3)

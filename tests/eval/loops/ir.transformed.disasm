@@ -42,9 +42,8 @@ block 6
   free(temp6)
   var temp7: Int = Some(Int(1))
   var temp8: Int = None
-  temp8 = n - temp7
+  n = n - temp7
   free(temp7)
-  n = temp8
   free(temp8)
   var temp9: Void = None
   free(temp9)
@@ -69,9 +68,8 @@ block 9
 block 10
   var temp12: Int = Some(Int(1))
   var temp13: Int = None
-  temp13 = n - temp12
+  n = n - temp12
   free(temp12)
-  n = temp13
   free(temp13)
   var temp14: Void = None
   free(temp14)

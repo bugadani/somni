@@ -8,9 +8,8 @@ block 0
   var temp2: Address = None
   temp2 = &x
   var temp3: SignedInt = None
-  temp3 = call take_by_reference(temp2)
+  return_value = call take_by_reference(temp2)
   free(temp2)
-  return_value = temp3
   free(temp3)
   free(x)
   free(return_value)

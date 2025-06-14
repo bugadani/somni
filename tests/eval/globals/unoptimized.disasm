@@ -1,11 +1,10 @@
 Function double(...) -> void (stack: 3)
   0000: load Local(1) = Int(2)
-  0001: Local(2) = Global(0) * Local(1)
-  0002: copy Global(0) = Local(2)
-  0003: return
+  0001: Global(0) = Global(0) * Local(1)
+  0002: return
 Function doubled(...) -> int (stack: 3)
-  0004: call double(..) with sp=Local(2)
-  0005: copy Local(1) = Local(2)
-  0006: Local(1) = Global(0) + Global(1)
-  0007: copy Local(0) = Local(1)
-  0008: return
+  0003: call double(..) with sp=Local(2)
+  0004: copy Local(1) = Local(2)
+  0005: Local(1) = Global(0) + Global(1)
+  0006: copy Local(0) = Local(1)
+  0007: return

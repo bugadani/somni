@@ -31,10 +31,9 @@ block 2
   temp9 = call fib(temp8)
   free(temp8)
   var temp10: Int = None
-  temp10 = temp6 + temp9
+  return_value = temp6 + temp9
   free(temp6)
   free(temp9)
-  return_value = temp10
   free(temp10)
   free(n)
   free(return_value)

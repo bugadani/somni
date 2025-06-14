@@ -2,10 +2,9 @@ Function pass_by_reference(...) -> signed (stack: 6)
   0000: Local(2) = &Local(1)
   0001: copy Local(5) = Local(2)
   0002: call take_by_reference(..) with sp=Local(4)
-  0003: copy Local(3) = Local(4)
-  0004: copy Local(0) = Local(3)
-  0005: return
+  0003: copy Local(0) = Local(4)
+  0004: return
 Function take_by_reference(...) -> signed (stack: 3)
-  0006: Local(2) = *Local(1)
-  0007: copy Local(0) = Local(2)
-  0008: return
+  0005: Local(2) = *Local(1)
+  0006: copy Local(0) = Local(2)
+  0007: return

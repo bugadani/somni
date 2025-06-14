@@ -8,9 +8,8 @@ block 0
   var return_value: Void = None
   var temp1: Int = Some(Int(2))
   var temp2: Int = None
-  temp2 = n * temp1
+  n = n * temp1
   free(temp1)
-  n = temp2
   free(temp2)
   var temp3: Void = None
   free(temp3)

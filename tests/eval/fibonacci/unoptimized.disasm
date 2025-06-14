@@ -14,6 +14,5 @@ Function fib(...) -> int (stack: 7)
   0012: copy Local(6) = Local(4)
   0013: call fib(..) with sp=Local(5)
   0014: copy Local(3) = Local(5)
-  0015: Local(4) = Local(2) + Local(3)
-  0016: copy Local(0) = Local(4)
-  0017: jump to 4
+  0015: Local(0) = Local(2) + Local(3)
+  0016: jump to 4
