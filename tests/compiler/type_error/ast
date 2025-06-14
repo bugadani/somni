@@ -322,24 +322,24 @@ Program {
                                 return_token: Token {
                                     kind: Identifier,
                                     location: Location {
-                                        start: 124,
-                                        end: 130,
+                                        start: 103,
+                                        end: 109,
                                     },
                                 },
                                 expression: Variable {
                                     variable: Token {
                                         kind: Identifier,
                                         location: Location {
-                                            start: 131,
-                                            end: 132,
+                                            start: 110,
+                                            end: 111,
                                         },
                                     },
                                 },
                                 semicolon: Token {
                                     kind: Symbol,
                                     location: Location {
-                                        start: 132,
-                                        end: 133,
+                                        start: 111,
+                                        end: 112,
                                     },
                                 },
                             },
@@ -348,8 +348,8 @@ Program {
                     closing_brace: Token {
                         kind: Symbol,
                         location: Location {
-                            start: 134,
-                            end: 135,
+                            start: 113,
+                            end: 114,
                         },
                     },
                 },

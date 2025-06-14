@@ -1,5 +1,5 @@
 Compile error
- ---> at line 8 column 5
+ ---> at line 7 column 5
   |
-8 |     return z;
-  |     ^^^^^^^^^ Type mismatch: expected String, found Int
+7 |     f(x);
+  |     ^ Type mismatch: expected Float, found Int

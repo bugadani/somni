@@ -30,8 +30,10 @@ Function main(...) -> int (stack: 5)
   0028: copy Local(3) = Local(4)
   0029: copy Local(1) = Local(3)
   0030: jump to 3
-Function increment(...) -> void (stack: 3)
+Function increment(...) -> bool (stack: 3)
   0031: load Local(1) = Int(1)
   0032: Local(2) = Global(0) + Local(1)
   0033: copy Global(0) = Local(2)
-  0034: return
+  0034: load Local(1) = Bool(true)
+  0035: copy Local(0) = Local(1)
+  0036: return

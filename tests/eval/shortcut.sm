@@ -11,6 +11,7 @@ fn main() -> int {
     return do_not_touch;
 }
 
-fn increment() {
+fn increment() -> bool {
     do_not_touch = do_not_touch + 1;
+    return true;
 }

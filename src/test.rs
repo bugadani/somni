@@ -155,7 +155,7 @@ impl<'a> TestContext<'a> {
 
     fn handle_error_string(&self, failure: &str, error: String) {
         let error = strip_ansi(error);
-        if self.fail_expected() || self.is_blessed() {
+        if self.is_blessed() {
             write_out_file(&self.stderr(), error);
         } else if self.fail_expected() {
             let expected_error = std::fs::read_to_string(&self.stderr()).unwrap();

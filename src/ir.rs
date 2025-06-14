@@ -432,6 +432,7 @@ pub struct Function {
     pub name: StringIndex,
     pub variables: ScopeData,
     pub return_type: Type,
+    pub arguments: Vec<Type>,
     pub blocks: Vec<Block>,
 }
 
@@ -440,6 +441,7 @@ impl Function {
         name: StringIndex::dummy(),
         variables: ScopeData::empty(),
         return_type: Type::Void,
+        arguments: vec![],
         blocks: vec![],
     };
 
@@ -548,6 +550,7 @@ impl Function {
         this.declare_variable("return_value", return_ty, return_token.location)?;
 
         // allocate variables for arguments
+        let mut arguments = vec![];
         for argument in func.arguments.iter() {
             let ty = if argument.reference_token.is_some() {
                 Type::Address
@@ -556,6 +559,7 @@ impl Function {
             };
             let name = argument.name.source(source);
             this.declare_variable(name, Some(ty), argument.name.location)?;
+            arguments.push(ty);
         }
 
         for statement in func.body.statements.iter() {
@@ -565,6 +569,7 @@ impl Function {
         Ok(Function {
             name: this.strings.intern(func.name.source(source)),
             return_type: return_ty.unwrap_or(Type::Void),
+            arguments,
             variables: this.variables.finalize(),
             blocks: this.blocks.blocks,
         })

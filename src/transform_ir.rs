@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use indexmap::IndexMap;
 
 use crate::{
@@ -26,6 +28,11 @@ struct Constraint {
     kind: ConstraintKind,
 }
 
+struct FunctionSignature {
+    return_type: ir::Type,
+    arguments: Vec<ir::Type>,
+}
+
 struct TypeResolver<'a, 's> {
     source: &'s str,
     constraints: Vec<Constraint>,
@@ -51,14 +58,14 @@ impl<'a, 's> TypeResolver<'a, 's> {
     fn require(
         &mut self,
         left: VariableIndex,
-        bool: ir::Type,
+        ty: ir::Type,
         source_location: Location,
     ) -> Result<(), CompileError<'s>> {
         self.constraints.push(Constraint {
             source_location,
             kind: ConstraintKind::Requires {
                 variable: left,
-                required_type: bool,
+                required_type: ty,
             },
         });
         self.step_resolve()
@@ -194,19 +201,47 @@ impl<'a, 's> TypeResolver<'a, 's> {
 }
 
 pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), CompileError<'s>> {
-    for (name, function) in &mut ir.functions {
-        propagate_variable_types(source, *name, function, &ir.globals, &ir.strings)?;
-    }
+    propagate_variable_types(source, ir)?;
 
     Ok(())
 }
 
 fn propagate_variable_types<'s>(
     source: &'s str,
+    ir: &mut ir::Program,
+) -> Result<(), CompileError<'s>> {
+    let mut func_signatures = HashMap::new();
+
+    // Collect function signatures first
+    for (name, function) in &ir.functions {
+        let signature = FunctionSignature {
+            return_type: function.return_type,
+            arguments: function.arguments.clone(),
+        };
+        func_signatures.insert(*name, signature);
+    }
+
+    for (name, function) in &mut ir.functions {
+        propagate_variable_types_inner(
+            source,
+            *name,
+            function,
+            &ir.strings,
+            &ir.globals,
+            &func_signatures,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn propagate_variable_types_inner<'s>(
+    source: &'s str,
     _name: StringIndex,
     function: &mut ir::Function,
-    globals: &IndexMap<StringIndex, ir::GlobalVariableInfo>,
     strings: &crate::string_interner::Strings,
+    globals: &IndexMap<StringIndex, ir::GlobalVariableInfo>,
+    signatures: &HashMap<StringIndex, FunctionSignature>,
 ) -> Result<(), CompileError<'s>> {
     let mut resolver = TypeResolver::new(source, globals, &mut function.variables);
 
@@ -230,7 +265,35 @@ fn propagate_variable_types<'s>(
                     // TODO: we likely want to encode the type of the dereferenced value
                     resolver.require(*dst, Type::Address, instruction.source_location)?;
                 }
-                ir::Ir::Call(_func, _variable_index, _args) => {}
+                ir::Ir::Call(func, return_value, args) => {
+                    if let Some(signature) = signatures.get(func) {
+                        // If the function has a signature, we can require the return type.
+                        // TODO: require external functions to have a signature.
+                        resolver.require(
+                            *return_value,
+                            signature.return_type,
+                            instruction.source_location,
+                        )?;
+
+                        if args.len() != signature.arguments.len() {
+                            return Err(CompileError {
+                                source,
+                                location: instruction.source_location,
+                                error: format!(
+                                    "Function {} expected {} arguments, found {}",
+                                    strings.lookup(*func),
+                                    signature.arguments.len(),
+                                    args.len()
+                                ),
+                            });
+                        }
+
+                        for (arg, arg_type) in args.iter().zip(signature.arguments.iter()) {
+                            // TODO: point at variable in error message.
+                            resolver.require(*arg, *arg_type, instruction.source_location)?;
+                        }
+                    }
+                }
                 ir::Ir::BinaryOperator(op, dst, lhs, rhs) => {
                     match strings.lookup(*op) {
                         "<=" | "<" | ">=" | ">" | "==" | "!=" => {
