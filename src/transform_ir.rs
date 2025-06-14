@@ -202,7 +202,7 @@ impl<'a, 's> TypeResolver<'a, 's> {
 
 pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), CompileError<'s>> {
     // TODO: Jump threading
-    // TODO: merge identical blocks
+    merge_identical_blocks(ir);
     remove_unreachable_blocks(ir);
     propagate_variable_types(source, ir)?;
 
@@ -272,6 +272,43 @@ fn remove_unreachable_blocks(ir: &mut ir::Program) {
             current += 1;
             retain
         });
+    }
+}
+
+fn merge_identical_blocks(ir: &mut ir::Program) {
+    for func in ir.functions.values_mut() {
+        let mut identical_to = (0..).take(func.blocks.len()).collect::<Vec<_>>();
+
+        for (idx, block) in func.blocks.iter().enumerate() {
+            // Check if this block is identical to any previous block.
+            for (prev_idx, prev_block) in func.blocks.iter().enumerate().take(idx) {
+                if block == prev_block {
+                    // Mark this block as identical to the previous one.
+                    identical_to[idx] = prev_idx;
+                    break;
+                }
+            }
+        }
+
+        // Remap blocks to their first occurrence.
+        for block in &mut func.blocks {
+            match &mut block.terminator {
+                ir::Termination::Jump { to, .. } => {
+                    *to = BlockIndex(identical_to[to.0]);
+                }
+                ir::Termination::If {
+                    then_block,
+                    else_block,
+                    ..
+                } => {
+                    *then_block = BlockIndex(identical_to[then_block.0]);
+                    *else_block = BlockIndex(identical_to[else_block.0]);
+                }
+                ir::Termination::Return { .. } => {}
+            }
+        }
+
+        // remove_unreachable_blocks will trim the blocks
     }
 }
 

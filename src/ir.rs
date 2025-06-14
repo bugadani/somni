@@ -113,7 +113,7 @@ impl LocalVariableIndex {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct IrWithLocation {
     pub instruction: Ir,
     pub source_location: Location,
@@ -225,7 +225,31 @@ pub enum Termination {
     },
 }
 
-#[derive(Debug)]
+impl PartialEq for Termination {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Termination::Return(l1), Termination::Return(l2)) => l1 == l2,
+            (Termination::Jump { to: t1, .. }, Termination::Jump { to: t2, .. }) => t1 == t2,
+            (
+                Termination::If {
+                    condition: c1,
+                    then_block: tb1,
+                    else_block: eb1,
+                    ..
+                },
+                Termination::If {
+                    condition: c2,
+                    then_block: tb2,
+                    else_block: eb2,
+                    ..
+                },
+            ) => c1 == c2 && tb1 == tb2 && eb1 == eb2,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct Block {
     pub instructions: Vec<IrWithLocation>,
     pub terminator: Termination,
