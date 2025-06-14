@@ -1,5 +1,0 @@
-Compile error
- ---> at line 2 column 11
-  |
-2 |     const C = 10;
-  |           ^ Type mismatch: expected Void, found Int

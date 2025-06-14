@@ -234,7 +234,6 @@ Program {
                                         end: 96,
                                     },
                                 },
-                                is_mutable: true,
                                 identifier: Token {
                                     kind: Identifier,
                                     location: Location {

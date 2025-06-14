@@ -1,4 +1,4 @@
 Globals:
-  C = Int(10)
+  c = Int(10)
 
 Functions:

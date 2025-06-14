@@ -1,6 +1,6 @@
 Globals:
   n = Int(10)
-  M = Int(32)
+  m = Int(32)
 
 Functions:
 Function: double
@@ -25,7 +25,7 @@ block 0
   temp1 = call double()
   free(temp1)
   var temp2: Void = None
-  temp2 = n + M
+  temp2 = n + m
   return_value = temp2
   free(temp2)
   free(return_value)

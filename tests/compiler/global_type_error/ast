@@ -6,38 +6,37 @@ Program {
                     kind: Identifier,
                     location: Location {
                         start: 0,
-                        end: 5,
+                        end: 3,
                     },
                 },
-                is_mutable: false,
                 identifier: Token {
                     kind: Identifier,
                     location: Location {
-                        start: 6,
-                        end: 7,
+                        start: 4,
+                        end: 5,
                     },
                 },
                 colon: Token {
                     kind: Symbol,
                     location: Location {
-                        start: 7,
-                        end: 8,
+                        start: 5,
+                        end: 6,
                     },
                 },
                 type_token: TypeHint {
                     type_name: Token {
                         kind: Identifier,
                         location: Location {
-                            start: 9,
-                            end: 15,
+                            start: 7,
+                            end: 13,
                         },
                     },
                 },
                 equals_token: Token {
                     kind: Symbol,
                     location: Location {
-                        start: 16,
-                        end: 17,
+                        start: 14,
+                        end: 15,
                     },
                 },
                 initializer: Literal {
@@ -46,16 +45,16 @@ Program {
                             10,
                         ),
                         location: Location {
-                            start: 18,
-                            end: 20,
+                            start: 16,
+                            end: 18,
                         },
                     },
                 },
                 semicolon: Token {
                     kind: Symbol,
                     location: Location {
-                        start: 20,
-                        end: 21,
+                        start: 18,
+                        end: 19,
                     },
                 },
             },

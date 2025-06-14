@@ -4,12 +4,11 @@
 //!
 //! ```text
 //! program -> item* EOF;
-//! item -> function | const | global ; // TODO types.
+//! item -> function | global ; // TODO types.
 //!
-//! global -> 'var' identifier ':' type '=' const_initializer ';' ;
-//! const -> 'const' identifier ':' type '=' const_initializer ';' ;
+//! global -> 'var' identifier ':' type '=' static_initializer ';' ;
 //!
-//! const_initializer -> literal ; // TODO: const eval expressions
+//! static_initializer -> literal ; // TODO: const eval expressions
 //!
 //! function -> 'fn' identifier '(' function_argument ( ',' function_argument )* ','? ')' return_decl? body ;
 //! function_argument -> identifier ':' '&'? type ;
@@ -18,7 +17,6 @@
 //!
 //! body -> '{' statement* '}' ;
 //! statement -> 'var' identifier (':' type)? '=' expression ';'
-//!            | 'const' identifier (':' type)? '=' expression ';'
 //!            | 'return' expression? ';'
 //!            | 'break' expression? ';'
 //!            | 'continue' expression? ';'
@@ -76,13 +74,13 @@ impl Item {
             return Ok(Item::Function(function));
         }
 
-        Err(stream.error("Expected constant, global variable or function definition"))
+        Err(stream.error("Expected global variable or function definition"))
     }
 }
 
 impl GlobalVariable {
     fn try_parse<'s>(stream: &mut TokenStream<'s>) -> Result<Option<Self>, CompileError<'s>> {
-        let Some(decl_token) = stream.take_match(TokenKind::Identifier, &["var", "const"]) else {
+        let Some(decl_token) = stream.take_match(TokenKind::Identifier, &["var"]) else {
             return Ok(None);
         };
 
@@ -97,7 +95,6 @@ impl GlobalVariable {
 
         Ok(Some(GlobalVariable {
             decl_token,
-            is_mutable: decl_token.source(stream.source) == "var",
             identifier,
             colon,
             type_token,
@@ -211,7 +208,7 @@ impl Statement {
             }));
         }
 
-        if let Some(decl_token) = stream.take_match(TokenKind::Identifier, &["var", "const"]) {
+        if let Some(decl_token) = stream.take_match(TokenKind::Identifier, &["var"]) {
             let identifier = stream.expect_match(TokenKind::Identifier, &[])?;
 
             let type_token = if stream.take_match(TokenKind::Symbol, &[":"]).is_some() {
@@ -226,7 +223,6 @@ impl Statement {
 
             return Ok(Statement::VariableDefinition(VariableDefinition {
                 decl_token,
-                is_mutable: decl_token.source(stream.source) == "var",
                 identifier,
                 type_token,
                 equals_token,

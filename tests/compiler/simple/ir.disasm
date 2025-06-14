@@ -1,5 +1,5 @@
 Globals:
-  PI = Float(3.14)
+  pi = Float(3.14)
   some_static_variable = Int(42)
 
 Functions:

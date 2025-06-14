@@ -1,6 +1,0 @@
-const C: int = 10;
-
-fn main() {
-    // This should fail, as C is a constant and cannot be modified.
-    C = 20; // Should cause a compile error
-}

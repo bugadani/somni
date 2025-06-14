@@ -1,5 +1,0 @@
-Compile error
- ---> at line 1 column 19
-  |
-1 | const C: string = 10;
-  |                   ^^ Expected string, found integer literal

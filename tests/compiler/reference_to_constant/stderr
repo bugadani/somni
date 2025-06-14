@@ -1,5 +1,5 @@
 Compile error
- ---> at line 4 column 12
+ ---> at line 3 column 11
   |
-4 |     by_ref(&M);
-  |            ^^ Cannot take the address of a constant
+3 |     const M: int = 32;
+  |           ^ Expected ';', found Identifier

@@ -147,7 +147,6 @@ Program {
                                         end: 47,
                                     },
                                 },
-                                is_mutable: true,
                                 identifier: Token {
                                     kind: Identifier,
                                     location: Location {
@@ -192,7 +191,6 @@ Program {
                                         end: 62,
                                     },
                                 },
-                                is_mutable: true,
                                 identifier: Token {
                                     kind: Identifier,
                                     location: Location {
@@ -237,7 +235,6 @@ Program {
                                         end: 77,
                                     },
                                 },
-                                is_mutable: true,
                                 identifier: Token {
                                     kind: Identifier,
                                     location: Location {

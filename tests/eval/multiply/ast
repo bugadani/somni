@@ -50,7 +50,6 @@ Program {
                                         end: 138,
                                     },
                                 },
-                                is_mutable: true,
                                 identifier: Token {
                                     kind: Identifier,
                                     location: Location {
@@ -301,7 +300,6 @@ Program {
                                                         end: 235,
                                                     },
                                                 },
-                                                is_mutable: true,
                                                 identifier: Token {
                                                     kind: Identifier,
                                                     location: Location {

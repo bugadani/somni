@@ -1,4 +1,0 @@
-Function main(...) -> void (stack: 2)
-  0000: load Local(1) = Int(20)
-  0001: copy Global(0) = Local(1)
-  0002: return

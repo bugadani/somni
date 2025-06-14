@@ -14,7 +14,6 @@ pub enum Item {
 #[derive(Debug)]
 pub struct GlobalVariable {
     pub decl_token: Token,
-    pub is_mutable: bool,
     pub identifier: Token,
     pub colon: Token,
     pub type_token: TypeHint,
@@ -70,7 +69,6 @@ pub struct TypeHint {
 #[derive(Debug, Clone)]
 pub struct VariableDefinition {
     pub decl_token: Token,
-    pub is_mutable: bool,
     pub identifier: Token,
     pub type_token: Option<TypeHint>,
     pub equals_token: Token,

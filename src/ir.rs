@@ -712,7 +712,6 @@ impl<'s> FunctionCompiler<'s, '_> {
         let ident = variable_def.identifier;
         let ty = variable_def.type_token.as_ref();
         let initializer = &variable_def.initializer;
-        let _is_mutable = variable_def.is_mutable;
 
         let name = ident.source(self.source);
         let var_ty = if let Some(type_token) = ty {

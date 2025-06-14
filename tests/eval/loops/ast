@@ -69,7 +69,6 @@ Program {
                                         end: 45,
                                     },
                                 },
-                                is_mutable: true,
                                 identifier: Token {
                                     kind: Identifier,
                                     location: Location {

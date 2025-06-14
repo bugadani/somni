@@ -1,4 +1,4 @@
-const PI: float = 3.14;
+var pi: float = 3.14;
 
 var some_static_variable: int = 42;
 
