@@ -1,13 +1,13 @@
-use std::{fmt::Debug, str::CharIndices};
+use std::str::CharIndices;
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ErrorKind {
     UnexpectedCharacter,
     UnterminatedString,
     InvalidNumericLiteral,
 }
 
-impl Debug for ErrorKind {
+impl std::fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UnexpectedCharacter => write!(f, "unexpected character"),
@@ -21,6 +21,12 @@ impl Debug for ErrorKind {
 pub struct LexerError {
     pub location: Location,
     pub error: ErrorKind,
+}
+
+impl std::fmt::Display for LexerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Lexer error: {}", self.error)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]

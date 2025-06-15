@@ -2,4 +2,4 @@ Compile error
  ---> at line 2 column 39
   |
 2 | fn add(a: u64, b: u64) -> u64 { a + b }
-  |                                       ^ Expected ';', found '}'
+  |                                       ^ Parse error: Expected ';', found '}'

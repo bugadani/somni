@@ -82,17 +82,7 @@ pub fn run_compile_test(file: impl AsRef<Path>, compile_test: bool) -> Option<co
     let tokens = tokenize(&source).collect::<Result<Vec<_>, _>>().unwrap();
     let ast = match parse(&source, &tokens) {
         Ok(ast) => ast,
-        Err(err) => {
-            return ctx.handle_error(
-                "Failed to parse",
-                CompileError {
-                    // TODO clean this up
-                    source: &source,
-                    location: err.location,
-                    error: err.error,
-                },
-            );
-        }
+        Err(err) => return ctx.handle_error("Failed to parse", CompileError::new(&source, err)),
     };
     write_out_file(&ctx.out_path.join("ast"), format!("{:#?}", ast));
 

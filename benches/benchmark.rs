@@ -1,7 +1,9 @@
 use std::time::Duration;
 
 use somni::{
-    codegen, ir,
+    codegen,
+    error::CompileError,
+    ir,
     transform_ir::transform_ir,
     vm::{EvalContext, EvalEvent},
 };
@@ -23,12 +25,13 @@ fn main() {
 
     let tokens = somni_lexer::tokenize(source_code)
         .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| CompileError::new(source_code, e))
         .unwrap();
     let ast = match somni_parser::parse(&source_code, &tokens) {
         Ok(ast) => ast,
         Err(e) => {
             println!("Error parsing `{source_code}`");
-            println!("{:?}", e);
+            println!("{:?}", CompileError::new(source_code, e));
             panic!("Parsing failed");
         }
     };

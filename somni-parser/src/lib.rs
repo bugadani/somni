@@ -59,6 +59,12 @@ pub struct ParserError {
     pub error: String,
 }
 
+impl std::fmt::Display for ParserError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Parse error: {}", self.error)
+    }
+}
+
 impl Program {
     fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         let mut items = Vec::new();
