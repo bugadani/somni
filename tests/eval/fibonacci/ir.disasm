@@ -16,24 +16,24 @@ block 1
 
 block 2
   free(temp3)
-  var temp4: Int = Some(Int(1))
-  var temp5: Void = None
-  temp5 = n - temp4
-  free(temp4)
+  var temp4: Void = None
+  var temp5: Int = Some(Int(1))
   var temp6: Void = None
-  temp6 = call fib(temp5)
+  temp6 = n - temp5
   free(temp5)
-  var temp7: Int = Some(Int(2))
-  var temp8: Void = None
-  temp8 = n - temp7
-  free(temp7)
-  var temp9: Void = None
-  temp9 = call fib(temp8)
-  free(temp8)
-  var temp10: Void = None
-  temp10 = temp6 + temp9
+  temp4 = call fib(temp6)
   free(temp6)
+  var temp7: Void = None
+  var temp8: Int = Some(Int(2))
+  var temp9: Void = None
+  temp9 = n - temp8
+  free(temp8)
+  temp7 = call fib(temp9)
   free(temp9)
+  var temp10: Void = None
+  temp10 = temp4 + temp7
+  free(temp4)
+  free(temp7)
   return_value = temp10
   free(temp10)
   free(n)

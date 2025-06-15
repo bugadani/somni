@@ -748,17 +748,20 @@ impl<'s> FunctionCompiler<'s, '_> {
         };
         let variable = self.declare_variable(name, var_ty, ident.location)?;
 
+        let rp = self.variables.create_restore_point();
         let expr_result = self.compile_expression(initializer)?;
         self.blocks.push_instruction(
             ident.location,
             Ir::Assign(VariableIndex::Local(variable), expr_result),
         );
-        self.free_if_temporary(initializer.location(), expr_result);
+        self.rollback_scope(initializer.location(), rp);
 
         Ok(())
     }
 
     fn compile_if_statement(&mut self, if_statement: &ast::If) -> Result<(), CompileError<'s>> {
+        let rp = self.variables.create_restore_point();
+
         // Generate instructions for the condition, allocate then/else blocks and generate conditional jumps
         let condition = self.compile_expression(&if_statement.condition)?;
 
@@ -803,7 +806,8 @@ impl<'s> FunctionCompiler<'s, '_> {
 
         // Whatever happens, normal execution continues at the next block.
         self.blocks.select_block(next_block);
-        self.free_if_temporary(if_statement.condition.location(), condition);
+
+        self.rollback_scope(if_statement.if_token.location, rp);
 
         Ok(())
     }
@@ -899,6 +903,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         &mut self,
         ret: &ast::ReturnWithValue,
     ) -> Result<(), CompileError<'s>> {
+        let rp = self.variables.create_restore_point();
         let return_value = self.compile_expression(&ret.expression)?;
 
         // Store variable in the return variable.
@@ -907,7 +912,7 @@ impl<'s> FunctionCompiler<'s, '_> {
             Ir::Assign(VariableIndex::RETURN_VALUE, return_value),
         );
 
-        self.free_if_temporary(ret.expression.location(), return_value);
+        self.rollback_scope(ret.semicolon.location, rp);
 
         self.compile_return(ret.return_token)
     }
@@ -955,15 +960,13 @@ impl<'s> FunctionCompiler<'s, '_> {
         expression: &ast::Expression,
         semicolon: &Token,
     ) -> Result<(), CompileError<'s>> {
+        let rp = self.variables.create_restore_point();
+
         // Compile the expression, which may be a variable assignment, function call,
         // or other expression. Discard the result.
-        let result = self.compile_expression(expression)?;
+        self.compile_expression(expression)?;
 
-        if let VariableIndex::Local(result) | VariableIndex::Temporary(result) = result {
-            self.variables.free_variable(result);
-            self.blocks
-                .push_instruction(semicolon.location, Ir::FreeVariable(result));
-        }
+        self.rollback_scope(semicolon.location, rp);
 
         Ok(())
     }
@@ -1075,6 +1078,8 @@ impl<'s> FunctionCompiler<'s, '_> {
         // Allocate a temporary variable for the result.
         let temp = self.declare_temporary(operator.location, Value::Void);
 
+        let rp = self.variables.create_restore_point();
+
         // Compile the left and right operands.
         let operand_result = self.compile_expression(operand)?;
 
@@ -1089,7 +1094,7 @@ impl<'s> FunctionCompiler<'s, '_> {
             operator.location,
             Ir::UnaryOperator(self.strings.intern(op), temp, operand_result),
         );
-        self.free_if_temporary(operand.location(), operand_result);
+        self.rollback_scope(operator.location, rp);
 
         Ok(temp)
     }
@@ -1186,6 +1191,8 @@ impl<'s> FunctionCompiler<'s, '_> {
 
             Ok(temp)
         } else if op == "=" {
+            let rp = self.variables.create_restore_point();
+
             let left;
             // Compile the right operand.
             let right = self.compile_expression(&operands[1])?;
@@ -1213,8 +1220,7 @@ impl<'s> FunctionCompiler<'s, '_> {
             // Generate the instruction for the assignment.
             self.blocks.push_instruction(operator.location, instruction);
 
-            self.free_if_temporary(operands[0].location(), left);
-            self.free_if_temporary(operands[1].location(), right);
+            self.rollback_scope(operator.location, rp);
 
             // Allocate a temporary variable. For assignments this is not used, but
             // we still need to return something.
@@ -1243,23 +1249,23 @@ impl<'s> FunctionCompiler<'s, '_> {
         name: Token,
         arguments: &[ast::Expression],
     ) -> Result<VariableIndex, CompileError<'s>> {
+        // Allocate a temporary variable for the result.
+        let temp = self.declare_temporary(name.location, Value::Void);
+
+        let rp = self.variables.create_restore_point();
         let arguments = arguments
             .iter()
             .map(|arg| self.compile_expression(arg))
             .collect::<Result<Vec<_>, _>>()?;
         let function_name = name.source(self.source);
         let function_index = self.strings.intern(function_name);
-        // Allocate a temporary variable for the result.
-        let temp = self.declare_temporary(name.location, Value::Void);
         // Generate the instruction for the function call.
         self.blocks.push_instruction(
             name.location,
             Ir::Call(function_index, temp, arguments.clone()),
         );
 
-        for argument in arguments {
-            self.free_if_temporary(name.location, argument);
-        }
+        self.rollback_scope(name.location, rp);
 
         Ok(temp)
     }

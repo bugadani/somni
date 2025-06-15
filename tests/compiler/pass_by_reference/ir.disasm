@@ -6,12 +6,12 @@ block 0
   var return_value: SignedInt = None
   var x: SignedInt = None
   var temp2: Void = None
-  temp2 = &x
   var temp3: Void = None
-  temp3 = call take_by_reference(temp2)
-  free(temp2)
-  return_value = temp3
+  temp3 = &x
+  temp2 = call take_by_reference(temp3)
   free(temp3)
+  return_value = temp2
+  free(temp2)
   free(x)
   free(return_value)
   -> block 2
