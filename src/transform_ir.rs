@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
 
@@ -6,7 +6,7 @@ use crate::{
     error::CompileError,
     ir::{self, BlockIndex, GlobalInitializer, Type, VariableIndex},
     string_interner::StringIndex,
-    variable_tracker::ScopeData,
+    variable_tracker::{LocalVariableIndex, ScopeData},
 };
 use somni_lexer::Location;
 
@@ -211,7 +211,36 @@ pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), Com
 
     // Remove unnecessary assignments (assignments without reads after them).
     for func in ir.functions.values_mut() {
-        propagate_destination(func);
+        // For now we only optimize variables that are declared AND freed in the same block.
+        // This is way too conservative, but relaxing it would require a figuring out loops.
+        let mut relevant_variables_in_block = HashMap::new();
+        for (block_idx, block) in func.blocks.iter().enumerate() {
+            let mut declared = HashSet::new();
+            let mut freed = HashSet::new();
+            for instruction in &block.instructions {
+                match instruction.instruction {
+                    ir::Ir::Declare(var, _) => {
+                        // We also don't allow optimizing TopOfStack variables for now.
+                        if var.allocation_method == ir::AllocationMethod::FirstFit {
+                            declared.insert(var.index);
+                        }
+                    }
+                    ir::Ir::FreeVariable(var) => {
+                        freed.insert(var);
+                    }
+                    _ => {}
+                }
+            }
+            relevant_variables_in_block.insert(
+                block_idx,
+                declared
+                    .intersection(&freed)
+                    .copied()
+                    .collect::<HashSet<_>>(),
+            );
+        }
+
+        propagate_destination(func, &relevant_variables_in_block);
     }
     // Remove unused variables.
 
@@ -490,28 +519,24 @@ fn propagate_variable_types_inner<'s>(
     Ok(())
 }
 
-fn propagate_destination(func: &mut ir::Function) {
-    for block in &mut func.blocks {
-        let mut skip_variables = vec![];
-        // Ending with 1, because we don't need to check the
-        // first instruction - we can't remove it anyway.
-        for instruction in &block.instructions {
-            if let ir::Ir::Declare(dst, _) = instruction.instruction {
-                // This variable cannot be moved by this step.
-                if dst.allocation_method == ir::AllocationMethod::TopOfStack {
-                    // If the variable is marked as skip, we don't need to propagate it.
-                    skip_variables.push(dst.index);
-                }
-            }
-        }
+fn propagate_destination(
+    func: &mut ir::Function,
+    variables_in_block: &HashMap<usize, HashSet<LocalVariableIndex>>,
+) {
+    for (block_idx, block) in func.blocks.iter_mut().enumerate() {
+        let variables_in_block = &variables_in_block[&block_idx];
         for idx in (1..block.instructions.len()).rev() {
             if let ir::Ir::Assign(dst, src) = block.instructions[idx].instruction {
-                if let Some(local) = src.local_index() {
-                    if skip_variables.contains(&local) {
-                        // If the destination variable is marked as skip, we don't need to propagate it.
+                // If src is not defined in this block, we can't avoid writing to it.
+                if let Some(src) = src.local_index() {
+                    // If the source is not in the block, we can skip it.
+                    if !variables_in_block.contains(&src) {
                         continue;
                     }
+                } else {
+                    continue;
                 }
+
                 // If we find an assignment, let's try to remove it. We can remove it if we find the
                 // src written previously in the block.
                 for prev_idx in (0..idx).rev() {

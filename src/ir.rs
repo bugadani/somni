@@ -86,7 +86,7 @@ pub struct VariableDeclaration {
     pub allocation_method: AllocationMethod,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VariableIndex {
     Local(LocalVariableIndex),
     Temporary(LocalVariableIndex),
