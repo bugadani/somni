@@ -50,8 +50,8 @@ use crate::{
         ReturnWithValue, Statement, TypeHint, VariableDefinition,
     },
     error::CompileError,
-    lexer::{Location, Token, TokenKind},
 };
+use somni_lexer::{Location, Token, TokenKind};
 
 impl Program {
     fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {

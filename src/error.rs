@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::lexer::Location;
+use somni_lexer::Location;
 
 #[derive(Clone)]
 pub struct CompileError<'s> {

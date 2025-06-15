@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use somni::{
-    codegen, ir, lexer, parser,
+    codegen, ir, parser,
     transform_ir::transform_ir,
     vm::{EvalContext, EvalEvent},
 };
@@ -21,7 +21,7 @@ fn main() {
     fib(20);
 }"#;
 
-    let tokens = lexer::tokenize(source_code)
+    let tokens = somni_lexer::tokenize(source_code)
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     let ast = match parser::parse(&source_code, &tokens) {

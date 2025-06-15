@@ -4,11 +4,11 @@ use crate::{
     codegen::{self, Value},
     error::CompileError,
     ir,
-    lexer::tokenize,
     parser::parse,
     transform_ir::transform_ir,
     vm::EvalContext,
 };
+use somni_lexer::tokenize;
 
 fn walk(dir: &Path, on_file: &impl Fn(&Path)) {
     for entry in std::fs::read_dir(dir).unwrap().flatten() {

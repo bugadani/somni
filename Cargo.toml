@@ -10,11 +10,12 @@ harness = false
 
 [dependencies]
 indexmap = "2.9.0"
-pretty_assertions = "1.4.1"
+somni-lexer = { path = "somni-lexer" }
 
 [dev-dependencies]
 criterion = "0.6"
 ansi-parser = "0.9.0"
+pretty_assertions = "1.4.1"
 
 [profile.release]
 debug = true
@@ -23,4 +24,5 @@ debug = true
 members = [
     ".",
     "xtask",
+    "somni-lexer",
 ]

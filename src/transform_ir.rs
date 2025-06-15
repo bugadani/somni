@@ -5,10 +5,10 @@ use indexmap::IndexMap;
 use crate::{
     error::CompileError,
     ir::{self, BlockIndex, GlobalInitializer, Type, VariableIndex},
-    lexer::Location,
     string_interner::StringIndex,
     variable_tracker::ScopeData,
 };
+use somni_lexer::Location;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ConstraintKind {

@@ -1,5 +1,27 @@
-use crate::error::CompileError;
 use std::{fmt::Debug, str::CharIndices};
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum ErrorKind {
+    UnexpectedCharacter,
+    UnterminatedString,
+    InvalidNumericLiteral,
+}
+
+impl Debug for ErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnexpectedCharacter => write!(f, "unexpected character"),
+            Self::UnterminatedString => write!(f, "unterminated string"),
+            Self::InvalidNumericLiteral => write!(f, "invalid numeric literal"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LexerError {
+    pub location: Location,
+    pub error: ErrorKind,
+}
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Location {
@@ -78,7 +100,7 @@ impl CharProvider<'_> {
     }
 }
 
-pub fn tokenize<'s>(source: &'s str) -> impl Iterator<Item = Result<Token, CompileError<'s>>> {
+pub fn tokenize<'s>(source: &'s str) -> impl Iterator<Item = Result<Token, LexerError>> {
     let mut chars = CharProvider {
         chars: source.char_indices(),
     };
@@ -138,10 +160,9 @@ pub fn tokenize<'s>(source: &'s str) -> impl Iterator<Item = Result<Token, Compi
                         return if has_digit {
                             Some(Ok(Token { kind, location }))
                         } else {
-                            Some(Err(CompileError {
-                                source,
+                            Some(Err(LexerError {
                                 location,
-                                error: String::from("invalid numeric literal"),
+                                error: ErrorKind::InvalidNumericLiteral,
                             }))
                         };
                     }
@@ -229,17 +250,15 @@ pub fn tokenize<'s>(source: &'s str) -> impl Iterator<Item = Result<Token, Compi
                     }
                     location.end = source.len();
 
-                    return Some(Err(CompileError {
-                        source,
+                    return Some(Err(LexerError {
                         location,
-                        error: String::from("unterminated string"),
+                        error: ErrorKind::UnterminatedString,
                     }));
                 }
                 _ => {
-                    return Some(Err(CompileError {
-                        source,
+                    return Some(Err(LexerError {
                         location,
-                        error: String::from("unexpected character"),
+                        error: ErrorKind::UnexpectedCharacter,
                     }));
                 }
             }
@@ -253,10 +272,7 @@ pub fn tokenize<'s>(source: &'s str) -> impl Iterator<Item = Result<Token, Compi
 mod test {
     use super::*;
 
-    fn test_tokenizer(
-        source: &str,
-        expectations: &[Result<(&'static str, TokenKind), &'static str>],
-    ) {
+    fn test_tokenizer(source: &str, expectations: &[Result<(&'static str, TokenKind), ErrorKind>]) {
         let result = tokenize(source).collect::<Vec<Result<_, _>>>();
 
         for (idx, expectation) in expectations.iter().enumerate() {

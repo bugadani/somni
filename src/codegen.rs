@@ -9,10 +9,10 @@ use indexmap::IndexMap;
 use crate::{
     error::CompileError,
     ir::{self, VariableIndex},
-    lexer::Location,
     string_interner::{StringIndex, Strings},
     variable_tracker::{self, LocalVariableIndex},
 };
+use somni_lexer::Location;
 
 // This is just to keep the size of Instruction small enough. Re-evaluate this later.
 #[derive(Clone, Copy, Debug)]

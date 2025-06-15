@@ -4,9 +4,9 @@ use crate::{
     ast::Expression,
     codegen::{self, CodeAddress, Function, Instruction, MemoryAddress, Value},
     error::MarkInSource,
-    lexer::Location,
     string_interner::{StringIndex, Strings},
 };
+use somni_lexer::Location;
 
 #[derive(Clone, Debug)]
 pub struct EvalError(Box<str>);
@@ -381,7 +381,7 @@ impl<'p> EvalContext<'p> {
 
         // TODO: we can allow new globals to be defined in the expression, but that would require
         // storing a copy of the original globals, so that they can be reset?
-        let tokens = crate::lexer::tokenize(expression)
+        let tokens = somni_lexer::tokenize(expression)
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
 

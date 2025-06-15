@@ -5,10 +5,11 @@ use indexmap::IndexMap;
 use crate::{
     ast,
     error::CompileError,
-    lexer::{Location, Token},
     string_interner::{StringIndex, StringInterner, Strings},
     variable_tracker::{LocalVariableIndex, RestorePoint, ScopeData, VariableTracker},
 };
+
+use somni_lexer::{Location, Token};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Value {

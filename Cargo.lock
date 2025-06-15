@@ -574,7 +574,12 @@ dependencies = [
  "criterion",
  "indexmap",
  "pretty_assertions",
+ "somni-lexer",
 ]
+
+[[package]]
+name = "somni-lexer"
+version = "0.1.0"
 
 [[package]]
 name = "stable_deref_trait"
