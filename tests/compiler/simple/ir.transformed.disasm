@@ -9,8 +9,7 @@ block 0
   var a: Int = None
   var b: Int = None
   var temp3: Int = None
-  temp3 = a + b
-  return_value = temp3
+  return_value = a + b
   free(temp3)
   free(b)
   free(a)

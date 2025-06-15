@@ -30,7 +30,13 @@ block 0
   var temp3: Void = None
   var temp4: Address = None
   temp4 = &input
-  temp3 = call take_by_reference(temp4)
+  var temp5: Void = None
+  var temp6: Address = None
+  temp6 = temp4
+  temp5 = call take_by_reference(temp6)
+  temp3 = temp5
+  free(temp6)
+  free(temp5)
   free(temp4)
   free(temp3)
   return_value = input

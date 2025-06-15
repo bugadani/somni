@@ -72,10 +72,18 @@ impl BlockIndex {
     const RETURN_BLOCK: Self = BlockIndex(1);
 }
 
+// This is a temporary hack for function arguments.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AllocationMethod {
+    FirstFit,   // Allocate the first free address that fits
+    TopOfStack, // Allocate at the top of the stack
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VariableDeclaration {
     pub index: LocalVariableIndex,
-    name: StringIndex,
+    pub name: StringIndex,
+    pub allocation_method: AllocationMethod,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -671,7 +679,6 @@ impl<'s> FunctionCompiler<'s, '_> {
         name: &str,
         var_ty: Option<Type>,
         source_location: Location,
-        // TODO: mutability?
     ) -> Result<LocalVariableIndex, CompileError<'s>> {
         let name_index = self.strings.intern(name);
         let variable = self.variables.declare_variable(name_index, var_ty);
@@ -681,6 +688,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                 VariableDeclaration {
                     index: variable,
                     name: name_index,
+                    allocation_method: AllocationMethod::FirstFit,
                 },
                 None,
             ),
@@ -688,7 +696,12 @@ impl<'s> FunctionCompiler<'s, '_> {
         Ok(variable)
     }
 
-    fn declare_temporary(&mut self, location: Location, init_value: Value) -> VariableIndex {
+    fn declare_temporary(
+        &mut self,
+        location: Location,
+        init_value: Value,
+        allocation_method: AllocationMethod,
+    ) -> VariableIndex {
         let temp_name = self
             .strings
             .intern(&format!("temp{}", self.variables.len()));
@@ -702,6 +715,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                 VariableDeclaration {
                     index: temp,
                     name: temp_name,
+                    allocation_method,
                 },
                 init_value,
             ),
@@ -1000,7 +1014,11 @@ impl<'s> FunctionCompiler<'s, '_> {
                 };
 
                 let literal_value = self.compile_literal_value(val_type, value)?;
-                let temp = self.declare_temporary(value.location, literal_value);
+                let temp = self.declare_temporary(
+                    value.location,
+                    literal_value,
+                    AllocationMethod::FirstFit,
+                );
 
                 Ok(temp)
             }
@@ -1076,7 +1094,8 @@ impl<'s> FunctionCompiler<'s, '_> {
         let op = operator.source(self.source);
 
         // Allocate a temporary variable for the result.
-        let temp = self.declare_temporary(operator.location, Value::Void);
+        let temp =
+            self.declare_temporary(operator.location, Value::Void, AllocationMethod::FirstFit);
 
         let rp = self.variables.create_restore_point();
 
@@ -1107,7 +1126,11 @@ impl<'s> FunctionCompiler<'s, '_> {
         let op = operator.source(self.source);
 
         if op == "&&" {
-            let temp = self.declare_temporary(operator.location, Value::Bool(false));
+            let temp = self.declare_temporary(
+                operator.location,
+                Value::Bool(false),
+                AllocationMethod::FirstFit,
+            );
 
             let condition = self.compile_expression(&operands[0])?;
 
@@ -1149,7 +1172,11 @@ impl<'s> FunctionCompiler<'s, '_> {
 
             Ok(temp)
         } else if op == "||" {
-            let temp = self.declare_temporary(operator.location, Value::Bool(true));
+            let temp = self.declare_temporary(
+                operator.location,
+                Value::Bool(true),
+                AllocationMethod::FirstFit,
+            );
 
             let condition = self.compile_expression(&operands[0])?;
 
@@ -1224,14 +1251,15 @@ impl<'s> FunctionCompiler<'s, '_> {
 
             // Allocate a temporary variable. For assignments this is not used, but
             // we still need to return something.
-            Ok(self.declare_temporary(operator.location, Value::Void))
+            Ok(self.declare_temporary(operator.location, Value::Void, AllocationMethod::FirstFit))
         } else {
             // Compile the left and right operands.
             let left = self.compile_expression(&operands[0])?;
             let right = self.compile_expression(&operands[1])?;
 
             // Allocate a temporary variable for the result.
-            let temp = self.declare_temporary(operator.location, Value::Void);
+            let temp =
+                self.declare_temporary(operator.location, Value::Void, AllocationMethod::FirstFit);
             // Generate the instruction for the binary operator.
             self.blocks.push_instruction(
                 operator.location,
@@ -1250,21 +1278,45 @@ impl<'s> FunctionCompiler<'s, '_> {
         arguments: &[ast::Expression],
     ) -> Result<VariableIndex, CompileError<'s>> {
         // Allocate a temporary variable for the result.
-        let temp = self.declare_temporary(name.location, Value::Void);
-
+        let temp = self.declare_temporary(name.location, Value::Void, AllocationMethod::FirstFit);
         let rp = self.variables.create_restore_point();
+
+        // Compile the arguments.
         let arguments = arguments
             .iter()
             .map(|arg| self.compile_expression(arg))
             .collect::<Result<Vec<_>, _>>()?;
         let function_name = name.source(self.source);
         let function_index = self.strings.intern(function_name);
-        // Generate the instruction for the function call.
+
+        // Generate the instruction for the function call. Here we allocate the stack frame, copy
+        // arguments into it, then generate the call.
+        // TODO: would be better to declare signature as a structure so that we don't have to
+        // treat allocations differently.
+        let retval_temporary =
+            self.declare_temporary(name.location, Value::Void, AllocationMethod::TopOfStack);
+        let arg_temporaries = arguments
+            .iter()
+            .map(|arg| {
+                let arg_temp = self.declare_temporary(
+                    name.location,
+                    Value::Void,
+                    AllocationMethod::TopOfStack,
+                );
+                self.blocks
+                    .push_instruction(name.location, Ir::Assign(arg_temp, *arg));
+                arg_temp
+            })
+            .collect::<Vec<_>>();
         self.blocks.push_instruction(
             name.location,
-            Ir::Call(function_index, temp, arguments.clone()),
+            Ir::Call(function_index, retval_temporary, arg_temporaries),
         );
+        // Copy the return value into the temporary variable.
+        self.blocks
+            .push_instruction(name.location, Ir::Assign(temp, retval_temporary));
 
+        // Free up the temporaries except for the return value.
         self.rollback_scope(name.location, rp);
 
         Ok(temp)

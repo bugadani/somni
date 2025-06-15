@@ -5,6 +5,5 @@ Function pass_by_reference(...) -> signed (stack: 6)
   0003: copy Local(0) = Local(4)
   0004: return
 Function take_by_reference(...) -> signed (stack: 3)
-  0005: Local(2) = *Local(1)
-  0006: copy Local(0) = Local(2)
-  0007: return
+  0005: Local(0) = *Local(1)
+  0006: return

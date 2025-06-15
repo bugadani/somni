@@ -99,12 +99,15 @@ block 12
 
 block 13
   var temp13: Void = None
-  temp13 = call noop()
-  free(temp13)
   var temp14: Void = None
-  temp14 = number * n
-  return_value = temp14
+  temp14 = call noop()
+  temp13 = temp14
   free(temp14)
+  free(temp13)
+  var temp15: Void = None
+  temp15 = number * n
+  return_value = temp15
+  free(temp15)
   free(add)
   free(n)
   free(number)

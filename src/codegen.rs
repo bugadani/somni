@@ -458,7 +458,9 @@ impl Compiler {
                             *jump_address = len;
                         }
                     } else {
-                        let address = self.address_of_variable(condition);
+                        let address = self
+                            .address_of_variable(condition)
+                            .expect("Variable not found in stack allocator");
 
                         // We'll have to patch the jump later.
                         blocks.push((
@@ -503,48 +505,58 @@ impl Compiler {
         match &instruction.instruction {
             ir::Ir::Declare(var, value) => self.declare_variable(location, *var, *value),
             ir::Ir::Assign(dst, src) => {
-                let dst = self.address_of_variable(*dst);
-                let src = self.address_of_variable(*src);
+                let dst = self
+                    .address_of_variable(*dst)
+                    .expect("Variable not found in stack allocator");
+                let src = self
+                    .address_of_variable(*src)
+                    .expect("Variable not found in stack allocator");
 
                 self.push_instruction(location, Instruction::Copy(dst, src));
             }
             ir::Ir::DerefAssign(dst, src) => {
-                let dst = self.address_of_variable(*dst);
-                let src = self.address_of_variable(*src);
+                let dst = self
+                    .address_of_variable(*dst)
+                    .expect("Variable not found in stack allocator");
+                let src = self
+                    .address_of_variable(*src)
+                    .expect("Variable not found in stack allocator");
 
                 self.push_instruction(location, Instruction::DerefCopy(dst, src));
             }
             ir::Ir::FreeVariable(var) => self.free_variable(*var),
             ir::Ir::Call(fn_name, return_var, args) => {
-                let stack_frame = self.stack_allocator.allocate_stack_frame(args.len() + 1);
-
-                // Copy arguments to the stack frame.
-                for (idx, arg) in args.iter().enumerate() {
-                    let arg_address = self.address_of_variable(*arg);
-
-                    self.push_instruction(
-                        location, // TODO: the location of the argument
-                        Instruction::Copy(stack_frame + idx + 1, arg_address),
-                    );
-                }
-
                 if let Some(fn_index) = self.program.functions.get_index_of(fn_name) {
-                    self.push_instruction(location, Instruction::Call(fn_index, stack_frame));
+                    self.push_instruction(
+                        location,
+                        Instruction::Call(
+                            fn_index,
+                            self.address_of_variable(*return_var)
+                                .expect("Variable not found in stack allocator"),
+                        ),
+                    );
                 } else {
                     self.push_instruction(
                         location,
-                        Instruction::CallNamed(*fn_name, stack_frame, args.len()),
+                        Instruction::CallNamed(
+                            *fn_name,
+                            self.address_of_variable(*return_var)
+                                .expect("Variable not found in stack allocator"),
+                            args.len(),
+                        ),
                     );
                 }
-
-                // Store the return value in the specified variable.
-                let return_address = self.address_of_variable(*return_var);
-                self.push_instruction(location, Instruction::Copy(return_address, stack_frame));
             }
             ir::Ir::BinaryOperator(op, dst, lhs, rhs) => {
-                let dst = self.address_of_variable(*dst);
-                let mut lhs = self.address_of_variable(*lhs);
-                let mut rhs = self.address_of_variable(*rhs);
+                let dst = self
+                    .address_of_variable(*dst)
+                    .expect("Variable not found in stack allocator");
+                let mut lhs = self
+                    .address_of_variable(*lhs)
+                    .expect("Variable not found in stack allocator");
+                let mut rhs = self
+                    .address_of_variable(*rhs)
+                    .expect("Variable not found in stack allocator");
 
                 let (normalized, swap) = match self.strings.lookup(*op) {
                     ">" => ("<", true),
@@ -582,8 +594,12 @@ impl Compiler {
                 self.push_instruction(location, instruction);
             }
             ir::Ir::UnaryOperator(op, dst, operand) => {
-                let dst = self.address_of_variable(*dst);
-                let operand = self.address_of_variable(*operand);
+                let dst = self
+                    .address_of_variable(*dst)
+                    .expect("Variable not found in stack allocator");
+                let operand = self
+                    .address_of_variable(*operand)
+                    .expect("Variable not found in stack allocator");
 
                 let instruction = match self.strings.lookup(*op) {
                     "-" => Instruction::Negate(dst, operand),
@@ -605,11 +621,11 @@ impl Compiler {
         Ok(())
     }
 
-    fn address_of_variable(&self, variable: VariableIndex) -> MemoryAddress {
+    fn address_of_variable(&self, variable: VariableIndex) -> Option<MemoryAddress> {
         match variable {
             VariableIndex::Local(index) => self.stack_allocator.find(index),
             VariableIndex::Temporary(index) => self.stack_allocator.find(index),
-            VariableIndex::Global(index) => MemoryAddress::Global(index.0),
+            VariableIndex::Global(index) => Some(MemoryAddress::Global(index.0)),
         }
     }
 
@@ -651,24 +667,25 @@ impl StackAllocator {
         }
     }
 
-    pub fn find(&self, index: LocalVariableIndex) -> MemoryAddress {
+    pub fn find(&self, index: LocalVariableIndex) -> Option<MemoryAddress> {
         self.variables
             .iter()
             .position(|&v| v == Some(index))
             .map(MemoryAddress::Local)
-            .expect("Variable not found in stack allocator")
     }
 
     fn allocate_variable(&mut self, var: ir::VariableDeclaration) -> MemoryAddress {
-        if let Some(reused) = self.variables.iter().position(|&v| v.is_none()) {
-            self.variables[reused] = Some(var.index);
-            MemoryAddress::Local(reused)
-        } else {
-            let index = self.variables.len();
-            self.variables.push(Some(var.index));
-            self.depth = self.depth.max(self.variables.len());
-            MemoryAddress::Local(index)
+        if var.allocation_method == ir::AllocationMethod::FirstFit {
+            if let Some(reused) = self.variables.iter().position(|&v| v.is_none()) {
+                self.variables[reused] = Some(var.index);
+                return MemoryAddress::Local(reused);
+            }
         }
+
+        let index = self.variables.len();
+        self.variables.push(Some(var.index));
+        self.depth = self.depth.max(self.variables.len());
+        MemoryAddress::Local(index)
     }
 
     fn free_variable(&mut self, var: LocalVariableIndex) {
@@ -680,18 +697,6 @@ impl StackAllocator {
         } else {
             panic!("Attempted to free a variable that is not allocated: {var:?}");
         }
-    }
-
-    fn allocate_stack_frame(&mut self, len: usize) -> MemoryAddress {
-        let start_address = self
-            .variables
-            .iter()
-            .rposition(|v| v.is_some())
-            .map_or(0, |pos| pos + 1);
-
-        self.depth = self.depth.max(start_address + len);
-
-        MemoryAddress::Local(start_address)
     }
 }
 

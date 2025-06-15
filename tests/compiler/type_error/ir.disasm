@@ -26,7 +26,13 @@ block 0
   z = temp6
   free(temp6)
   var temp7: Void = None
-  temp7 = call f(x)
+  var temp8: Void = None
+  var temp9: Void = None
+  temp9 = x
+  temp8 = call f(temp9)
+  temp7 = temp8
+  free(temp9)
+  free(temp8)
   free(temp7)
   return_value = z
   free(z)

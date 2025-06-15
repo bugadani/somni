@@ -1,4 +1,3 @@
 Function add(...) -> int (stack: 4)
-  0000: Local(3) = Local(1) + Local(2)
-  0001: copy Local(0) = Local(3)
-  0002: return
+  0000: Local(0) = Local(1) + Local(2)
+  0001: return

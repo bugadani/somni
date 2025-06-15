@@ -22,12 +22,15 @@ Function: doubled
 block 0
   var return_value: Int = None
   var temp1: Void = None
-  temp1 = call double()
-  free(temp1)
   var temp2: Void = None
-  temp2 = n + m
-  return_value = temp2
+  temp2 = call double()
+  temp1 = temp2
   free(temp2)
+  free(temp1)
+  var temp3: Void = None
+  temp3 = n + m
+  return_value = temp3
+  free(temp3)
   free(return_value)
   -> block 2
 

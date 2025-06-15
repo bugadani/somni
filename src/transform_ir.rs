@@ -492,14 +492,31 @@ fn propagate_variable_types_inner<'s>(
 
 fn propagate_destination(func: &mut ir::Function) {
     for block in &mut func.blocks {
+        let mut skip_variables = vec![];
         // Ending with 1, because we don't need to check the
         // first instruction - we can't remove it anyway.
+        for instruction in &block.instructions {
+            if let ir::Ir::Declare(dst, _) = instruction.instruction {
+                // This variable cannot be moved by this step.
+                if dst.allocation_method == ir::AllocationMethod::TopOfStack {
+                    // If the variable is marked as skip, we don't need to propagate it.
+                    skip_variables.push(dst.index);
+                }
+            }
+        }
         for idx in (1..block.instructions.len()).rev() {
             if let ir::Ir::Assign(dst, src) = block.instructions[idx].instruction {
+                if let Some(local) = src.local_index() {
+                    if skip_variables.contains(&local) {
+                        // If the destination variable is marked as skip, we don't need to propagate it.
+                        continue;
+                    }
+                }
                 // If we find an assignment, let's try to remove it. We can remove it if we find the
                 // src written previously in the block.
-                for prev_idx in (0..idx - 1).rev() {
+                for prev_idx in (0..idx).rev() {
                     let read = match &block.instructions[prev_idx].instruction {
+                        ir::Ir::Declare(info, _) => Some(info.index) == dst.local_index(),
                         ir::Ir::Assign(_, assign_source) => *assign_source == src,
                         ir::Ir::Call(_, _, args) => args.contains(&src),
                         ir::Ir::BinaryOperator(_, _, lhs, rhs) => *lhs == src || *rhs == src,
