@@ -1,6 +1,29 @@
 use std::fmt::Debug;
 
-use somni_lexer::Location;
+use somni_lexer::{LexerError, Location};
+use somni_parser::ParserError;
+
+pub trait ErrorWithLocation {
+    fn location(&self) -> Location;
+}
+
+impl ErrorWithLocation for LexerError {
+    fn location(&self) -> Location {
+        self.location
+    }
+}
+
+impl ErrorWithLocation for ParserError {
+    fn location(&self) -> Location {
+        self.location
+    }
+}
+
+impl ErrorWithLocation for CompileError<'_> {
+    fn location(&self) -> Location {
+        self.location
+    }
+}
 
 #[derive(Clone)]
 pub struct CompileError<'s> {

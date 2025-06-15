@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::Expression,
     codegen::{self, CodeAddress, Function, Instruction, MemoryAddress, Value},
     error::MarkInSource,
     string_interner::{StringIndex, Strings},
 };
 use somni_lexer::Location;
+use somni_parser::ast::{self, Expression};
 
 #[derive(Clone, Debug)]
 pub struct EvalError(Box<str>);
@@ -385,7 +385,7 @@ impl<'p> EvalContext<'p> {
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
 
-        let ast = crate::parser::parse_expression(expression, &tokens).unwrap();
+        let ast = somni_parser::parse_expression(expression, &tokens).unwrap();
 
         let mut visitor = ExpressionVisitor {
             context: self,
@@ -777,9 +777,9 @@ impl<'a> ExpressionVisitor<'a, '_> {
                     })
             }
             Expression::Literal { value } => match &value.value {
-                crate::ast::LiteralValue::Integer(value) => Value::Int(*value),
-                crate::ast::LiteralValue::Float(value) => Value::Float(*value),
-                crate::ast::LiteralValue::String(value) => {
+                ast::LiteralValue::Integer(value) => Value::Int(*value),
+                ast::LiteralValue::Float(value) => Value::Float(*value),
+                ast::LiteralValue::String(value) => {
                     if let Some(string_index) = self.context.strings.find(value) {
                         Value::String(string_index)
                     } else {
@@ -787,7 +787,7 @@ impl<'a> ExpressionVisitor<'a, '_> {
                         Value::String(string_index)
                     }
                 }
-                crate::ast::LiteralValue::Boolean(value) => Value::Bool(*value),
+                ast::LiteralValue::Boolean(value) => Value::Bool(*value),
             },
             Expression::UnaryOperator { name, operand } => match name.source(self.source) {
                 "!" => match self.visit_expression(operand) {

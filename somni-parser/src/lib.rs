@@ -41,20 +41,26 @@
 //! call_arguments -> expression ( ',' expression )* ','? ;
 //! literal -> NUMBER | STRING | "true" | "false" ;
 //! ```
+
+pub mod ast;
+
 use std::num::ParseIntError;
 
-use crate::{
-    ast::{
-        Body, Break, Continue, Else, EmptyReturn, Expression, Function, FunctionArgument,
-        GlobalVariable, If, Item, Literal, LiteralValue, Loop, Program, ReturnDecl,
-        ReturnWithValue, Statement, TypeHint, VariableDefinition,
-    },
-    error::CompileError,
+use crate::ast::{
+    Body, Break, Continue, Else, EmptyReturn, Expression, Function, FunctionArgument,
+    GlobalVariable, If, Item, Literal, LiteralValue, Loop, Program, ReturnDecl, ReturnWithValue,
+    Statement, TypeHint, VariableDefinition,
 };
 use somni_lexer::{Location, Token, TokenKind};
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParserError {
+    pub location: Location,
+    pub error: String,
+}
+
 impl Program {
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
+    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         let mut items = Vec::new();
 
         while !stream.end() {
@@ -66,7 +72,7 @@ impl Program {
 }
 
 impl Item {
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
+    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         if let Some(global_var) = GlobalVariable::try_parse(stream)? {
             return Ok(Item::GlobalVariable(global_var));
         }
@@ -79,7 +85,7 @@ impl Item {
 }
 
 impl GlobalVariable {
-    fn try_parse<'s>(stream: &mut TokenStream<'s>) -> Result<Option<Self>, CompileError<'s>> {
+    fn try_parse<'s>(stream: &mut TokenStream<'s>) -> Result<Option<Self>, ParserError> {
         let Some(decl_token) = stream.take_match(TokenKind::Identifier, &["var"]) else {
             return Ok(None);
         };
@@ -106,7 +112,7 @@ impl GlobalVariable {
 }
 
 impl Function {
-    fn try_parse<'s>(stream: &mut TokenStream<'s>) -> Result<Option<Self>, CompileError<'s>> {
+    fn try_parse<'s>(stream: &mut TokenStream<'s>) -> Result<Option<Self>, ParserError> {
         let Some(fn_token) = stream.take_match(TokenKind::Identifier, &["fn"]) else {
             return Ok(None);
         };
@@ -159,7 +165,7 @@ impl Function {
 }
 
 impl Body {
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
+    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         let opening_brace = stream.expect_match(TokenKind::Symbol, &["{"])?;
 
         let mut body = Vec::new();
@@ -178,7 +184,7 @@ impl Body {
 }
 
 impl TypeHint {
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
+    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         let type_name = stream.expect_match(TokenKind::Identifier, &[])?;
 
         Ok(TypeHint { type_name })
@@ -190,7 +196,7 @@ impl Statement {
         !stream.end() && stream.peek_match(TokenKind::Symbol, &["}"]).is_none()
     }
 
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
+    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         if let Some(return_token) = stream.take_match(TokenKind::Identifier, &["return"]) {
             if let Some(semicolon) = stream.take_match(TokenKind::Symbol, &[";"]) {
                 return Ok(Statement::EmptyReturn(EmptyReturn {
@@ -314,7 +320,7 @@ impl Statement {
 }
 
 impl Literal {
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
+    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         let token = stream.peek()?;
 
         let token_source = stream.source(token.location);
@@ -336,13 +342,12 @@ impl Literal {
             TokenKind::String => match unescape(&token_source[1..token_source.len() - 1]) {
                 Ok(string) => LiteralValue::String(string),
                 Err(offset) => {
-                    return Err(CompileError {
+                    return Err(ParserError {
                         error: "Invalid escape sequence in string literal".to_string(),
                         location: Location {
                             start: token.location.start + offset,
                             end: token.location.start + offset + 1,
                         },
-                        source: stream.source,
                     });
                 }
             },
@@ -396,7 +401,7 @@ enum Associativity {
 }
 
 impl Expression {
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
+    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         // We define the binary operators from the lowest precedence to the highest.
         // Each recursive call to `parse_binary` will handle one level of precedence, and pass
         // the rest to the inner calls of `parse_binary`.
@@ -419,7 +424,7 @@ impl Expression {
     fn parse_binary<'s>(
         stream: &mut TokenStream<'s>,
         binary_operators: &[(Associativity, &[&str])],
-    ) -> Result<Self, CompileError<'s>> {
+    ) -> Result<Self, ParserError> {
         let Some(((associativity, current), higher)) = binary_operators.split_first() else {
             unreachable!("At least one operator set is expected");
         };
@@ -450,7 +455,7 @@ impl Expression {
         Ok(expr)
     }
 
-    fn parse_unary<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
+    fn parse_unary<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         const UNARY_OPERATORS: &[&str] = &["!", "-", "&", "*"];
         if let Some(operator) = stream.take_match(TokenKind::Symbol, UNARY_OPERATORS) {
             let operand = Self::parse_unary(stream)?;
@@ -463,7 +468,7 @@ impl Expression {
         }
     }
 
-    fn parse_primary<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
+    fn parse_primary<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         let token = stream.peek()?;
 
         if let Ok(literal) = Literal::parse(stream) {
@@ -482,7 +487,7 @@ impl Expression {
         }
     }
 
-    fn parse_call<'s>(stream: &mut TokenStream<'s>) -> Result<Self, CompileError<'s>> {
+    fn parse_call<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         let token = stream.expect_match(TokenKind::Identifier, &[]).unwrap();
 
         if stream.take_match(TokenKind::Symbol, &["("]).is_none() {
@@ -534,7 +539,7 @@ impl<'s> TokenStream<'s> {
         position >= self.tokens.len()
     }
 
-    fn peek(&mut self) -> Result<Token, CompileError<'s>> {
+    fn peek(&mut self) -> Result<Token, ParserError> {
         // Skip comments
         let mut position = self.position;
         while self.tokens.get(position).is_some()
@@ -546,7 +551,7 @@ impl<'s> TokenStream<'s> {
         if position < self.tokens.len() {
             Ok(self.tokens[position])
         } else {
-            Err(CompileError {
+            Err(ParserError {
                 error: "Unexpected end of input".to_string(),
                 location: self.tokens.get(self.position).map_or(
                     Location {
@@ -555,7 +560,6 @@ impl<'s> TokenStream<'s> {
                     },
                     |t| t.location,
                 ),
-                source: self.source,
             })
         }
     }
@@ -597,7 +601,7 @@ impl<'s> TokenStream<'s> {
         &mut self,
         token_kind: TokenKind,
         source: &[&str],
-    ) -> Result<Token, CompileError<'s>> {
+    ) -> Result<Token, ParserError> {
         if let Some(token) = self.take_match(token_kind, source) {
             Ok(token)
         } else {
@@ -619,8 +623,8 @@ impl<'s> TokenStream<'s> {
         }
     }
 
-    fn error(&self, message: impl ToString) -> CompileError<'s> {
-        CompileError {
+    fn error(&self, message: impl ToString) -> ParserError {
+        ParserError {
             error: message.to_string(),
             location: self
                 .tokens
@@ -630,7 +634,6 @@ impl<'s> TokenStream<'s> {
                     start: self.source.len(),
                     end: self.source.len(),
                 }),
-            source: self.source,
         }
     }
 
@@ -639,7 +642,7 @@ impl<'s> TokenStream<'s> {
     }
 }
 
-pub fn parse<'s>(source: &'s str, tokens: &'s [Token]) -> Result<Program, CompileError<'s>> {
+pub fn parse<'s>(source: &'s str, tokens: &'s [Token]) -> Result<Program, ParserError> {
     let mut stream = TokenStream::new(source, tokens);
 
     Program::parse(&mut stream)
@@ -648,7 +651,7 @@ pub fn parse<'s>(source: &'s str, tokens: &'s [Token]) -> Result<Program, Compil
 pub fn parse_expression<'s>(
     source: &'s str,
     tokens: &'s [Token],
-) -> Result<Expression, CompileError<'s>> {
+) -> Result<Expression, ParserError> {
     let mut stream = TokenStream::new(source, tokens);
 
     Expression::parse(&mut stream)
@@ -663,10 +666,5 @@ mod tests {
         assert_eq!(unescape(r#"Hello\nWorld\t!"#).unwrap(), "Hello\nWorld\t!");
         assert_eq!(unescape(r#"Hello\\World"#).unwrap(), "Hello\\World");
         assert_eq!(unescape(r#"Hello\zWorld"#), Err(6)); // Invalid escape sequence
-    }
-
-    #[test]
-    fn test_parser() {
-        crate::test::run_parser_tests("tests/parser/");
     }
 }

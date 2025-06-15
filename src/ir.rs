@@ -3,13 +3,13 @@ use std::fmt::{Debug, Display, Write as _};
 use indexmap::IndexMap;
 
 use crate::{
-    ast,
     error::CompileError,
     string_interner::{StringIndex, StringInterner, Strings},
     variable_tracker::{LocalVariableIndex, RestorePoint, ScopeData, VariableTracker},
 };
 
 use somni_lexer::{Location, Token};
+use somni_parser::ast;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Value {

@@ -4,11 +4,11 @@ use crate::{
     codegen::{self, Value},
     error::CompileError,
     ir,
-    parser::parse,
     transform_ir::transform_ir,
     vm::EvalContext,
 };
 use somni_lexer::tokenize;
+use somni_parser::parse;
 
 fn walk(dir: &Path, on_file: &impl Fn(&Path)) {
     for entry in std::fs::read_dir(dir).unwrap().flatten() {
@@ -82,7 +82,17 @@ pub fn run_compile_test(file: impl AsRef<Path>, compile_test: bool) -> Option<co
     let tokens = tokenize(&source).collect::<Result<Vec<_>, _>>().unwrap();
     let ast = match parse(&source, &tokens) {
         Ok(ast) => ast,
-        Err(err) => return ctx.handle_error("Failed to parse", err),
+        Err(err) => {
+            return ctx.handle_error(
+                "Failed to parse",
+                CompileError {
+                    // TODO clean this up
+                    source: &source,
+                    location: err.location,
+                    error: err.error,
+                },
+            );
+        }
     };
     write_out_file(&ctx.out_path.join("ast"), format!("{:#?}", ast));
 
