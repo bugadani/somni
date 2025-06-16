@@ -26,37 +26,88 @@ pub enum Register {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub enum BinaryOperator {
+    TestLessThan,
+    TestLessThanOrEqual,
+    TestEquals,
+    TestNotEquals,
+    BitwiseOr,
+    BitwiseXor,
+    BitwiseAnd,
+    ShiftLeft,
+    ShiftRight,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+}
+
+impl std::fmt::Display for BinaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let operator = match self {
+            BinaryOperator::TestLessThan => "<",
+            BinaryOperator::TestLessThanOrEqual => "<=",
+            BinaryOperator::TestEquals => "==",
+            BinaryOperator::TestNotEquals => "!=",
+            BinaryOperator::BitwiseOr => "|",
+            BinaryOperator::BitwiseXor => "^",
+            BinaryOperator::BitwiseAnd => "&",
+            BinaryOperator::ShiftLeft => "<<",
+            BinaryOperator::ShiftRight => ">>",
+            BinaryOperator::Add => "+",
+            BinaryOperator::Subtract => "-",
+            BinaryOperator::Multiply => "*",
+            BinaryOperator::Divide => "/",
+        };
+        write!(f, "{}", operator)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum UnaryOperator {
+    Negate,
+    Not,
+}
+
+impl std::fmt::Display for UnaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let operator = match self {
+            UnaryOperator::Negate => "-",
+            UnaryOperator::Not => "!",
+        };
+        write!(f, "{}", operator)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum Instruction {
     /// Return with the value from the eval stack
     Return,
     Jump(CodeAddress),
     JumpIfFalse(MemoryAddress, CodeAddress),
-    Copy(MemoryAddress, MemoryAddress),
-    DerefCopy(MemoryAddress, MemoryAddress),
-    LoadValue(MemoryAddress, Value),
+    Copy(Type, MemoryAddress, MemoryAddress),
+    DerefCopy(Type, MemoryAddress, MemoryAddress),
+    LoadValue(MemoryAddress, TypedValue),
     Call(usize, MemoryAddress),
-    CallNamed(StringIndex, MemoryAddress, usize),
-
+    CallNamed(StringIndex, Type, MemoryAddress),
     /// Unary operations
-    Negate(MemoryAddress, MemoryAddress),
-    Not(MemoryAddress, MemoryAddress),
-    Dereference(MemoryAddress, MemoryAddress),
-    Address(MemoryAddress, MemoryAddress),
+    Dereference(Type, MemoryAddress, MemoryAddress),
+    AddressOf(MemoryAddress, MemoryAddress),
+    UnaryOperator {
+        ty: Type,
+        operator: UnaryOperator,
+        dst: MemoryAddress,
+        op: MemoryAddress,
+    },
 
     // Binary operations
-    TestLessThan(MemoryAddress, MemoryAddress, MemoryAddress),
-    TestLessThanOrEqual(MemoryAddress, MemoryAddress, MemoryAddress),
-    TestEquals(MemoryAddress, MemoryAddress, MemoryAddress),
-    TestNotEquals(MemoryAddress, MemoryAddress, MemoryAddress),
-    BitwiseOr(MemoryAddress, MemoryAddress, MemoryAddress),
-    BitwiseXor(MemoryAddress, MemoryAddress, MemoryAddress),
-    BitwiseAnd(MemoryAddress, MemoryAddress, MemoryAddress),
-    ShiftLeft(MemoryAddress, MemoryAddress, MemoryAddress),
-    ShiftRight(MemoryAddress, MemoryAddress, MemoryAddress),
-    Add(MemoryAddress, MemoryAddress, MemoryAddress),
-    Subtract(MemoryAddress, MemoryAddress, MemoryAddress),
-    Multiply(MemoryAddress, MemoryAddress, MemoryAddress),
-    Divide(MemoryAddress, MemoryAddress, MemoryAddress),
+    BinaryOperator {
+        ty: Type,
+        operator: BinaryOperator,
+        dst: MemoryAddress,
+        lhs: MemoryAddress,
+        rhs: MemoryAddress,
+    },
 }
 
 impl Instruction {
@@ -67,8 +118,8 @@ impl Instruction {
             Instruction::JumpIfFalse(addr, address) => {
                 format!("if {:?} == false jump to {}", addr, address.0)
             }
-            Instruction::Copy(dst, src) => format!("copy {dst:?} = {src:?}"),
-            Instruction::DerefCopy(dst, src) => format!("copy *{dst:?} = {src:?}"),
+            Instruction::Copy(_, dst, src) => format!("copy {dst:?} = {src:?}"),
+            Instruction::DerefCopy(_, dst, src) => format!("copy *{dst:?} = {src:?}"),
             Instruction::LoadValue(dst, value) => format!("load {dst:?} = {value:?}"),
             Instruction::Call(fn_index, stack_frame) => {
                 let fn_name = debug_info
@@ -78,56 +129,32 @@ impl Instruction {
                     .unwrap_or("unknown function");
                 format!("call {fn_name}(..) with sp={stack_frame:?}")
             }
-            Instruction::CallNamed(name, stack_frame, arg_count) => {
+            Instruction::CallNamed(name, ret_ty, stack_frame) => {
                 let fn_name = debug_info.strings.lookup(*name);
-                let arg_placeholders = (0..*arg_count)
-                    .map(|i| format!("arg{i}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("call {fn_name}({arg_placeholders}) with sp={stack_frame:?}")
+                format!("call {fn_name}(?) -> {ret_ty:?} with sp={stack_frame:?}")
             }
-            Instruction::Negate(dst, src) => format!("{dst:?} = -{src:?}"),
-            Instruction::Not(dst, src) => format!("{dst:?} = !{src:?}"),
-            Instruction::Dereference(dst, src) => format!("{dst:?} = *{src:?}"),
-            Instruction::Address(dst, src) => format!("{dst:?} = &{src:?}"),
-            Instruction::TestLessThan(dst, lhs, rhs) => {
-                format!("{dst:?} = {lhs:?} < {rhs:?}")
+            Instruction::BinaryOperator {
+                ty,
+                operator,
+                dst,
+                lhs,
+                rhs,
+            } => {
+                format!("{dst:?} = {lhs:?} {operator} {rhs:?} ({ty})")
             }
-            Instruction::TestLessThanOrEqual(dst, lhs, rhs) => {
-                format!("{dst:?} = {lhs:?} <= {rhs:?}")
+            Instruction::UnaryOperator {
+                ty,
+                operator,
+                dst,
+                op,
+            } => {
+                format!("{dst:?} = {operator}{op:?} ({ty})")
             }
-            Instruction::TestEquals(dst, lhs, rhs) => {
-                format!("{dst:?} = {lhs:?} == {rhs:?}")
+            Instruction::Dereference(_, dst, op) => {
+                format!("{dst:?} = *{op:?}")
             }
-            Instruction::TestNotEquals(dst, lhs, rhs) => {
-                format!("{dst:?} = {lhs:?} != {rhs:?}")
-            }
-            Instruction::BitwiseOr(dst, lhs, rhs) => {
-                format!("{dst:?} = {lhs:?} | {rhs:?}")
-            }
-            Instruction::BitwiseXor(dst, lhs, rhs) => {
-                format!("{dst:?} = {lhs:?} ^ {rhs:?}")
-            }
-            Instruction::BitwiseAnd(dst, lhs, rhs) => {
-                format!("{dst:?} = {lhs:?} & {rhs:?}")
-            }
-            Instruction::ShiftLeft(dst, lhs, rhs) => {
-                format!("{dst:?} = {lhs:?} << {rhs:?}")
-            }
-            Instruction::ShiftRight(dst, lhs, rhs) => {
-                format!("{dst:?} = {lhs:?} >> {rhs:?}")
-            }
-            Instruction::Add(dst, lhs, rhs) => {
-                format!("{dst:?} = {lhs:?} + {rhs:?}")
-            }
-            Instruction::Subtract(dst, lhs, rhs) => {
-                format!("{dst:?} = {lhs:?} - {rhs:?}")
-            }
-            Instruction::Multiply(dst, lhs, rhs) => {
-                format!("{dst:?} = {lhs:?} * {rhs:?}")
-            }
-            Instruction::Divide(dst, lhs, rhs) => {
-                format!("{dst:?} = {lhs:?} / {rhs:?}")
+            Instruction::AddressOf(dst, op) => {
+                format!("{dst:?} = &{op:?}")
             }
         }
     }
@@ -172,41 +199,421 @@ impl Add<usize> for MemoryAddress {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Value {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TypedValue {
     Void,
     Int(u64),
     SignedInt(i64),
     Float(f64),
     Bool(bool),
     String(StringIndex),
-    Address(MemoryAddress),
 }
 
-impl From<&ir::Value> for Value {
-    fn from(value: &ir::Value) -> Self {
+macro_rules! dispatch_binary_to_bool {
+    ($method:ident) => {
+        pub(crate) fn $method(
+            lhs: TypedValue,
+            rhs: TypedValue,
+        ) -> Result<TypedValue, OperatorError> {
+            let result = match (lhs, rhs) {
+                (TypedValue::Bool(value), TypedValue::Bool(other)) => {
+                    ValueType::$method(value, other)
+                }
+                (TypedValue::Int(value), TypedValue::Int(other)) => {
+                    ValueType::$method(value, other)
+                }
+                (TypedValue::SignedInt(value), TypedValue::SignedInt(other)) => {
+                    ValueType::$method(value, other)
+                }
+                (TypedValue::Float(value), TypedValue::Float(other)) => {
+                    ValueType::$method(value, other)
+                }
+                (TypedValue::String(value), TypedValue::String(other)) => {
+                    ValueType::$method(value, other)
+                }
+                (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
+            };
+
+            result.map(TypedValue::Bool)
+        }
+    };
+}
+
+macro_rules! dispatch_binary_to_value_type {
+    ($method:ident) => {
+        pub(crate) fn $method(
+            lhs: TypedValue,
+            rhs: TypedValue,
+        ) -> Result<TypedValue, OperatorError> {
+            match (lhs, rhs) {
+                (TypedValue::Bool(value), TypedValue::Bool(other)) => {
+                    Ok(TypedValue::from(ValueType::$method(value, other)?))
+                }
+                (TypedValue::Int(value), TypedValue::Int(other)) => {
+                    Ok(TypedValue::from(ValueType::$method(value, other)?))
+                }
+                (TypedValue::SignedInt(value), TypedValue::SignedInt(other)) => {
+                    Ok(TypedValue::from(ValueType::$method(value, other)?))
+                }
+                (TypedValue::Float(value), TypedValue::Float(other)) => {
+                    Ok(TypedValue::from(ValueType::$method(value, other)?))
+                }
+                (TypedValue::String(value), TypedValue::String(other)) => {
+                    Ok(TypedValue::from(ValueType::$method(value, other)?))
+                }
+                (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
+            }
+        }
+    };
+}
+
+impl TypedValue {
+    pub fn type_of(&self) -> Type {
+        match self {
+            TypedValue::Void => Type::Void,
+            TypedValue::Int(_) => Type::Int,
+            TypedValue::SignedInt(_) => Type::SignedInt,
+            TypedValue::Float(_) => Type::Float,
+            TypedValue::Bool(_) => Type::Bool,
+            TypedValue::String(_) => Type::String,
+        }
+    }
+
+    dispatch_binary_to_bool!(equals);
+    dispatch_binary_to_bool!(less_than);
+    dispatch_binary_to_bool!(less_than_or_equal);
+    dispatch_binary_to_bool!(not_equals);
+    dispatch_binary_to_value_type!(bitwise_or);
+    dispatch_binary_to_value_type!(bitwise_xor);
+    dispatch_binary_to_value_type!(bitwise_and);
+    dispatch_binary_to_value_type!(shift_left);
+    dispatch_binary_to_value_type!(shift_right);
+    dispatch_binary_to_value_type!(add);
+    dispatch_binary_to_value_type!(subtract);
+    dispatch_binary_to_value_type!(multiply);
+    dispatch_binary_to_value_type!(divide);
+
+    pub(crate) fn write(&self, to: &mut [u8]) {
+        match self {
+            TypedValue::Void => ().write(to),
+            TypedValue::Int(value) => value.write(to),
+            TypedValue::SignedInt(value) => value.write(to),
+            TypedValue::Float(value) => value.write(to),
+            TypedValue::Bool(value) => value.write(to),
+            TypedValue::String(value) => value.write(to),
+        }
+    }
+
+    fn from_value(value: &ir::Value) -> TypedValue {
         match value {
-            ir::Value::Void => Value::Void,
-            ir::Value::Int(value) => Value::Int(*value),
-            ir::Value::SignedInt(value) => Value::SignedInt(*value),
-            ir::Value::Bool(value) => Value::Bool(*value),
-            ir::Value::String(value) => Value::String(*value),
-            ir::Value::Float(value) => Value::Float(*value),
+            ir::Value::Void => Self::from(()),
+            ir::Value::Int(value) => Self::from(*value),
+            ir::Value::SignedInt(value) => Self::from(*value),
+            ir::Value::Float(value) => Self::from(*value),
+            ir::Value::Bool(value) => Self::from(*value),
+            ir::Value::String(value) => Self::from(*value),
+        }
+    }
+
+    pub fn from_typed_bytes(ty: Type, value: &[u8]) -> TypedValue {
+        match ty {
+            Type::Void => Self::Void,
+            Type::Int | Type::Address => Self::Int(<_>::from_bytes(value)),
+            Type::SignedInt => Self::SignedInt(<_>::from_bytes(value)),
+            Type::Float => Self::Float(<_>::from_bytes(value)),
+            Type::Bool => Self::Bool(<_>::from_bytes(value)),
+            Type::String => Self::String(<_>::from_bytes(value)),
         }
     }
 }
 
-impl Value {
-    pub fn type_of(&self) -> Type {
-        match self {
-            Value::Void => Type::Void,
-            Value::Int(_) => Type::Int,
-            Value::SignedInt(_) => Type::SignedInt,
-            Value::Bool(_) => Type::Bool,
-            Value::String(_) => Type::String,
-            Value::Float(_) => Type::Float,
-            Value::Address(_) => Type::Address,
+impl From<u64> for TypedValue {
+    fn from(value: u64) -> Self {
+        TypedValue::Int(value)
+    }
+}
+impl From<i64> for TypedValue {
+    fn from(value: i64) -> Self {
+        TypedValue::SignedInt(value)
+    }
+}
+impl From<f64> for TypedValue {
+    fn from(value: f64) -> Self {
+        TypedValue::Float(value)
+    }
+}
+impl From<bool> for TypedValue {
+    fn from(value: bool) -> Self {
+        TypedValue::Bool(value)
+    }
+}
+impl From<StringIndex> for TypedValue {
+    fn from(value: StringIndex) -> Self {
+        TypedValue::String(value)
+    }
+}
+impl From<()> for TypedValue {
+    fn from(_: ()) -> Self {
+        TypedValue::Void
+    }
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum OperatorError {
+    NotSupported,
+    RuntimeError,
+}
+
+pub trait ValueType: Sized + Copy + Into<TypedValue> {
+    const BYTES: usize; // TODO
+
+    fn write(&self, to: &mut [u8]);
+    fn from_bytes(bytes: &[u8]) -> Self;
+
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError>;
+    fn less_than(a: Self, b: Self) -> Result<bool, OperatorError>;
+
+    fn less_than_or_equal(a: Self, b: Self) -> Result<bool, OperatorError> {
+        let less = Self::less_than(a, b)?;
+        Ok(less || Self::equals(a, b)?)
+    }
+    fn not_equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        let equals = Self::equals(a, b)?;
+        Ok(!equals)
+    }
+    fn bitwise_or(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn bitwise_xor(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn bitwise_and(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn shift_left(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn shift_right(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn add(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn subtract(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn multiply(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn divide(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn not(_a: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn negate(_a: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+}
+
+impl ValueType for () {
+    const BYTES: usize = 0;
+
+    fn write(&self, _to: &mut [u8]) {}
+
+    fn from_bytes(_: &[u8]) -> Self {
+        ()
+    }
+
+    fn less_than(_: Self, _: Self) -> Result<bool, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+
+    fn equals(_: Self, _: Self) -> Result<bool, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+}
+
+impl ValueType for u64 {
+    const BYTES: usize = 8;
+
+    fn write(&self, to: &mut [u8]) {
+        to.copy_from_slice(&self.to_le_bytes());
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        u64::from_le_bytes(bytes.try_into().unwrap())
+    }
+
+    fn less_than(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a < b)
+    }
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a == b)
+    }
+    fn add(a: Self, b: Self) -> Result<Self, OperatorError> {
+        a.checked_add(b).ok_or(OperatorError::RuntimeError)
+    }
+    fn subtract(a: Self, b: Self) -> Result<Self, OperatorError> {
+        a.checked_sub(b).ok_or(OperatorError::RuntimeError)
+    }
+    fn multiply(a: Self, b: Self) -> Result<Self, OperatorError> {
+        a.checked_mul(b).ok_or(OperatorError::RuntimeError)
+    }
+    fn divide(a: Self, b: Self) -> Result<Self, OperatorError> {
+        if b == 0 {
+            Err(OperatorError::RuntimeError)
+        } else {
+            Ok(a / b)
         }
+    }
+    fn bitwise_or(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a | b)
+    }
+    fn bitwise_xor(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a ^ b)
+    }
+    fn bitwise_and(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a & b)
+    }
+    fn shift_left(a: Self, b: Self) -> Result<Self, OperatorError> {
+        if b < 64 {
+            Ok(a << b)
+        } else {
+            Err(OperatorError::RuntimeError)
+        }
+    }
+    fn shift_right(a: Self, b: Self) -> Result<Self, OperatorError> {
+        if b < 64 {
+            Ok(a >> b)
+        } else {
+            Err(OperatorError::RuntimeError)
+        }
+    }
+}
+
+impl ValueType for i64 {
+    const BYTES: usize = 8;
+
+    fn write(&self, to: &mut [u8]) {
+        to.copy_from_slice(&self.to_le_bytes());
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        i64::from_le_bytes(bytes.try_into().unwrap())
+    }
+
+    fn less_than(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a < b)
+    }
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a == b)
+    }
+    fn add(a: Self, b: Self) -> Result<Self, OperatorError> {
+        a.checked_add(b).ok_or(OperatorError::RuntimeError)
+    }
+    fn subtract(a: Self, b: Self) -> Result<Self, OperatorError> {
+        a.checked_sub(b).ok_or(OperatorError::RuntimeError)
+    }
+    fn multiply(a: Self, b: Self) -> Result<Self, OperatorError> {
+        a.checked_mul(b).ok_or(OperatorError::RuntimeError)
+    }
+    fn divide(a: Self, b: Self) -> Result<Self, OperatorError> {
+        if b == 0 {
+            Err(OperatorError::RuntimeError)
+        } else {
+            Ok(a / b)
+        }
+    }
+    fn bitwise_or(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a | b)
+    }
+    fn bitwise_xor(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a ^ b)
+    }
+    fn bitwise_and(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a & b)
+    }
+    fn shift_left(a: Self, b: Self) -> Result<Self, OperatorError> {
+        if b < 64 {
+            Ok(a << b)
+        } else {
+            Err(OperatorError::RuntimeError)
+        }
+    }
+    fn shift_right(a: Self, b: Self) -> Result<Self, OperatorError> {
+        if b < 64 {
+            Ok(a >> b)
+        } else {
+            Err(OperatorError::RuntimeError)
+        }
+    }
+}
+
+impl ValueType for f64 {
+    const BYTES: usize = 8;
+
+    fn write(&self, to: &mut [u8]) {
+        to.copy_from_slice(&self.to_le_bytes());
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        f64::from_le_bytes(bytes.try_into().unwrap())
+    }
+
+    fn less_than(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a < b)
+    }
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a == b)
+    }
+    fn add(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a + b)
+    }
+    fn subtract(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a - b)
+    }
+    fn multiply(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a * b)
+    }
+    fn divide(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a / b)
+    }
+}
+
+impl ValueType for bool {
+    const BYTES: usize = 1;
+
+    fn write(&self, to: &mut [u8]) {
+        to.copy_from_slice(&[*self as u8]);
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        bytes[0] != 0
+    }
+
+    fn less_than(_: Self, _: Self) -> Result<bool, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a == b)
+    }
+}
+
+impl ValueType for StringIndex {
+    const BYTES: usize = 8;
+
+    fn write(&self, to: &mut [u8]) {
+        to.copy_from_slice(&self.0.to_le_bytes());
+    }
+    fn from_bytes(bytes: &[u8]) -> Self {
+        StringIndex(u64::from_le_bytes(bytes.try_into().unwrap()) as usize)
+    }
+    fn less_than(_: Self, _: Self) -> Result<bool, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a == b)
     }
 }
 
@@ -219,6 +626,19 @@ pub enum Type {
     Bool,
     String,
     Address,
+}
+impl Type {
+    pub fn size_of(&self) -> usize {
+        match self {
+            Type::Void => <() as ValueType>::BYTES,
+            Type::Int => <u64 as ValueType>::BYTES,
+            Type::SignedInt => <i64 as ValueType>::BYTES,
+            Type::Float => <f64 as ValueType>::BYTES,
+            Type::Bool => <bool as ValueType>::BYTES,
+            Type::String => <StringIndex as ValueType>::BYTES,
+            Type::Address => <u64 as ValueType>::BYTES, // Assuming address is represented as u64
+        }
+    }
 }
 
 impl From<ir::Type> for Type {
@@ -251,12 +671,17 @@ impl Display for Type {
 
 #[derive(Clone, Debug)]
 pub struct GlobalVariable {
-    initial_value: Value,
+    pub address: MemoryAddress,
+    pub initial_value: TypedValue,
 }
 
 impl GlobalVariable {
-    pub fn value(&self) -> &Value {
-        &self.initial_value
+    pub fn value(&self) -> TypedValue {
+        self.initial_value
+    }
+
+    pub fn ty(&self) -> Type {
+        self.initial_value.type_of()
     }
 }
 
@@ -266,6 +691,7 @@ pub struct Function {
     pub entry_point: CodeAddress,
     pub stack_size: usize,
     pub return_type: Type,
+    pub arguments: Vec<(MemoryAddress, Type)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -322,19 +748,21 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
             },
         },
         strings: ir.strings.clone(),
-        block_addresses: HashMap::new(),
-        stack_allocator: StackAllocator::new(),
     };
 
+    let mut global_addr = 0;
     for (name, global) in ir.globals.iter() {
         match &global.initial_value {
             ir::GlobalInitializer::Value(value) => {
+                let ty = Type::from(value.type_of());
                 this.program.globals.insert(
                     *name,
                     GlobalVariable {
-                        initial_value: Value::from(value),
+                        address: MemoryAddress::Global(global_addr),
+                        initial_value: TypedValue::from_value(value),
                     },
                 );
+                global_addr += ty.size_of();
             }
             ir::GlobalInitializer::Expression(_) => {
                 todo!("Initializer expressions are not supported yet")
@@ -350,19 +778,37 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
                 entry_point: CodeAddress(0),
                 stack_size: 0,
                 return_type: Type::from(func.return_type),
+                arguments: vec![],
             },
         );
     }
 
     for (name, func) in ir.functions.iter() {
-        this.block_addresses.clear();
-        this.stack_allocator = StackAllocator::new();
-
         let entry_point = CodeAddress(this.program.code.len());
 
-        this.compile_function(source, func)?;
+        let mut function_compiler = FunctionCompiler {
+            compiler: &mut this,
+            source,
+            func,
+            block_addresses: HashMap::new(),
+            stack_allocator: StackAllocator::new(),
+        };
+        function_compiler.compile()?;
 
-        let stack_size = this.stack_allocator.depth;
+        let stack_size = function_compiler.stack_allocator.depth();
+        let arguments = func
+            .arguments
+            .iter()
+            .enumerate()
+            .map(|(i, arg)| {
+                (
+                    function_compiler
+                        .address_of_variable(VariableIndex::Local(LocalVariableIndex(i + 1)))
+                        .unwrap(),
+                    Type::from(*arg),
+                )
+            })
+            .collect();
 
         this.program.functions.insert(
             *name,
@@ -371,6 +817,7 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
                 entry_point,
                 stack_size,
                 return_type: Type::from(func.return_type),
+                arguments,
             },
         );
     }
@@ -381,16 +828,18 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
 pub struct Compiler {
     program: Program,
     strings: Strings,
+}
+
+struct FunctionCompiler<'s, 'p> {
+    compiler: &'p mut Compiler,
+    source: &'s str,
+    func: &'p ir::Function,
     block_addresses: HashMap<usize, CodeAddress>,
     stack_allocator: StackAllocator,
 }
 
-impl Compiler {
-    fn compile_function<'s>(
-        &mut self,
-        source: &'s str,
-        func: &ir::Function,
-    ) -> Result<(), CompileError<'s>> {
+impl<'s> FunctionCompiler<'s, '_> {
+    fn compile(&mut self) -> Result<(), CompileError<'s>> {
         let mut blocks: Vec<(usize, usize, Option<StackAllocator>)> = vec![(0, 0, None)];
 
         while let Some((current_block_idx, additional, variables)) = blocks.pop() {
@@ -398,19 +847,35 @@ impl Compiler {
             let address = match self.block_addresses.entry(current_block_idx) {
                 Entry::Occupied(occupied_entry) => Some(*occupied_entry.get()),
                 Entry::Vacant(vacant_entry) => {
-                    vacant_entry.insert(CodeAddress(self.program.code.len()));
+                    vacant_entry.insert(CodeAddress(self.compiler.program.code.len()));
                     None
                 }
             };
 
             if let Some(variables) = variables {
-                self.stack_allocator.variables = variables.variables;
-                self.stack_allocator.depth = variables.depth.max(self.stack_allocator.depth);
+                let saved_depth = variables.depth();
+                let current_depth = self.stack_allocator.depth();
+
+                self.stack_allocator.allocations = variables.allocations;
+
+                if current_depth > saved_depth {
+                    // If the stack allocator has grown, we need to update the current stack depth.
+                    let extra_depth = current_depth - saved_depth;
+                    if let Some(Allocation::Hole { size }) =
+                        self.stack_allocator.allocations.last_mut()
+                    {
+                        *size += extra_depth;
+                    } else {
+                        self.stack_allocator
+                            .allocations
+                            .push(Allocation::Hole { size: extra_depth });
+                    }
+                }
             }
 
-            let block = &func.blocks[current_block_idx];
+            let block = &self.func.blocks[current_block_idx];
             if address.is_none() {
-                self.codegen_block(source, block)?;
+                self.codegen_block(block)?;
             }
 
             match block.terminator {
@@ -437,10 +902,10 @@ impl Compiler {
                     // For now, we'll lay out one of the branches, and put this block back on the stack
                     // to handle the other branch later.
                     if let Some(address) = address {
-                        let len = CodeAddress(self.program.code.len());
+                        let len = CodeAddress(self.compiler.program.code.len());
                         // Patch the original jump instruction.
                         let Instruction::JumpIfFalse(_, jump_address) =
-                            &mut self.program.code[additional]
+                            &mut self.compiler.program.code[additional]
                         else {
                             unreachable!(
                                 "Expected a JumpIfFalse instruction at the start of an if block @ {}",
@@ -465,7 +930,7 @@ impl Compiler {
                         // We'll have to patch the jump later.
                         blocks.push((
                             current_block_idx,
-                            self.program.code.len(),
+                            self.compiler.program.code.len(),
                             Some(self.stack_allocator.clone()),
                         ));
                         self.push_instruction(
@@ -484,27 +949,25 @@ impl Compiler {
         Ok(())
     }
 
-    fn codegen_block<'s>(
-        &mut self,
-        source: &'s str,
-        block: &ir::Block,
-    ) -> Result<(), CompileError<'s>> {
+    fn codegen_block(&mut self, block: &ir::Block) -> Result<(), CompileError<'s>> {
         for instruction in &block.instructions {
-            self.codegen_instruction(source, instruction)?;
+            self.codegen_instruction(instruction)?;
         }
 
         Ok(())
     }
 
-    fn codegen_instruction<'s>(
+    fn codegen_instruction(
         &mut self,
-        source: &'s str,
         instruction: &ir::IrWithLocation,
     ) -> Result<(), CompileError<'s>> {
         let location = instruction.source_location;
         match &instruction.instruction {
             ir::Ir::Declare(var, value) => self.declare_variable(location, *var, *value),
             ir::Ir::Assign(dst, src) => {
+                let ty = self
+                    .type_of_variable(*dst)
+                    .expect("Type of destination variable should be known");
                 let dst = self
                     .address_of_variable(*dst)
                     .expect("Variable not found in stack allocator");
@@ -512,9 +975,12 @@ impl Compiler {
                     .address_of_variable(*src)
                     .expect("Variable not found in stack allocator");
 
-                self.push_instruction(location, Instruction::Copy(dst, src));
+                self.push_instruction(location, Instruction::Copy(ty, dst, src));
             }
             ir::Ir::DerefAssign(dst, src) => {
+                let ty = self
+                    .type_of_variable(*dst)
+                    .expect("Type of destination variable should be known");
                 let dst = self
                     .address_of_variable(*dst)
                     .expect("Variable not found in stack allocator");
@@ -522,11 +988,11 @@ impl Compiler {
                     .address_of_variable(*src)
                     .expect("Variable not found in stack allocator");
 
-                self.push_instruction(location, Instruction::DerefCopy(dst, src));
+                self.push_instruction(location, Instruction::DerefCopy(ty, dst, src));
             }
             ir::Ir::FreeVariable(var) => self.free_variable(*var),
-            ir::Ir::Call(fn_name, return_var, args) => {
-                if let Some(fn_index) = self.program.functions.get_index_of(fn_name) {
+            ir::Ir::Call(fn_name, return_var, _args) => {
+                if let Some(fn_index) = self.compiler.program.functions.get_index_of(fn_name) {
                     self.push_instruction(
                         location,
                         Instruction::Call(
@@ -540,82 +1006,104 @@ impl Compiler {
                         location,
                         Instruction::CallNamed(
                             *fn_name,
+                            self.type_of_variable(*return_var).unwrap(),
                             self.address_of_variable(*return_var)
                                 .expect("Variable not found in stack allocator"),
-                            args.len(),
                         ),
                     );
                 }
             }
             ir::Ir::BinaryOperator(op, dst, lhs, rhs) => {
-                let dst = self
+                let dst_addr = self
                     .address_of_variable(*dst)
                     .expect("Variable not found in stack allocator");
-                let mut lhs = self
+                let mut lhs_addr = self
                     .address_of_variable(*lhs)
                     .expect("Variable not found in stack allocator");
-                let mut rhs = self
+                let mut rhs_addr = self
                     .address_of_variable(*rhs)
                     .expect("Variable not found in stack allocator");
 
-                let (normalized, swap) = match self.strings.lookup(*op) {
+                let (normalized, swap) = match self.compiler.strings.lookup(*op) {
                     ">" => ("<", true),
                     ">=" => ("<=", true),
                     other => (other, false),
                 };
 
                 if swap {
-                    std::mem::swap(&mut rhs, &mut lhs);
+                    std::mem::swap(&mut rhs_addr, &mut lhs_addr);
                 }
 
-                let instruction = match normalized {
-                    "<" => Instruction::TestLessThan(dst, lhs, rhs),
-                    "<=" => Instruction::TestLessThanOrEqual(dst, lhs, rhs),
-                    "==" => Instruction::TestEquals(dst, lhs, rhs),
-                    "!=" => Instruction::TestNotEquals(dst, lhs, rhs),
-                    "|" => Instruction::BitwiseOr(dst, lhs, rhs),
-                    "^" => Instruction::BitwiseXor(dst, lhs, rhs),
-                    "&" => Instruction::BitwiseAnd(dst, lhs, rhs),
-                    "<<" => Instruction::ShiftLeft(dst, lhs, rhs),
-                    ">>" => Instruction::ShiftRight(dst, lhs, rhs),
-                    "+" => Instruction::Add(dst, lhs, rhs),
-                    "-" => Instruction::Subtract(dst, lhs, rhs),
-                    "*" => Instruction::Multiply(dst, lhs, rhs),
-                    "/" => Instruction::Divide(dst, lhs, rhs),
+                let operator = match normalized {
+                    "<" => BinaryOperator::TestLessThan,
+                    "<=" => BinaryOperator::TestLessThanOrEqual,
+                    "==" => BinaryOperator::TestEquals,
+                    "!=" => BinaryOperator::TestNotEquals,
+                    "|" => BinaryOperator::BitwiseOr,
+                    "^" => BinaryOperator::BitwiseXor,
+                    "&" => BinaryOperator::BitwiseAnd,
+                    "<<" => BinaryOperator::ShiftLeft,
+                    ">>" => BinaryOperator::ShiftRight,
+                    "+" => BinaryOperator::Add,
+                    "-" => BinaryOperator::Subtract,
+                    "*" => BinaryOperator::Multiply,
+                    "/" => BinaryOperator::Divide,
                     other => {
                         return Err(CompileError {
-                            source,
+                            source: self.source,
                             location,
                             error: format!("Unsupported binary operator: {other}"),
                         });
                     }
                 };
 
-                self.push_instruction(location, instruction);
+                self.push_instruction(
+                    location,
+                    Instruction::BinaryOperator {
+                        ty: self.type_of_variable(*lhs).unwrap(),
+                        operator,
+                        dst: dst_addr,
+                        lhs: lhs_addr,
+                        rhs: rhs_addr,
+                    },
+                );
             }
             ir::Ir::UnaryOperator(op, dst, operand) => {
-                let dst = self
+                let ty = self
+                    .type_of_variable(*dst)
+                    .expect("Type of destination variable should be known");
+                let dst_addr = self
                     .address_of_variable(*dst)
                     .expect("Variable not found in stack allocator");
-                let operand = self
+                let operand_addr = self
                     .address_of_variable(*operand)
                     .expect("Variable not found in stack allocator");
 
-                let instruction = match self.strings.lookup(*op) {
-                    "-" => Instruction::Negate(dst, operand),
-                    "!" => Instruction::Not(dst, operand),
-                    "&" => Instruction::Address(dst, operand),
-                    "*" => Instruction::Dereference(dst, operand),
+                let instruction = match self.compiler.strings.lookup(*op) {
+                    "-" => Instruction::UnaryOperator {
+                        ty: self.type_of_variable(*dst).unwrap(),
+                        operator: UnaryOperator::Negate,
+                        dst: dst_addr,
+                        op: operand_addr,
+                    },
+                    "!" => Instruction::UnaryOperator {
+                        ty: self.type_of_variable(*dst).unwrap(),
+                        operator: UnaryOperator::Not,
+                        dst: dst_addr,
+                        op: operand_addr,
+                    },
+                    "&" => Instruction::AddressOf(dst_addr, operand_addr),
+                    "*" => Instruction::Dereference(ty, dst_addr, operand_addr),
                     other => {
                         return Err(CompileError {
-                            source,
+                            source: self.source,
                             location,
                             error: format!("Unsupported unary operator: {other}"),
                         });
                     }
                 };
 
-                self.push_instruction(location, instruction);
+                self.push_instruction(location, instruction)
             }
         }
         Ok(())
@@ -625,7 +1113,23 @@ impl Compiler {
         match variable {
             VariableIndex::Local(index) => self.stack_allocator.find(index),
             VariableIndex::Temporary(index) => self.stack_allocator.find(index),
-            VariableIndex::Global(index) => Some(MemoryAddress::Global(index.0)),
+            VariableIndex::Global(index) => Some(self.compiler.program.globals[index.0].address),
+        }
+    }
+
+    fn type_of_variable(&self, variable: VariableIndex) -> Option<Type> {
+        match variable {
+            VariableIndex::Local(index) | VariableIndex::Temporary(index) => self
+                .func
+                .variables
+                .variable(index)
+                .map(|v| Type::from(v.ty.unwrap_or(ir::Type::Void))), // TODO: revisit after removing unused variables, there should be no unresolved types
+            VariableIndex::Global(index) => self
+                .compiler
+                .program
+                .globals
+                .get_index(index.0)
+                .map(|(_, g)| g.ty()),
         }
     }
 
@@ -635,10 +1139,13 @@ impl Compiler {
         var: ir::VariableDeclaration,
         value: Option<ir::Value>,
     ) {
-        let address = self.stack_allocator.allocate_variable(var);
+        let ty = self
+            .type_of_variable(VariableIndex::Local(var.index))
+            .expect("At this point, the variable type should be known");
+        let address = self.stack_allocator.allocate_variable(var, ty.size_of());
 
         if let Some(value) = value {
-            let value = Value::from(&value);
+            let value = TypedValue::from_value(&value);
             self.push_instruction(location, Instruction::LoadValue(address, value));
         }
     }
@@ -648,55 +1155,191 @@ impl Compiler {
     }
 
     fn push_instruction(&mut self, location: Location, instruction: Instruction) {
-        self.program.code.push(instruction);
-        self.program.debug_info.instruction_locations.push(location);
+        self.compiler.program.code.push(instruction);
+        self.compiler
+            .program
+            .debug_info
+            .instruction_locations
+            .push(location);
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Allocation {
+    Hole {
+        size: usize,
+    },
+    Used {
+        variable: LocalVariableIndex,
+        size: usize,
+    },
+}
+
+impl Allocation {
+    fn size(&self) -> usize {
+        match *self {
+            Allocation::Hole { size } => size,
+            Allocation::Used { size, .. } => size,
+        }
+    }
+
+    fn free(&self) -> bool {
+        match *self {
+            Allocation::Hole { .. } => true,
+            Allocation::Used { .. } => false,
+        }
     }
 }
 
 #[derive(Clone)]
 struct StackAllocator {
-    pub variables: Vec<Option<LocalVariableIndex>>,
-    pub depth: usize,
+    pub allocations: Vec<Allocation>,
+    pub var_addresses: IndexMap<LocalVariableIndex, MemoryAddress>,
 }
 
 impl StackAllocator {
     pub fn new() -> Self {
         StackAllocator {
-            variables: Vec::new(),
-            depth: 0,
+            allocations: Vec::new(),
+            var_addresses: IndexMap::new(),
         }
     }
 
-    pub fn find(&self, index: LocalVariableIndex) -> Option<MemoryAddress> {
-        self.variables
-            .iter()
-            .position(|&v| v == Some(index))
-            .map(MemoryAddress::Local)
+    pub fn find(&self, var: LocalVariableIndex) -> Option<MemoryAddress> {
+        self.address_of(var)
     }
 
-    fn allocate_variable(&mut self, var: ir::VariableDeclaration) -> MemoryAddress {
+    pub fn address_of(&self, var: LocalVariableIndex) -> Option<MemoryAddress> {
+        self.var_addresses.get(&var).copied()
+    }
+
+    fn allocate_variable(&mut self, var: ir::VariableDeclaration, size: usize) -> MemoryAddress {
         if var.allocation_method == ir::AllocationMethod::FirstFit {
-            if let Some(reused) = self.variables.iter().position(|&v| v.is_none()) {
-                self.variables[reused] = Some(var.index);
-                return MemoryAddress::Local(reused);
+            if let Some(allocation) = self.reuse_hole(var.index, size) {
+                let address = self.address_of_allocation(allocation);
+                self.var_addresses
+                    .insert(var.index, MemoryAddress::Local(address));
+                return MemoryAddress::Local(address);
             }
         }
 
-        let index = self.variables.len();
-        self.variables.push(Some(var.index));
-        self.depth = self.depth.max(self.variables.len());
-        MemoryAddress::Local(index)
+        self.push(var.index, size);
+        let address = self.address_of_allocation(self.allocations.len() - 1);
+        self.var_addresses
+            .insert(var.index, MemoryAddress::Local(address));
+        return MemoryAddress::Local(address);
     }
 
     fn free_variable(&mut self, var: LocalVariableIndex) {
-        if let Some(pos) = self.variables.iter().position(|&v| v == Some(var)) {
-            self.variables[pos] = None;
-
-            // Trim freed variables from the end of the vector
-            while self.variables.pop_if(|v| v.is_none()).is_some() {}
-        } else {
+        let Some(pos) = self
+            .allocations
+            .iter()
+            .position(|&v| matches!(v, Allocation::Used { variable, .. } if variable == var))
+        else {
             panic!("Attempted to free a variable that is not allocated: {var:?}");
+        };
+
+        let alloc = std::mem::replace(&mut self.allocations[pos], Allocation::Hole { size: 0 });
+        let mut freed = alloc.size();
+
+        // If the next allocation is a hole, also grab its size.
+        if let Some(next) = self.allocations.get_mut(pos + 1) {
+            if let Allocation::Hole { size } = next {
+                freed += *size;
+                *size = 0;
+            }
+        };
+
+        let mut set_size_of = pos;
+        while set_size_of > 0 {
+            match &mut self.allocations[set_size_of - 1] {
+                // Skip zero-sized holes.
+                Allocation::Hole { size } if *size == 0 => {
+                    // Check previous allocation.
+                    set_size_of -= 1;
+                }
+                Allocation::Used { .. } | Allocation::Hole { .. } => break,
+            }
         }
+
+        // Set the size of the hole to the freed size.
+        if let Some(Allocation::Hole { size }) = self.allocations.get_mut(set_size_of) {
+            *size += freed;
+        } else {
+            panic!("Expected a hole allocation at position {set_size_of}");
+        }
+
+        // Pop 0-length holes from the end
+        while let Some(Allocation::Hole { size }) = self.allocations.last() {
+            if *size == 0 {
+                self.allocations.pop();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn reuse_hole(&mut self, var: LocalVariableIndex, size: usize) -> Option<usize> {
+        if let Some(reused) = self
+            .allocations
+            .iter()
+            .position(|&v| v.free() && v.size() >= size)
+        {
+            let remaining = self.allocations[reused].size() - size;
+            // Push remaining size to the right.
+            if remaining > 0 {
+                match self.allocations.get_mut(reused + 1) {
+                    Some(Allocation::Hole { size }) => *size += remaining,
+                    Some(_) => self
+                        .allocations
+                        .insert(reused + 1, Allocation::Hole { size: remaining }),
+                    None => self.allocations.push(Allocation::Hole { size: remaining }),
+                }
+            }
+            self.allocations[reused] = Allocation::Used {
+                variable: var,
+                size,
+            };
+            return Some(reused);
+        }
+        None
+    }
+
+    fn push(&mut self, var: LocalVariableIndex, var_size: usize) {
+        if let Some(alloc @ Allocation::Hole { .. }) = self.allocations.last_mut() {
+            let hole_size = alloc.size();
+
+            *alloc = Allocation::Used {
+                variable: var,
+                size: var_size,
+            };
+
+            if hole_size >= var_size {
+                let remaining = hole_size - var_size;
+
+                // Push remaining size to the right.
+                if remaining > 0 {
+                    self.allocations.push(Allocation::Hole { size: remaining });
+                }
+            }
+        } else {
+            self.allocations.push(Allocation::Used {
+                variable: var,
+                size: var_size,
+            });
+        }
+    }
+
+    fn depth(&self) -> usize {
+        self.allocations.iter().map(Allocation::size).sum::<usize>()
+    }
+
+    fn address_of_allocation(&self, idx: usize) -> usize {
+        // TODO this is inefficient
+        self.allocations[..idx]
+            .iter()
+            .map(Allocation::size)
+            .sum::<usize>()
     }
 }
 

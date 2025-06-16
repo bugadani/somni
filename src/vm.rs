@@ -1,7 +1,10 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range};
 
 use crate::{
-    codegen::{self, CodeAddress, Function, Instruction, MemoryAddress, Value},
+    codegen::{
+        self, CodeAddress, Function, Instruction, MemoryAddress, OperatorError, Type, TypedValue,
+        ValueType,
+    },
     error::MarkInSource,
     string_interner::{StringIndex, Strings},
 };
@@ -19,16 +22,16 @@ impl EvalError {
 
 #[derive(Clone, Debug)]
 pub enum EvalEvent {
-    UnknownFunctionCall,
+    UnknownFunctionCall(StringIndex),
     Error(EvalError),
-    Complete(Value),
+    Complete(TypedValue),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum EvalState {
     Idle,
     Running,
-    WaitingForFunctionResult(StringIndex, MemoryAddress, usize),
+    WaitingForFunctionResult(StringIndex, Type, MemoryAddress),
 }
 
 struct Frame {
@@ -57,14 +60,56 @@ impl Function {
     }
 }
 
-type IntrinsicFn<'p> = fn(&EvalContext<'p>, &[Value]) -> Result<Value, EvalEvent>;
+pub trait Arguments {
+    fn read(ctx: &EvalContext<'_>, sp: MemoryAddress) -> Self;
+}
+
+impl Arguments for () {
+    fn read(_: &EvalContext<'_>, _: MemoryAddress) -> Self {
+        ()
+    }
+}
+
+impl<V> Arguments for (V,)
+where
+    V: ValueType,
+{
+    fn read(ctx: &EvalContext<'_>, sp: MemoryAddress) -> Self {
+        (ctx.load::<V>(sp).unwrap(),)
+    }
+}
+
+pub struct SomniFn<'p> {
+    func: Box<dyn Fn(&EvalContext<'p>, MemoryAddress) -> TypedValue>,
+}
+
+impl<'p> SomniFn<'p> {
+    pub fn new<A, R, F>(func: F) -> Self
+    where
+        F: Fn(A) -> R,
+        F: 'static,
+        A: Arguments + 'static,
+        R: ValueType + 'static,
+    {
+        Self {
+            func: Box::new(move |ctx, sp| {
+                let args = A::read(ctx, sp);
+                func(args).into()
+            }),
+        }
+    }
+
+    fn call(&self, ctx: &EvalContext<'p>, sp: MemoryAddress) -> TypedValue {
+        (self.func)(ctx, sp)
+    }
+}
 
 pub struct EvalContext<'p> {
     source: &'p str,
     orig_strings: &'p Strings,
     program: &'p codegen::Program,
     strings: Strings,
-    intrinsics: HashMap<StringIndex, IntrinsicFn<'p>>,
+    intrinsics: HashMap<StringIndex, SomniFn<'p>>,
     state: EvalState,
 
     memory: Memory,
@@ -85,7 +130,7 @@ pub struct EvalContext<'p> {
 /// pointer accordingly. The old stack pointer is saved before reclassifying the arguments, so
 /// restoring it on return will clear the function arguments.
 struct Memory {
-    data: Vec<Value>,
+    data: Vec<u8>,
     sp: usize,
 }
 
@@ -98,20 +143,7 @@ impl Memory {
     }
 
     fn allocate(&mut self, size: usize) {
-        self.data
-            .resize(self.data.len().max(self.sp + size), Value::Void);
-    }
-
-    fn truncate(&mut self, frame_pointer: usize) {
-        if frame_pointer > self.sp {
-            panic!(
-                "Trying to truncate memory to a frame pointer that is larger than the current stack pointer: {frame_pointer} > {}",
-                self.sp
-            );
-        }
-        let sp = self.sp;
-        self.sp = frame_pointer;
-        self.data.truncate(sp);
+        self.data.resize(self.data.len().max(self.sp + size), 0);
     }
 
     fn address(&self, var_id: MemoryAddress) -> usize {
@@ -121,141 +153,143 @@ impl Memory {
         }
     }
 
-    fn store(&mut self, var_id: MemoryAddress, value: Value) -> Result<(), String> {
-        let address = self.address(var_id);
+    fn load(&self, addr: MemoryAddress, len: usize) -> Result<&[u8], String> {
+        let address = self.address(addr);
 
-        let Some(variable) = self.data.get_mut(address) else {
-            return Err(format!(
-                "Trying to store value at address {address} which is out of bounds"
-            ));
-        };
-
-        *variable = value;
-        Ok(())
-    }
-
-    fn load(&self, var_id: MemoryAddress) -> Result<Value, String> {
-        let address = self.address(var_id);
-
-        let Some(variable) = self.data.get(address) else {
+        let Some(variable) = self.data.get(address..address + len) else {
             return Err(format!(
                 "Trying to load value from address {address} which is out of bounds"
             ));
         };
 
-        Ok(*variable)
+        Ok(variable)
     }
 
-    fn peek_from(&self, sp: MemoryAddress, count: usize) -> Result<&[Value], String> {
-        let address = self.address(sp);
-        if address >= self.data.len() {
-            return Err(format!(
-                "Trying to peek from address {address} which is out of bounds"
-            ));
-        }
-        Ok(&self.data[address..][..count])
+    fn load_typed(
+        &self,
+        local: MemoryAddress,
+        return_type: codegen::Type,
+    ) -> Result<TypedValue, String> {
+        let data = self.load(local, return_type.size_of())?;
+
+        Ok(TypedValue::from_typed_bytes(return_type, data))
+    }
+
+    fn as_mut(&mut self, addr: Range<MemoryAddress>) -> Result<&mut [u8], String> {
+        let from = self.address(addr.start);
+        let to = self.address(addr.end);
+        self.data.get_mut(from..to).ok_or_else(|| {
+            format!("Trying to load value from address {from}..{to} which is out of bounds")
+        })
     }
 }
 
-macro_rules! arithmetic_operator {
-    ($this:ident, $dst:ident, $lhs:ident, $rhs:ident, $op:tt, $check_error:literal, $type_error:literal $(, $float_op:tt)? ) => {{
-        let lhs = match $this.load($lhs) {
-            Ok(value) => value,
-            Err(e) => return e,
-        };
-        let rhs = match $this.load($rhs) {
-            Ok(value) => value,
-            Err(e) => return e,
-        };
-
-        let result = match (lhs, rhs) {
-            (Value::Int(a), Value::Int(b)) => {
-                #[allow(irrefutable_let_patterns)]
-                let Ok(b) = b.try_into() else {
-                    return $this.runtime_error(format_args!($check_error, a, b));
-                };
-                if let Some(result) = <u64>::$op(a, b) {
-                    Value::Int(result)
-                } else {
-                    return $this.runtime_error(format_args!($check_error, a, b));
+macro_rules! dispatch_binary {
+    ($op:ident) => {
+        fn $op(
+            self,
+            ctx: &mut EvalContext<'_>,
+            dst: MemoryAddress,
+            lhs: MemoryAddress,
+            rhs: MemoryAddress,
+        ) -> Result<(), EvalEvent> {
+            match self {
+                codegen::Type::Int => Self::binary_operator(ctx, dst, lhs, rhs, u64::$op),
+                codegen::Type::SignedInt => Self::binary_operator(ctx, dst, lhs, rhs, i64::$op),
+                codegen::Type::Float => Self::binary_operator(ctx, dst, lhs, rhs, f64::$op),
+                codegen::Type::Bool => Self::binary_operator(ctx, dst, lhs, rhs, bool::$op),
+                codegen::Type::String => {
+                    Self::binary_operator(ctx, dst, lhs, rhs, StringIndex::$op)
                 }
+                codegen::Type::Address => Self::binary_operator(ctx, dst, lhs, rhs, u64::$op),
+                codegen::Type::Void => Self::binary_operator(ctx, dst, lhs, rhs, <()>::$op),
             }
-            (Value::SignedInt(a), Value::SignedInt(b)) => {
-                #[allow(irrefutable_let_patterns)]
-                let Ok(b) = b.try_into() else {
-                    return $this.runtime_error(format_args!($check_error, a, b));
-                };
-                if let Some(result) = <i64>::$op(a, b) {
-                    Value::SignedInt(result)
-                } else {
-                    return $this.runtime_error(format_args!($check_error, a, b));
-                }
-            }
-            $((Value::Float(a), Value::Float(b)) => Value::Float(a $float_op b),)?
-            (a, b) => {
-                return $this.runtime_error(format_args!($type_error, a.type_of(), b.type_of()));
-            }
-        };
-
-        if let Err(e) = $this.store($dst, result) {
-            return e;
         }
-    }};
+    };
 }
 
-macro_rules! comparison_operator {
-    ($this:ident, $dst:ident, $lhs:ident, $rhs:ident, $op:tt) => {{
-        let lhs = match $this.load($lhs) {
-            Ok(value) => value,
-            Err(e) => return e,
-        };
-        let rhs = match $this.load($rhs) {
-            Ok(value) => value,
-            Err(e) => return e,
-        };
-
-        let result = match (lhs, rhs) {
-            (Value::Int(a), Value::Int(b)) => Value::Bool(a $op b),
-            (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a $op b),
-            (Value::Float(a), Value::Float(b)) => Value::Bool(a $op b),
-            (Value::Bool(a), Value::Bool(b)) => Value::Bool(a $op b),
-            (Value::String(a), Value::String(b)) if stringify!($op) == "==" => Value::Bool(a == b),
-            (a, b) => {
-                return $this.runtime_error(format_args!("Cannot compare {} and {}", a.type_of(), b.type_of()));
+macro_rules! dispatch_unary {
+    ($op:ident) => {
+        fn $op(
+            self,
+            ctx: &mut EvalContext<'_>,
+            dst: MemoryAddress,
+            operand: MemoryAddress,
+        ) -> Result<(), EvalEvent> {
+            match self {
+                codegen::Type::Int => {
+                    Self::unary_operator(ctx, dst, operand, <u64 as ValueType>::$op)
+                }
+                codegen::Type::SignedInt => {
+                    Self::unary_operator(ctx, dst, operand, <i64 as ValueType>::$op)
+                }
+                codegen::Type::Float => {
+                    Self::unary_operator(ctx, dst, operand, <f64 as ValueType>::$op)
+                }
+                codegen::Type::Bool => {
+                    Self::unary_operator(ctx, dst, operand, <bool as ValueType>::$op)
+                }
+                codegen::Type::String => {
+                    Self::unary_operator(ctx, dst, operand, <StringIndex as ValueType>::$op)
+                }
+                codegen::Type::Address => {
+                    Self::unary_operator(ctx, dst, operand, <u64 as ValueType>::$op)
+                }
+                codegen::Type::Void => {
+                    Self::unary_operator(ctx, dst, operand, <() as ValueType>::$op)
+                }
             }
-        };
-
-        if let Err(e) = $this.store($dst, result) {
-            return e;
         }
-    }};
+    };
 }
 
-macro_rules! bitwise_operator {
-    ($this:ident, $dst:ident, $lhs:ident, $rhs:ident, $op:tt) => {{
-        let lhs = match $this.load($lhs) {
-            Ok(value) => value,
-            Err(e) => return e,
-        };
-        let rhs = match $this.load($rhs) {
-            Ok(value) => value,
-            Err(e) => return e,
-        };
+impl codegen::Type {
+    fn unary_operator<V: ValueType, R: ValueType>(
+        ctx: &mut EvalContext<'_>,
+        dst: MemoryAddress,
+        operand: MemoryAddress,
+        op: fn(V) -> Result<R, OperatorError>,
+    ) -> Result<(), EvalEvent> {
+        let operand = ctx.load::<V>(operand)?;
 
-        let result = match (lhs, rhs) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a $op b),
-            (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a $op b),
-            (Value::Bool(a), Value::Bool(b)) => Value::Bool(a $op b),
-            (a, b) => {
-                return $this.runtime_error(
-                    format_args!("Cannot calculate {} {} {}", a.type_of(), stringify!($op), b.type_of()),
-                );
-            }
-        };
-        if let Err(e) = $this.store($dst, result) {
-            return e;
+        match op(operand) {
+            Ok(result) => ctx.store(dst, result),
+            Err(e) => Err(ctx.runtime_error(format!("Failed to apply operator: {e:?}"))),
         }
-    }};
+    }
+
+    fn binary_operator<V: ValueType, R: ValueType>(
+        ctx: &mut EvalContext<'_>,
+        dst: MemoryAddress,
+        lhs: MemoryAddress,
+        rhs: MemoryAddress,
+        op: fn(V, V) -> Result<R, OperatorError>,
+    ) -> Result<(), EvalEvent> {
+        let lhs = ctx.load::<V>(lhs)?;
+        let rhs = ctx.load::<V>(rhs)?;
+
+        match op(lhs, rhs) {
+            Ok(result) => ctx.store(dst, result),
+            Err(e) => Err(ctx.runtime_error(format!("Failed to apply operator: {e:?}"))),
+        }
+    }
+
+    dispatch_binary!(less_than);
+    dispatch_binary!(less_than_or_equal);
+    dispatch_binary!(equals);
+    dispatch_binary!(not_equals);
+    dispatch_binary!(bitwise_or);
+    dispatch_binary!(bitwise_xor);
+    dispatch_binary!(bitwise_and);
+    dispatch_binary!(shift_left);
+    dispatch_binary!(shift_right);
+    dispatch_binary!(add);
+    dispatch_binary!(subtract);
+    dispatch_binary!(multiply);
+    dispatch_binary!(divide);
+
+    dispatch_unary!(not);
+    dispatch_unary!(negate);
 }
 
 impl<'p> EvalContext<'p> {
@@ -269,7 +303,7 @@ impl<'p> EvalContext<'p> {
     }
 
     pub fn new(source: &'p str, strings: &'p Strings, program: &'p codegen::Program) -> Self {
-        let mut this = EvalContext {
+        EvalContext {
             intrinsics: HashMap::new(),
             state: EvalState::Idle,
             program,
@@ -283,24 +317,7 @@ impl<'p> EvalContext<'p> {
                 name: StringIndex::dummy(), // Will be set when the first function is called
                 frame_pointer: 0,           // Will be set when the first function is called
             },
-        };
-
-        this.add_intrinsic("print", |program, args| {
-            for value in args.iter() {
-                match value {
-                    Value::String(s) => print!("{}", program.string(*s)),
-                    Value::Int(v) => print!("{v}"),
-                    Value::SignedInt(v) => print!("{v}"),
-                    Value::Bool(v) => print!("{v}"),
-                    Value::Void => print!("(void)"),
-                    Value::Float(v) => print!("{v}"),
-                    Value::Address(..) => print!("Cannot print reference"),
-                }
-            }
-            Ok(Value::Void)
-        });
-
-        this
+        }
     }
 
     /// Calls the `main` function and starts the evaluation. If the program is already running,
@@ -328,11 +345,18 @@ impl<'p> EvalContext<'p> {
         self.strings = self.orig_strings.clone();
         self.state = EvalState::Idle;
         self.memory = Memory::new();
-        self.memory.allocate(self.program.globals.len());
-        for (address, (_, def)) in self.program.globals.iter().enumerate() {
-            self.memory
-                .store(MemoryAddress::Global(address), *def.value())
+        self.memory.allocate(
+            self.program
+                .globals
+                .values()
+                .map(|v| v.ty().size_of())
+                .sum(),
+        );
+        let mut address = 0;
+        for (_, def) in self.program.globals.iter() {
+            self.store_typed(MemoryAddress::Global(address), def.value())
                 .unwrap();
+            address += def.ty().size_of();
         }
     }
 
@@ -347,19 +371,34 @@ impl<'p> EvalContext<'p> {
     /// [`Self::unknown_function_info()`] to get the name and arguments of the function that
     /// was called. Set the return value with [`Self::set_return_value()`], then call [`Self::run`]
     /// to continue execution.
-    pub fn call(&mut self, func: &str, args: &[Value]) -> EvalEvent {
+    pub fn call(&mut self, func: &str, args: &[TypedValue]) -> EvalEvent {
         let Some(function) = self.load_function_by_name(func) else {
             return self.runtime_error(format!("Unknown function: {func}"));
         };
 
         self.current_frame = function.stack_frame();
 
-        self.memory.sp = self.program.globals.len();
+        self.memory.sp = self.memory.data.len();
         self.memory.allocate(function.stack_size);
 
+        if args.len() != function.arguments.len() {
+            return self.runtime_error(format!(
+                "Function '{func}' expects {} arguments, but got {}",
+                function.arguments.len(),
+                args.len()
+            ));
+        }
+
         // Store the function arguments as temporaries in the caller's stack frame.
-        for (i, arg) in args.iter().enumerate() {
-            if let Err(e) = self.store(MemoryAddress::Local(i + 1), *arg) {
+        for (i, ((addr, ty), arg)) in function.arguments.iter().zip(args.iter()).enumerate() {
+            if *ty != arg.type_of() {
+                return self.runtime_error(format!(
+                    "Function '{func}' expects argument {} to be of type {ty}, but got {}",
+                    i + 1,
+                    arg.type_of()
+                ));
+            }
+            if let Err(e) = self.store_typed(*addr, *arg) {
                 return e;
             }
         }
@@ -373,7 +412,7 @@ impl<'p> EvalContext<'p> {
     ///
     /// An expression can use globals and functions defined in the program, but it cannot
     /// call functions that are not defined in the program.
-    pub fn eval_expression(&mut self, expression: &str) -> Value {
+    pub fn eval_expression(&mut self, expression: &str) -> TypedValue {
         // TODO: handle errors
         if !matches!(self.state, EvalState::Idle) {
             panic!("Cannot evaluate expression while the VM is running");
@@ -423,31 +462,35 @@ impl<'p> EvalContext<'p> {
                     }
                     continue; // Skip the step() call below, as we already stepped (into function)
                 }
-                Instruction::CallNamed(function_name, sp, args) => {
+                Instruction::CallNamed(function_name, ty, sp) => {
                     let Some(intrinsic) = self.intrinsics.get(&function_name) else {
-                        self.state = EvalState::WaitingForFunctionResult(function_name, sp, args);
+                        self.state = EvalState::WaitingForFunctionResult(function_name, ty, sp);
                         self.current_frame.step();
-                        return EvalEvent::UnknownFunctionCall;
+                        return EvalEvent::UnknownFunctionCall(function_name);
                     };
 
-                    if let Err(e) = self
-                        .memory
-                        .peek_from(sp + 1, args)
-                        .map_err(|e| {
-                            self.runtime_error(format_args!("Failed to read arguments: {e}"))
-                        })
-                        .and_then(|args| intrinsic(self, args))
-                        .and_then(|result| self.store(sp, result))
-                    {
+                    let first_arg = sp + ty.size_of();
+                    let retval = intrinsic.call(self, first_arg);
+                    if let Err(e) = self.store_typed(sp, retval) {
                         return e;
-                    };
+                    }
                 }
                 Instruction::Return => {
                     let Some(frame) = self.call_stack.pop() else {
                         // Outermost function has returned
-                        let retval = self.memory.load(MemoryAddress::Local(0)).unwrap();
-                        self.memory.truncate(self.program.globals.len());
+
+                        let function = self
+                            .program
+                            .functions
+                            .get(&self.current_frame.name)
+                            .unwrap();
+
+                        let retval = self
+                            .memory
+                            .load_typed(MemoryAddress::Local(0), function.return_type)
+                            .unwrap();
                         self.state = EvalState::Running;
+
                         return EvalEvent::Complete(retval);
                     };
 
@@ -459,195 +502,94 @@ impl<'p> EvalContext<'p> {
                     continue; // Skip the step() call below, as we already stepped forward
                 }
                 Instruction::JumpIfFalse(condition, target) => {
-                    let value = match self.load(condition) {
-                        Ok(value) => value,
-                        Err(e) => return e,
-                    };
-
-                    match value {
-                        Value::Bool(false) => {
+                    match self.load::<bool>(condition) {
+                        Ok(false) => {
                             self.current_frame.program_counter = target;
                             continue; // Skip the step() call below, as we already stepped forward
                         }
-                        Value::Bool(true) => {}
-                        v => {
-                            return self.runtime_error(format_args!(
-                                "Type mismatch: expected bool, found {}",
-                                v.type_of()
-                            ));
-                        }
-                    }
-                }
-                Instruction::TestLessThan(dst, lhs, rhs) => {
-                    comparison_operator!(self, dst, lhs, rhs, <)
-                }
-                Instruction::TestLessThanOrEqual(dst, lhs, rhs) => {
-                    comparison_operator!(self, dst, lhs, rhs, <=)
-                }
-                Instruction::TestEquals(dst, lhs, rhs) => {
-                    comparison_operator!(self, dst, lhs, rhs, ==)
-                }
-                Instruction::TestNotEquals(dst, lhs, rhs) => {
-                    comparison_operator!(self, dst, lhs, rhs, !=)
-                }
-                Instruction::BitwiseOr(dst, lhs, rhs) => bitwise_operator!(self, dst, lhs, rhs, |),
-                Instruction::BitwiseXor(dst, lhs, rhs) => bitwise_operator!(self, dst, lhs, rhs, ^),
-                Instruction::BitwiseAnd(dst, lhs, rhs) => bitwise_operator!(self, dst, lhs, rhs, &),
-                Instruction::ShiftLeft(dst, lhs, rhs) => {
-                    arithmetic_operator!(
-                        self,
-                        dst,
-                        lhs,
-                        rhs,
-                        checked_shl,
-                        "{} << {} overflowed",
-                        "Cannot shift {} by {}"
-                    );
-                }
-                Instruction::ShiftRight(dst, lhs, rhs) => {
-                    arithmetic_operator!(
-                        self,
-                        dst,
-                        lhs,
-                        rhs,
-                        checked_shr,
-                        "{} >> {} underflowed",
-                        "Cannot shift {} by {}"
-                    );
-                }
-                Instruction::Add(dst, lhs, rhs) => {
-                    arithmetic_operator!(
-                        self,
-                        dst,
-                        lhs,
-                        rhs,
-                        checked_add,
-                        "{} + {} overflowed",
-                        "Cannot add {} and {}",
-                        +
-                    );
-                }
-                Instruction::Subtract(dst, lhs, rhs) => {
-                    arithmetic_operator!(
-                        self,
-                        dst,
-                        lhs,
-                        rhs,
-                        checked_sub,
-                        "{} - {} underflowed",
-                        "Cannot subtract {} and {}",
-                        -
-                    );
-                }
-                Instruction::Multiply(dst, lhs, rhs) => {
-                    arithmetic_operator!(
-                        self,
-                        dst,
-                        lhs,
-                        rhs,
-                        checked_mul,
-                        "{} * {} overflowed",
-                        "Cannot multiply {} and {}",
-                        *
-                    );
-                }
-                Instruction::Divide(dst, lhs, rhs) => {
-                    arithmetic_operator!(
-                        self,
-                        dst,
-                        lhs,
-                        rhs,
-                        checked_div,
-                        "Division by zero: {} / {}",
-                        "Cannot divide {} and {}",
-                        /
-                    );
-                }
-                Instruction::Negate(dst, lhs) => {
-                    let lhs = match self.load(lhs) {
-                        Ok(value) => value,
+                        Ok(true) => {}
                         Err(e) => return e,
-                    };
-                    let result = match lhs {
-                        Value::SignedInt(a) => Value::SignedInt(-a),
-                        Value::Float(a) => Value::Float(-a),
-
-                        a => {
-                            return self
-                                .runtime_error(format_args!("Cannot negate {}", a.type_of()));
-                        }
-                    };
-                    if let Err(e) = self.store(dst, result) {
-                        return e;
                     }
                 }
-                Instruction::Not(dst, lhs) => {
-                    let lhs = match self.load(lhs) {
-                        Ok(value) => value,
-                        Err(e) => return e,
-                    };
-                    let result = match lhs {
-                        Value::Bool(a) => Value::Bool(!a),
-                        Value::Int(a) => Value::Int(!a),
-                        a => {
-                            return self
-                                .runtime_error(format_args!("Cannot invert {}", a.type_of()));
+                Instruction::BinaryOperator {
+                    ty,
+                    operator,
+                    dst,
+                    lhs,
+                    rhs,
+                } => {
+                    let result = match operator {
+                        codegen::BinaryOperator::TestLessThan => ty.less_than(self, dst, lhs, rhs),
+                        codegen::BinaryOperator::TestLessThanOrEqual => {
+                            ty.less_than_or_equal(self, dst, lhs, rhs)
                         }
-                    };
-                    if let Err(e) = self.store(dst, result) {
-                        return e;
-                    }
-                }
-                Instruction::Address(dst, lhs) => {
-                    let value = Value::Address(MemoryAddress::Global(self.memory.address(lhs)));
-                    if let Err(e) = self.store(dst, value) {
-                        return e;
-                    }
-                }
-                Instruction::Dereference(dst, lhs) => {
-                    let address = match self.load(lhs) {
-                        Ok(addr) => addr,
-                        Err(e) => return e,
-                    };
-                    let address = match address {
-                        Value::Address(addr) => addr,
-                        v => {
-                            return self.runtime_error(format_args!(
-                                "Expected address, found {}",
-                                v.type_of()
-                            ));
+                        codegen::BinaryOperator::TestEquals => ty.equals(self, dst, lhs, rhs),
+                        codegen::BinaryOperator::TestNotEquals => {
+                            ty.not_equals(self, dst, lhs, rhs)
                         }
+                        codegen::BinaryOperator::BitwiseOr => ty.bitwise_or(self, dst, lhs, rhs),
+                        codegen::BinaryOperator::BitwiseXor => ty.bitwise_xor(self, dst, lhs, rhs),
+                        codegen::BinaryOperator::BitwiseAnd => ty.bitwise_and(self, dst, lhs, rhs),
+                        codegen::BinaryOperator::ShiftLeft => ty.shift_left(self, dst, lhs, rhs),
+                        codegen::BinaryOperator::ShiftRight => ty.shift_right(self, dst, lhs, rhs),
+                        codegen::BinaryOperator::Add => ty.add(self, dst, lhs, rhs),
+                        codegen::BinaryOperator::Subtract => ty.subtract(self, dst, lhs, rhs),
+                        codegen::BinaryOperator::Multiply => ty.multiply(self, dst, lhs, rhs),
+                        codegen::BinaryOperator::Divide => ty.divide(self, dst, lhs, rhs),
                     };
 
-                    if let Err(e) = self.copy(address, dst) {
+                    if let Err(e) = result {
                         return e;
                     }
                 }
-                Instruction::Copy(dst, from) => {
-                    if let Err(e) = self.copy(from, dst) {
-                        return e;
-                    }
-                }
-                Instruction::DerefCopy(addr, from) => {
-                    let dst = match self.memory.load(addr) {
-                        Ok(Value::Address(addr)) => addr,
-                        Ok(v) => {
-                            return self.runtime_error(format_args!(
-                                "Expected address, found {}",
-                                v.type_of()
-                            ));
-                        }
-                        Err(e) => {
-                            return self.runtime_error(format_args!("Failed to load address: {e}"));
-                        }
+                Instruction::UnaryOperator {
+                    ty,
+                    operator,
+                    dst,
+                    op,
+                } => {
+                    let result = match operator {
+                        codegen::UnaryOperator::Negate => ty.negate(self, dst, op),
+                        codegen::UnaryOperator::Not => ty.not(self, dst, op),
                     };
 
-                    if let Err(e) = self.copy(from, dst) {
+                    if let Err(e) = result {
+                        return e;
+                    }
+                }
+                Instruction::AddressOf(dst, lhs) => {
+                    let value = self.memory.address(lhs) as u64;
+                    if let Err(e) = self.store_typed(dst, TypedValue::Int(value)) {
+                        return e;
+                    }
+                }
+                Instruction::Dereference(ty, dst, lhs) => {
+                    let address = match self.load::<u64>(lhs) {
+                        Ok(addr) => MemoryAddress::Global(addr as usize),
+                        Err(e) => return e,
+                    };
+
+                    if let Err(e) = self.copy(ty, address, dst) {
+                        return e;
+                    }
+                }
+                Instruction::Copy(ty, dst, from) => {
+                    if let Err(e) = self.copy(ty, from, dst) {
+                        return e;
+                    }
+                }
+                Instruction::DerefCopy(ty, addr, from) => {
+                    let dst = match self.load::<u64>(addr) {
+                        Ok(addr) => MemoryAddress::Global(addr as usize),
+                        Err(e) => return e,
+                    };
+
+                    if let Err(e) = self.copy(ty, from, dst) {
                         return e;
                     }
                 }
                 Instruction::LoadValue(addr, value) => {
-                    if let Err(e) = self.store(addr, value) {
+                    if let Err(e) = self.store_typed(addr, value) {
                         return e;
                     }
                 }
@@ -657,53 +599,69 @@ impl<'p> EvalContext<'p> {
         }
     }
 
-    fn store(&mut self, addr: MemoryAddress, value: Value) -> Result<(), EvalEvent> {
+    fn store<V: ValueType>(&mut self, addr: MemoryAddress, value: V) -> Result<(), EvalEvent> {
+        match self.memory.as_mut(addr..addr + V::BYTES) {
+            Ok(memory) => {
+                value.write(memory);
+                Ok(())
+            }
+            Err(e) => {
+                Err(self.runtime_error(format_args!("Failed to store value at address: {e}")))
+            }
+        }
+    }
+
+    fn store_typed(&mut self, addr: MemoryAddress, value: TypedValue) -> Result<(), EvalEvent> {
+        match self.memory.as_mut(addr..addr + value.type_of().size_of()) {
+            Ok(memory) => {
+                value.write(memory);
+                Ok(())
+            }
+            Err(e) => {
+                Err(self.runtime_error(format_args!("Failed to store value at address: {e}")))
+            }
+        }
+    }
+
+    fn load<V: ValueType>(&self, addr: MemoryAddress) -> Result<V, EvalEvent> {
+        let bytes = self.memory.load(addr, V::BYTES).map_err(|e| {
+            self.runtime_error(format_args!("Failed to load value from address: {e}"))
+        })?;
+        Ok(V::from_bytes(&bytes))
+    }
+
+    fn load_typed(&self, addr: MemoryAddress, ty: Type) -> Result<TypedValue, EvalEvent> {
         self.memory
-            .store(addr, value)
-            .map_err(|e| self.runtime_error(format_args!("Failed to store value at address: {e}")))
+            .load_typed(addr, ty)
+            .map_err(|e| self.runtime_error(format_args!("Failed to load value: {e}")))
     }
 
-    fn load(&mut self, addr: MemoryAddress) -> Result<Value, EvalEvent> {
-        self.memory
-            .load(addr)
-            .map_err(|e| self.runtime_error(format_args!("Failed to load value from address: {e}")))
+    fn copy(&mut self, ty: Type, addr: MemoryAddress, dst: MemoryAddress) -> Result<(), EvalEvent> {
+        self.load_typed(addr, ty)
+            .and_then(|value| self.store_typed(dst, value))
     }
 
-    fn copy(&mut self, addr: MemoryAddress, dst: MemoryAddress) -> Result<(), EvalEvent> {
-        self.load(addr).and_then(|value| self.store(dst, value))
-    }
-
-    pub fn unknown_function_info(&self) -> Option<(&str, &[Value])> {
-        if let EvalState::WaitingForFunctionResult(name, sp, args) = self.state {
-            let function_name = self.string(name);
-            let args = self.memory.peek_from(sp + 1, args).unwrap_or_default();
-            Some((function_name, args))
+    pub fn unknown_call_args<A: Arguments>(&self) -> Option<A> {
+        if let EvalState::WaitingForFunctionResult(_name, ty, sp) = self.state {
+            let first_arg = sp + ty.size_of();
+            Some(A::read(self, first_arg))
         } else {
             None
         }
     }
 
-    pub fn set_return_value(&mut self, value: Value) -> Result<(), EvalEvent> {
-        let EvalState::WaitingForFunctionResult(_, sp, _) = self.state else {
+    pub fn set_return_value(&mut self, value: TypedValue) -> Result<(), EvalEvent> {
+        let EvalState::WaitingForFunctionResult(_, ty, sp) = self.state else {
             return Err(self.runtime_error("No function is currently waiting for a result"));
         };
 
-        self.memory
-            .store(sp, value)
-            .map_err(|e| self.runtime_error(format_args!("Failed to store return value: {e}")))?;
+        if value.type_of() != ty {
+            return Err(self.runtime_error(format_args!("Expcted a {ty} as the return value")));
+        }
+
+        self.store_typed(sp, value)?;
         self.state = EvalState::Running;
         Ok(())
-    }
-
-    fn add_intrinsic(
-        &mut self,
-        name: &'static str,
-        fun: fn(&Self, &[Value]) -> Result<Value, EvalEvent>,
-    ) {
-        // If the name is not interned yet, the intrinsic is not used and not needed.
-        if let Some(name_index) = self.strings.find(name) {
-            self.intrinsics.insert(name_index, fun);
-        }
     }
 
     pub fn print_backtrace(&self) {
@@ -752,51 +710,49 @@ struct ExpressionVisitor<'a, 's> {
 }
 
 impl<'a> ExpressionVisitor<'a, '_> {
-    fn visit_expression(&mut self, expression: &Expression) -> Value {
+    fn visit_expression(&mut self, expression: &Expression) -> TypedValue {
         // TODO: errors
         match expression {
             Expression::Variable { variable } => {
                 let name = variable.source(self.source);
-                let name_idx = self.context.strings.find(name).unwrap_or_else(|| {
-                    panic!("Variable '{name}' not found");
-                });
-                let addr = self
+                let name_idx = self
+                    .context
+                    .strings
+                    .find(name)
+                    .unwrap_or_else(|| panic!("Variable '{name}' not found"));
+                let global = self
                     .context
                     .program
                     .globals
-                    .get_index_of(&name_idx)
-                    .unwrap_or_else(|| {
-                        panic!("Variable '{name}' not found in program");
-                    });
+                    .get(&name_idx)
+                    .unwrap_or_else(|| panic!("Variable '{name}' not found in program"));
 
                 self.context
                     .memory
-                    .load(MemoryAddress::Global(addr))
-                    .unwrap_or_else(|_| {
-                        panic!("Variable '{name}' not found in memory");
-                    })
+                    .load_typed(global.address, global.ty())
+                    .unwrap_or_else(|_| panic!("Variable '{name}' not found in memory"))
             }
             Expression::Literal { value } => match &value.value {
-                ast::LiteralValue::Integer(value) => Value::Int(*value),
-                ast::LiteralValue::Float(value) => Value::Float(*value),
+                ast::LiteralValue::Integer(value) => TypedValue::Int(*value),
+                ast::LiteralValue::Float(value) => TypedValue::Float(*value),
                 ast::LiteralValue::String(value) => {
                     if let Some(string_index) = self.context.strings.find(value) {
-                        Value::String(string_index)
+                        TypedValue::String(string_index)
                     } else {
                         let string_index = self.context.strings.intern(value);
-                        Value::String(string_index)
+                        TypedValue::String(string_index)
                     }
                 }
-                ast::LiteralValue::Boolean(value) => Value::Bool(*value),
+                ast::LiteralValue::Boolean(value) => TypedValue::Bool(*value),
             },
             Expression::UnaryOperator { name, operand } => match name.source(self.source) {
                 "!" => match self.visit_expression(operand) {
-                    Value::Bool(b) => Value::Bool(!b),
+                    TypedValue::Bool(b) => TypedValue::Bool(!b),
                     value => panic!("Expected boolean, found {}", value.type_of()),
                 },
                 "-" => match self.visit_expression(operand) {
-                    Value::SignedInt(i) => Value::SignedInt(-i),
-                    Value::Float(f) => Value::Float(-f),
+                    TypedValue::SignedInt(i) => TypedValue::SignedInt(-i),
+                    TypedValue::Float(f) => TypedValue::Float(-f),
                     value => panic!("Cannot negate {}", value.type_of()),
                 },
                 "&" => match operand.as_variable() {
@@ -813,31 +769,25 @@ impl<'a> ExpressionVisitor<'a, '_> {
                             .unwrap_or_else(|| {
                                 panic!("Variable '{name}' not found in program");
                             });
-                        let addr = MemoryAddress::Global(addr);
-                        Value::Address(addr)
+                        TypedValue::from(addr as u64)
                     }
                     None => panic!("Cannot take address of non-variable expression"),
                 },
-                "*" => match self.visit_expression(operand) {
-                    Value::Address(addr) => self.context.memory.load(addr).unwrap_or_else(|_| {
-                        panic!("Cannot dereference address: {:?}", addr);
-                    }),
-                    value => panic!("Expected address, found {}", value.type_of()),
-                },
+                "*" => panic!("Dereference not supported"),
                 _ => panic!("Unknown unary operator: {}", name.source(self.source)),
             },
             Expression::BinaryOperator { name, operands } => match name.source(self.source) {
                 "&&" => {
                     let lhs = self.visit_expression(&operands[0]);
-                    if let Value::Bool(false) = lhs {
-                        return Value::Bool(false);
+                    if let TypedValue::Bool(false) = lhs {
+                        return TypedValue::Bool(false);
                     }
                     self.visit_expression(&operands[1])
                 }
                 "||" => {
                     let lhs = self.visit_expression(&operands[0]);
-                    if let Value::Bool(true) = lhs {
-                        return Value::Bool(true);
+                    if let TypedValue::Bool(true) = lhs {
+                        return TypedValue::Bool(true);
                     }
                     self.visit_expression(&operands[1])
                 }
@@ -845,203 +795,91 @@ impl<'a> ExpressionVisitor<'a, '_> {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => Value::Int(a + b),
-                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a + b),
-                        (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
-                        (a, b) => panic!("Cannot add {} and {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::add(lhs, rhs).unwrap()
                 }
                 "-" => {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => Value::Int(a - b),
-                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a - b),
-                        (Value::Float(a), Value::Float(b)) => Value::Float(a - b),
-                        (a, b) => panic!("Cannot subtract {} and {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::subtract(lhs, rhs).unwrap()
                 }
                 "*" => {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => Value::Int(a * b),
-                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a * b),
-                        (Value::Float(a), Value::Float(b)) => Value::Float(a * b),
-                        (a, b) => panic!("Cannot multiply {} and {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::multiply(lhs, rhs).unwrap()
                 }
                 "/" => {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => {
-                            if b == 0 {
-                                panic!("Division by zero: {a} / {b}");
-                            }
-                            Value::Int(a / b)
-                        }
-                        (Value::SignedInt(a), Value::SignedInt(b)) => {
-                            if b == 0 {
-                                panic!("Division by zero: {a} / {b}");
-                            }
-                            Value::SignedInt(a / b)
-                        }
-                        (Value::Float(a), Value::Float(b)) => {
-                            if b == 0.0 {
-                                panic!("Division by zero: {a} / {b}");
-                            }
-                            Value::Float(a / b)
-                        }
-                        (a, b) => panic!("Cannot divide {} and {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::divide(lhs, rhs).unwrap()
                 }
                 "<" => {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => Value::Bool(a < b),
-                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a < b),
-                        (Value::Float(a), Value::Float(b)) => Value::Bool(a < b),
-                        (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::less_than(lhs, rhs).unwrap()
                 }
                 ">" => {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => Value::Bool(a > b),
-                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a > b),
-                        (Value::Float(a), Value::Float(b)) => Value::Bool(a > b),
-                        (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::less_than(rhs, lhs).unwrap()
                 }
                 "<=" => {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => Value::Bool(a <= b),
-                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a <= b),
-                        (Value::Float(a), Value::Float(b)) => Value::Bool(a <= b),
-                        (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::less_than_or_equal(lhs, rhs).unwrap()
                 }
                 ">=" => {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => Value::Bool(a >= b),
-                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a >= b),
-                        (Value::Float(a), Value::Float(b)) => Value::Bool(a >= b),
-                        (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::less_than_or_equal(rhs, lhs).unwrap()
                 }
                 "==" => {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => Value::Bool(a == b),
-                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a == b),
-                        (Value::Float(a), Value::Float(b)) => Value::Bool(a == b),
-                        (Value::String(a), Value::String(b)) => Value::Bool(
-                            self.context.strings.lookup(a) == self.context.strings.lookup(b),
-                        ),
-                        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a == b),
-                        (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::equals(lhs, rhs).unwrap()
                 }
                 "!=" => {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => Value::Bool(a != b),
-                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::Bool(a != b),
-                        (Value::Float(a), Value::Float(b)) => Value::Bool(a != b),
-                        (Value::String(a), Value::String(b)) => Value::Bool(
-                            self.context.strings.lookup(a) != self.context.strings.lookup(b),
-                        ),
-                        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a != b),
-                        (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::not_equals(lhs, rhs).unwrap()
                 }
                 "|" => {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => Value::Int(a | b),
-                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a | b),
-                        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a | b),
-                        (a, b) => panic!("Cannot bitwise OR {} and {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::bitwise_or(lhs, rhs).unwrap()
                 }
                 "^" => {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => Value::Int(a ^ b),
-                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a ^ b),
-                        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a ^ b),
-                        (a, b) => panic!("Cannot bitwise XOR {} and {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::bitwise_xor(lhs, rhs).unwrap()
                 }
                 "&" => {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => Value::Int(a & b),
-                        (Value::SignedInt(a), Value::SignedInt(b)) => Value::SignedInt(a & b),
-                        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a & b),
-                        (a, b) => panic!("Cannot bitwise AND {} and {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::bitwise_and(lhs, rhs).unwrap()
                 }
                 "<<" => {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => {
-                            Value::Int(a.checked_shl(b as u32).unwrap_or_else(|| {
-                                panic!("{} << {} overflowed", a, b);
-                            }))
-                        }
-                        (Value::SignedInt(a), Value::SignedInt(b)) => {
-                            Value::SignedInt(a.checked_shl(b as u32).unwrap_or_else(|| {
-                                panic!("{} << {} overflowed", a, b);
-                            }))
-                        }
-                        (a, b) => panic!("Cannot shift {} by {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::shift_left(lhs, rhs).unwrap()
                 }
                 ">>" => {
                     let lhs = self.visit_expression(&operands[0]);
                     let rhs = self.visit_expression(&operands[1]);
 
-                    match (lhs, rhs) {
-                        (Value::Int(a), Value::Int(b)) => {
-                            Value::Int(a.checked_shr(b as u32).unwrap_or_else(|| {
-                                panic!("{} >> {} underflowed", a, b);
-                            }))
-                        }
-                        (Value::SignedInt(a), Value::SignedInt(b)) => {
-                            Value::SignedInt(a.checked_shr(b as u32).unwrap_or_else(|| {
-                                panic!("{} >> {} underflowed", a, b);
-                            }))
-                        }
-                        (a, b) => panic!("Cannot shift {} by {}", a.type_of(), b.type_of()),
-                    }
+                    TypedValue::shift_right(lhs, rhs).unwrap()
                 }
 
                 other => panic!("Unknown binary operator: {}", other),
@@ -1054,7 +892,9 @@ impl<'a> ExpressionVisitor<'a, '_> {
                 }
 
                 match self.context.call(function_name, &args) {
-                    EvalEvent::UnknownFunctionCall => todo!(),
+                    EvalEvent::UnknownFunctionCall(fn_name) => {
+                        todo!("unknown function call {:?}", self.context.string(fn_name))
+                    }
                     EvalEvent::Error(e) => todo!("{e:?}"),
                     EvalEvent::Complete(value) => value,
                 }

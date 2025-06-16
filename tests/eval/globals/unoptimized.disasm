@@ -1,9 +1,9 @@
-Function double(...) -> void (stack: 3)
-  0000: load Local(1) = Int(2)
-  0001: Global(0) = Global(0) * Local(1)
+Function double(...) -> void (stack: 16)
+  0000: load Local(0) = Int(2)
+  0001: Global(0) = Global(0) * Local(0) (int)
   0002: return
-Function doubled(...) -> int (stack: 3)
-  0003: call double(..) with sp=Local(2)
-  0004: copy Local(1) = Local(2)
-  0005: Local(0) = Global(0) + Global(1)
+Function doubled(...) -> int (stack: 16)
+  0003: call double(..) with sp=Local(8)
+  0004: copy Local(8) = Local(8)
+  0005: Local(0) = Global(0) + Global(8) (int)
   0006: return

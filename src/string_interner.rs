@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct StringIndex(usize);
+pub struct StringIndex(pub usize);
 
 impl StringIndex {
     pub const fn dummy() -> Self {

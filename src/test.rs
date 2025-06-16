@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    codegen::{self, Value},
+    codegen::{self, TypedValue},
     error::CompileError,
     ir,
     transform_ir::transform_ir,
@@ -65,7 +65,7 @@ pub fn run_eval_test(program: codegen::Program, path: impl AsRef<Path>) {
     for expression in &expressions {
         context.reset();
         let value = context.eval_expression(expression);
-        if value != Value::Bool(true) {
+        if value != TypedValue::Bool(true) {
             ctx.handle_error_string(
                 "Expression did not evaluate to true",
                 format!("Expression `{expression}` evaluated to {value:?}"),
@@ -75,6 +75,7 @@ pub fn run_eval_test(program: codegen::Program, path: impl AsRef<Path>) {
 }
 
 pub fn run_compile_test(file: impl AsRef<Path>, compile_test: bool) -> Option<codegen::Program> {
+    println!("Compiling: {}", file.as_ref().display());
     let ctx = TestContext::from_path(file.as_ref());
 
     // First, parse the program.

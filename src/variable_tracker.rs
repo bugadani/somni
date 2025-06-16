@@ -12,7 +12,7 @@ impl RestorePoint {
 /// An index into the variables in a program. This uniquely identifies a variable, but
 /// it is not directly related to a variable's address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct LocalVariableIndex(usize);
+pub struct LocalVariableIndex(pub usize);
 
 impl LocalVariableIndex {
     pub const RETURN_VALUE: Self = LocalVariableIndex(0);

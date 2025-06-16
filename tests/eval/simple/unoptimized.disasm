@@ -1,6 +1,6 @@
-Function main(...) -> bool (stack: 4)
-  0000: load Local(2) = Int(2)
-  0001: copy Local(1) = Local(2)
-  0002: load Local(2) = Int(2)
-  0003: Local(0) = Local(1) == Local(2)
+Function main(...) -> bool (stack: 18)
+  0000: load Local(9) = Int(2)
+  0001: copy Local(1) = Local(9)
+  0002: load Local(9) = Int(2)
+  0003: Local(0) = Local(1) == Local(9) (int)
   0004: return

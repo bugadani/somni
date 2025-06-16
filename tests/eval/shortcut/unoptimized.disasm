@@ -1,34 +1,31 @@
-Function main(...) -> int (stack: 5)
-  0000: load Local(1) = Bool(true)
-  0001: load Local(2) = Bool(true)
-  0002: if Local(2) == false jump to 24
-  0003: load Local(1) = Bool(true)
-  0004: load Local(2) = Bool(false)
-  0005: if Local(2) == false jump to 21
-  0006: load Local(1) = Bool(false)
-  0007: load Local(2) = Bool(false)
-  0008: if Local(2) == false jump to 11
-  0009: call increment(..) with sp=Local(4)
-  0010: copy Local(1) = Local(4)
-  0011: load Local(1) = Bool(false)
-  0012: load Local(2) = Bool(true)
-  0013: if Local(2) == false jump to 16
-  0014: call increment(..) with sp=Local(4)
-  0015: copy Local(1) = Local(4)
-  0016: copy Local(3) = Global(0)
-  0017: call print(arg0) with sp=Local(2)
-  0018: copy Local(1) = Local(2)
-  0019: copy Local(0) = Global(0)
-  0020: return
-  0021: call increment(..) with sp=Local(4)
-  0022: copy Local(1) = Local(4)
-  0023: jump to 6
-  0024: call increment(..) with sp=Local(4)
-  0025: copy Local(1) = Local(4)
-  0026: jump to 3
-Function increment(...) -> bool (stack: 3)
-  0027: load Local(1) = Int(1)
-  0028: Global(0) = Global(0) + Local(1)
-  0029: load Local(1) = Bool(true)
-  0030: copy Local(0) = Local(1)
-  0031: return
+Function main(...) -> int (stack: 12)
+  0000: load Local(8) = Bool(true)
+  0001: load Local(9) = Bool(true)
+  0002: if Local(9) == false jump to 21
+  0003: load Local(8) = Bool(true)
+  0004: load Local(9) = Bool(false)
+  0005: if Local(9) == false jump to 18
+  0006: load Local(8) = Bool(false)
+  0007: load Local(9) = Bool(false)
+  0008: if Local(9) == false jump to 11
+  0009: call increment(..) with sp=Local(11)
+  0010: copy Local(8) = Local(11)
+  0011: load Local(8) = Bool(false)
+  0012: load Local(9) = Bool(true)
+  0013: if Local(9) == false jump to 16
+  0014: call increment(..) with sp=Local(11)
+  0015: copy Local(8) = Local(11)
+  0016: copy Local(0) = Global(0)
+  0017: return
+  0018: call increment(..) with sp=Local(11)
+  0019: copy Local(8) = Local(11)
+  0020: jump to 6
+  0021: call increment(..) with sp=Local(11)
+  0022: copy Local(8) = Local(11)
+  0023: jump to 3
+Function increment(...) -> bool (stack: 17)
+  0024: load Local(1) = Int(1)
+  0025: Global(0) = Global(0) + Local(1) (int)
+  0026: load Local(1) = Bool(true)
+  0027: copy Local(0) = Local(1)
+  0028: return

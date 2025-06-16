@@ -64,7 +64,7 @@ fn main() {
 
             loop {
                 match context.run() {
-                    EvalEvent::UnknownFunctionCall => {}
+                    EvalEvent::UnknownFunctionCall(_) => {}
                     EvalEvent::Error(e) => {
                         context.print_backtrace();
 

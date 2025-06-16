@@ -1,9 +1,9 @@
-Function pass_by_reference(...) -> signed (stack: 6)
-  0000: Local(3) = &Local(1)
-  0001: copy Local(5) = Local(3)
-  0002: call take_by_reference(..) with sp=Local(4)
-  0003: copy Local(0) = Local(4)
+Function pass_by_reference(...) -> signed (stack: 48)
+  0000: Local(24) = &Local(8)
+  0001: copy Local(40) = Local(24)
+  0002: call take_by_reference(..) with sp=Local(32)
+  0003: copy Local(0) = Local(32)
   0004: return
-Function take_by_reference(...) -> signed (stack: 3)
-  0005: Local(0) = *Local(1)
+Function take_by_reference(...) -> signed (stack: 24)
+  0005: Local(0) = *Local(8)
   0006: return

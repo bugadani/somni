@@ -63,15 +63,6 @@ block 7
 block 8
   free(temp14)
   free(temp13)
-  var temp17: Void = None
-  var temp18: Void = None
-  var temp19: Int = None
-  temp19 = do_not_touch
-  temp18 = call print(temp19)
-  temp17 = temp18
-  free(temp19)
-  free(temp18)
-  free(temp17)
   return_value = do_not_touch
   free(return_value)
   -> block 1
