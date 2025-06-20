@@ -1,5 +1,5 @@
 Compile error
- ---> at line 3 column 11
+ ---> at line 2 column 11
   |
-3 |     const M: int = 32;
+2 |     const M: int = 32;
   |           ^ Parse error: Expected ';', found Identifier
