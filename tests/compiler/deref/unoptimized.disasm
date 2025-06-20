@@ -1,0 +1,9 @@
+Function main(...) -> int (stack: 8)
+  0000: load Local(2) = Int(0)
+  0001: copy Local(1) = Local(2)
+  0002: Local(2) = &Local(1)
+  0003: Local(3) = &Local(2)
+  0004: Local(4) = *Local(3)
+  0005: Local(5) = *Local(4)
+  0006: Local(0) = *Local(5)
+  0007: return

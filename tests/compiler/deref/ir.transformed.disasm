@@ -1,0 +1,41 @@
+Globals:
+
+Functions:
+Function: main
+block 0
+  var return_value: Int = None
+  var x: Int = None
+  var temp2: Int = Some(Int(0))
+  x = temp2
+  free(temp2)
+  var y: Address = None
+  var temp4: Address = None
+  y = &x
+  free(temp4)
+  var z: Address = None
+  var temp6: Address = None
+  z = &y
+  free(temp6)
+  var zz: Address = None
+  var temp8: Address = None
+  zz = *z
+  free(temp8)
+  var yy: Address = None
+  var temp10: Address = None
+  yy = *zz
+  free(temp10)
+  var xx: Int = None
+  var temp12: Int = None
+  return_value = *yy
+  free(temp12)
+  free(xx)
+  free(yy)
+  free(zz)
+  free(z)
+  free(y)
+  free(x)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return

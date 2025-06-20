@@ -1,0 +1,9 @@
+fn main() -> int {
+    var x: int = 0;
+    var y = &x;
+    var z = &y;
+    var zz = *z;
+    var yy = *zz;
+    var xx = *yy;
+    return xx;
+}

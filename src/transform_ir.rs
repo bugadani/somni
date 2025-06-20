@@ -507,13 +507,14 @@ fn propagate_variable_types_inner<'s>(
         }
     }
 
-    let constraints = resolver.constraints.len();
-    loop {
+    let mut constraints = resolver.constraints.len();
+    while constraints > 0 {
         resolver.step_resolve()?;
         if resolver.constraints.len() == constraints {
             // No more progress can be made.
             break;
         }
+        constraints = resolver.constraints.len();
     }
 
     Ok(())
