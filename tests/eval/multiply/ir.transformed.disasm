@@ -3,34 +3,29 @@ Globals:
 Functions:
 Function: noop
 block 0
-  var return_value: Int = None
-  var n: Int = None
-  var temp2: Int = Some(Int(2))
+  var return_value: void = None
+  var n: int = None
+  var temp2: int = Some(Int(2))
   n = temp2
   free(temp2)
-  var temp3: Int = Some(Int(0))
-  return_value = temp3
-  free(temp3)
-  free(n)
-  free(return_value)
   -> block 1
 
 block 1
   -> return
 Function: multiply
 block 0
-  var return_value: Int = None
-  var number: Int = None
-  var n: Int = None
-  var add: Bool = None
+  var return_value: int = None
+  var number: int = None
+  var n: int = None
+  var add: bool = None
   if add -> block 2 else block 8
 
 block 1
   -> return
 
 block 2
-  var acc: Int = None
-  var temp5: Int = Some(Int(0))
+  var acc: int = None
+  var temp5: int = Some(Int(0))
   acc = temp5
   free(temp5)
   -> block 4
@@ -45,8 +40,8 @@ block 3
   -> block 1
 
 block 4
-  var temp6: Int = Some(Int(0))
-  var temp7: Bool = None
+  var temp6: int = Some(Int(0))
+  var temp7: bool = None
   temp7 = n > temp6
   free(temp6)
   if temp7 -> block 6 else block 7
@@ -56,17 +51,17 @@ block 5
   -> block 4
 
 block 6
-  var temp8: Int = None
+  var temp8: int = None
   acc = acc + number
   free(temp8)
-  var temp9: Void = None
+  var temp9: void = None
   free(temp9)
-  var temp10: Int = Some(Int(1))
-  var temp11: Int = None
+  var temp10: int = Some(Int(1))
+  var temp11: int = None
   n = n - temp10
   free(temp10)
   free(temp11)
-  var temp12: Void = None
+  var temp12: void = None
   free(temp12)
   -> block 5
 
@@ -75,13 +70,13 @@ block 7
   -> block 3
 
 block 8
-  var temp13: Void = None
-  var temp14: Void = None
+  var temp13: void = None
+  var temp14: void = None
   temp14 = call noop()
   temp13 = temp14
   free(temp14)
   free(temp13)
-  var temp15: Int = None
+  var temp15: int = None
   return_value = number * n
   free(temp15)
   free(add)

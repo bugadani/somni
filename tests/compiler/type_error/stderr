@@ -2,4 +2,4 @@ Compile error
  ---> at line 7 column 5
   |
 7 |     f(x);
-  |     ^ Type mismatch: expected Float, found Int
+  |     ^ Type mismatch: expected float, found int

@@ -1,23 +1,21 @@
-Function noop(...) -> void (stack: 24)
-  0000: load Local(16) = Int(2)
-  0001: copy Local(8) = Local(16)
-  0002: load Local(16) = Int(0)
-  0003: copy Local(0) = Local(16)
-  0004: return
+Function noop(...) -> void (stack: 16)
+  0000: load Local(8) = Int(2)
+  0001: copy Local(0) = Local(8)
+  0002: return
 Function multiply(...) -> int (stack: 50)
-  0005: if Local(24) == false jump to 17
+  0003: if Local(24) == false jump to 15
+  0004: load Local(33) = Int(0)
+  0005: copy Local(25) = Local(33)
   0006: load Local(33) = Int(0)
-  0007: copy Local(25) = Local(33)
-  0008: load Local(33) = Int(0)
-  0009: Local(41) = Local(33) < Local(16) (int)
-  0010: if Local(41) == false jump to 15
-  0011: Local(25) = Local(25) + Local(8) (int)
-  0012: load Local(33) = Int(1)
-  0013: Local(16) = Local(16) - Local(33) (int)
-  0014: jump to 8
-  0015: copy Local(0) = Local(25)
-  0016: return
-  0017: call noop(..) with sp=Local(25)
-  0018: copy Local(25) = Local(25)
-  0019: Local(0) = Local(8) * Local(16) (int)
-  0020: jump to 16
+  0007: Local(41) = Local(33) < Local(16) (int)
+  0008: if Local(41) == false jump to 13
+  0009: Local(25) = Local(25) + Local(8) (int)
+  0010: load Local(33) = Int(1)
+  0011: Local(16) = Local(16) - Local(33) (int)
+  0012: jump to 6
+  0013: copy Local(0) = Local(25)
+  0014: return
+  0015: call noop(..) with sp=Local(25)
+  0016: copy Local(25) = Local(25)
+  0017: Local(0) = Local(8) * Local(16) (int)
+  0018: jump to 14

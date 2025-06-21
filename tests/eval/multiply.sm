@@ -4,7 +4,7 @@
 
 // This function shouldn't affect `multiply`.
 fn noop() {
-    var n = 2;return 0;
+    var n = 2;
 }
 
 fn multiply(number: int, n: int, add: bool) -> int {

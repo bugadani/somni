@@ -3,13 +3,13 @@ Globals:
 Functions:
 Function: pass_by_reference
 block 0
-  var return_value: SignedInt = None
-  var x: SignedInt = None
-  var temp2: SignedInt = None
-  var temp3: Address = None
+  var return_value: signed = None
+  var x: signed = None
+  var temp2: signed = None
+  var temp3: &signed = None
   temp3 = &x
-  var temp4: SignedInt = None
-  var temp5: Address = None
+  var temp4: signed = None
+  var temp5: &signed = None
   temp5 = temp3
   temp4 = call take_by_reference(temp5)
   return_value = temp4
@@ -25,9 +25,9 @@ block 1
   -> return
 Function: take_by_reference
 block 0
-  var return_value: SignedInt = None
-  var x: Address = None
-  var temp2: SignedInt = None
+  var return_value: signed = None
+  var x: &signed = None
+  var temp2: signed = None
   return_value = *x
   free(temp2)
   free(x)

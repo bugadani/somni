@@ -18,19 +18,10 @@ block 0
   temp6 = &y
   z = temp6
   free(temp6)
-  var yy: void = None
-  var temp8: void = None
-  temp8 = *z
-  yy = temp8
-  free(temp8)
-  var xx: void = None
-  var temp10: void = None
-  temp10 = *yy
-  xx = temp10
-  free(temp10)
-  return_value = xx
-  free(xx)
-  free(yy)
+  var temp7: void = None
+  temp7 = *z
+  return_value = temp7
+  free(temp7)
   free(z)
   free(y)
   free(x)

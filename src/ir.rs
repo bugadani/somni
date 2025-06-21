@@ -21,6 +21,36 @@ pub enum Value {
     String(StringIndex),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Variable {
+    Value(Type),
+    Reference(usize, Type),
+}
+
+impl Display for Variable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Value(ty) => Display::fmt(ty, f),
+            Self::Reference(n, ty) => f.write_fmt(format_args!("{amp:n$}{ty}", amp = "&", n = n)),
+        }
+    }
+}
+impl Variable {
+    pub(crate) fn reference(&self) -> Self {
+        match self {
+            Self::Value(t) => Self::Reference(1, *t),
+            Self::Reference(n, t) => Self::Reference(*n + 1, *t),
+        }
+    }
+    pub(crate) fn dereference(&self) -> Option<Self> {
+        match self {
+            Self::Value(_) => None,
+            Self::Reference(1, t) => Some(Self::Value(*t)),
+            Self::Reference(n, t) => Some(Self::Reference(*n - 1, *t)),
+        }
+    }
+}
+
 impl Value {
     pub fn type_of(&self) -> Type {
         match self {
@@ -42,7 +72,6 @@ pub enum Type {
     Float,
     Bool,
     String,
-    Address,
 }
 
 impl Display for Type {
@@ -54,7 +83,6 @@ impl Display for Type {
             Type::Bool => write!(f, "bool"),
             Type::String => write!(f, "string"),
             Type::Float => write!(f, "float"),
-            Type::Address => write!(f, "address"),
         }
     }
 }
@@ -152,14 +180,14 @@ impl Ir {
         match self {
             Self::Declare(var, init_value) => write!(
                 &mut output,
-                "var {}: {:?} = {:?}",
+                "var {}: {} = {:?}",
                 program.strings.lookup(var.name),
                 function
                     .variables
                     .variable(var.index)
                     .unwrap()
                     .ty
-                    .unwrap_or(Type::Void),
+                    .unwrap_or(Variable::Value(Type::Void)),
                 init_value
             )
             .unwrap(),
@@ -430,7 +458,7 @@ impl Program {
                 let string_index = strings.intern(value);
                 Value::String(string_index)
             }
-            (Type::Void | Type::Address, _) => {
+            (Type::Void, _) => {
                 return Err(CompileError {
                     source,
                     location: literal.location,
@@ -462,7 +490,7 @@ pub struct Function {
     pub name: StringIndex,
     pub variables: ScopeData,
     pub return_type: Type,
-    pub arguments: Vec<Type>,
+    pub arguments: Vec<Variable>,
     pub blocks: Vec<Block>,
 }
 
@@ -569,23 +597,28 @@ impl Function {
         }
 
         // Allocate a return variable, if the function has a return type.
-        let (return_ty, return_token) = if let Some(return_type) = &func.return_decl {
+        let (return_type, return_token) = if let Some(return_type) = &func.return_decl {
             (
-                Some(this.compile_type(&return_type.return_type)?),
+                this.compile_type(&return_type.return_type)?,
                 return_type.return_type.type_name,
             )
         } else {
-            (None, func.fn_token)
+            (Type::Void, func.fn_token)
         };
-        this.declare_variable("return_value", return_ty, return_token.location)?;
+        this.declare_variable(
+            "return_value",
+            Some(Variable::Value(return_type)),
+            return_token.location,
+        )?;
 
         // allocate variables for arguments
         let mut arguments = vec![];
         for argument in func.arguments.iter() {
+            let ty = this.compile_type(&argument.arg_type)?;
             let ty = if argument.reference_token.is_some() {
-                Type::Address
+                Variable::Reference(1, ty)
             } else {
-                this.compile_type(&argument.arg_type)?
+                Variable::Value(ty)
             };
             let name = argument.name.source(source);
             this.declare_variable(name, Some(ty), argument.name.location)?;
@@ -598,7 +631,7 @@ impl Function {
 
         Ok(Function {
             name: this.strings.intern(func.name.source(source)),
-            return_type: return_ty.unwrap_or(Type::Void),
+            return_type,
             arguments,
             variables: this.variables.finalize(),
             blocks: this.blocks.blocks,
@@ -677,7 +710,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn declare_variable(
         &mut self,
         name: &str,
-        var_ty: Option<Type>,
+        var_ty: Option<Variable>,
         source_location: Location,
     ) -> Result<LocalVariableIndex, CompileError<'s>> {
         let name_index = self.strings.intern(name);
@@ -708,7 +741,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         let init_value = (init_value != Value::Void).then_some(init_value);
         let temp = self
             .variables
-            .declare_variable(temp_name, init_value.map(|v| v.type_of()));
+            .declare_variable(temp_name, init_value.map(|v| Variable::Value(v.type_of())));
         self.blocks.push_instruction(
             location,
             Ir::Declare(
@@ -756,7 +789,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
         let name = ident.source(self.source);
         let var_ty = if let Some(type_token) = ty {
-            Some(self.compile_type(type_token)?)
+            Some(Variable::Value(self.compile_type(type_token)?))
         } else {
             None
         };
@@ -1059,7 +1092,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                 let string_index = self.strings.intern(value);
                 Value::String(string_index)
             }
-            (Type::Void | Type::Address, _) => {
+            (Type::Void, _) => {
                 return Err(CompileError {
                     source: self.source,
                     location: literal.location,

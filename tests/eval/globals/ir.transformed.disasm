@@ -5,13 +5,13 @@ Globals:
 Functions:
 Function: double
 block 0
-  var return_value: Void = None
-  var temp1: Int = Some(Int(2))
-  var temp2: Int = None
+  var return_value: void = None
+  var temp1: int = Some(Int(2))
+  var temp2: int = None
   n = n * temp1
   free(temp1)
   free(temp2)
-  var temp3: Void = None
+  var temp3: void = None
   free(temp3)
   -> block 1
 
@@ -19,14 +19,14 @@ block 1
   -> return
 Function: doubled
 block 0
-  var return_value: Int = None
-  var temp1: Void = None
-  var temp2: Void = None
+  var return_value: int = None
+  var temp1: void = None
+  var temp2: void = None
   temp2 = call double()
   temp1 = temp2
   free(temp2)
   free(temp1)
-  var temp3: Int = None
+  var temp3: int = None
   return_value = n + m
   free(temp3)
   free(return_value)

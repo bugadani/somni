@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 
 use crate::{
     error::CompileError,
-    ir::{self, BlockIndex, GlobalInitializer, Type, VariableIndex},
+    ir::{self, BlockIndex, GlobalInitializer, VariableIndex},
     string_interner::StringIndex,
     variable_tracker::{LocalVariableIndex, ScopeData},
 };
@@ -18,7 +18,11 @@ enum ConstraintKind {
     },
     Requires {
         variable: VariableIndex,
-        required_type: ir::Type,
+        required_type: ir::Variable,
+    },
+    Reference {
+        left: VariableIndex,
+        right: VariableIndex,
     },
 }
 
@@ -29,8 +33,8 @@ struct Constraint {
 }
 
 struct FunctionSignature {
-    return_type: ir::Type,
-    arguments: Vec<ir::Type>,
+    return_type: ir::Variable,
+    arguments: Vec<ir::Variable>,
 }
 
 struct TypeResolver<'a, 's> {
@@ -58,7 +62,7 @@ impl<'a, 's> TypeResolver<'a, 's> {
     fn require(
         &mut self,
         left: VariableIndex,
-        ty: ir::Type,
+        ty: ir::Variable,
         source_location: Location,
     ) -> Result<(), CompileError<'s>> {
         self.constraints.push(Constraint {
@@ -86,7 +90,20 @@ impl<'a, 's> TypeResolver<'a, 's> {
         self.step_resolve()
     }
 
-    fn current_type_of(&self, variable: VariableIndex) -> Option<ir::Type> {
+    fn reference(
+        &mut self,
+        left: VariableIndex,
+        right: VariableIndex,
+        source_location: Location,
+    ) -> Result<(), CompileError<'s>> {
+        self.constraints.push(Constraint {
+            source_location,
+            kind: ConstraintKind::Reference { left, right },
+        });
+        self.step_resolve()
+    }
+
+    fn current_type_of(&self, variable: VariableIndex) -> Option<ir::Variable> {
         match variable {
             VariableIndex::Local(local) | VariableIndex::Temporary(local) => {
                 self.locals.variable(local).unwrap().ty
@@ -96,7 +113,7 @@ impl<'a, 's> TypeResolver<'a, 's> {
                     unreachable!();
                 };
                 match &global_info.initial_value {
-                    GlobalInitializer::Value(value) => Some(value.type_of()),
+                    GlobalInitializer::Value(value) => Some(ir::Variable::Value(value.type_of())),
                     GlobalInitializer::Expression(_) => unreachable!(),
                 }
             }
@@ -113,14 +130,13 @@ impl<'a, 's> TypeResolver<'a, 's> {
                     let right_type = self.current_type_of(right);
 
                     let made_progress = match (left_type, right_type) {
-                        (Some(left_type), Some(right_type)) => {
-                            if left_type != right_type {
+                        (Some(left_ty), Some(right_ty)) => {
+                            if left_ty != right_ty {
                                 return Err(CompileError {
                                     source: self.source,
                                     location: constraint.source_location,
                                     error: format!(
-                                        "Type mismatch: expected {:?}, found {:?}",
-                                        left_type, right_type
+                                        "Type mismatch: expected {left_ty}, found {right_ty}",
                                     ),
                                 });
                             }
@@ -156,28 +172,28 @@ impl<'a, 's> TypeResolver<'a, 's> {
                 }
                 ConstraintKind::Requires {
                     variable,
-                    required_type,
+                    required_type: required_ty,
                 } => {
                     match variable {
                         VariableIndex::Local(local) | VariableIndex::Temporary(local) => {
                             let local_info = self.locals.variable_mut(local).unwrap();
                             match local_info.ty.as_mut() {
                                 Some(ty) => {
-                                    if *ty != required_type {
+                                    if *ty != required_ty {
                                         return Err(CompileError {
                                             source: self.source,
                                             location: constraint.source_location,
                                             error: format!(
-                                                "Type mismatch: expected {:?}, found {:?}",
-                                                required_type, *ty
+                                                "Type mismatch: expected {required_ty}, found {}",
+                                                *ty
                                             ),
                                         });
                                     }
-                                    *ty = required_type;
+                                    *ty = required_ty;
                                 }
                                 None => {
                                     // If the type is not set, we can set it now.
-                                    local_info.ty = Some(required_type);
+                                    local_info.ty = Some(required_ty);
                                 }
                             }
                         }
@@ -192,6 +208,65 @@ impl<'a, 's> TypeResolver<'a, 's> {
                     }
 
                     self.constraints.swap_remove(i);
+                }
+
+                ConstraintKind::Reference { left, right } => {
+                    let left_type = match left {
+                        VariableIndex::Global(_) => {
+                            return Err(CompileError {
+                                source: self.source,
+                                location: constraint.source_location,
+                                error: format!("Globals cannot be references"),
+                            });
+                        }
+                        _ => self.current_type_of(left),
+                    };
+                    let right_type = self.current_type_of(right);
+
+                    let made_progress = match (left_type, right_type) {
+                        (Some(left_ty), Some(right_ty)) => {
+                            if left_ty.reference() != right_ty {
+                                return Err(CompileError {
+                                    source: self.source,
+                                    location: constraint.source_location,
+                                    error: format!(
+                                        "Type mismatch: expected {left_ty}, found {right_ty}"
+                                    ),
+                                });
+                            }
+
+                            true
+                        }
+                        (Some(ty), None) => {
+                            let ty = ty.dereference().ok_or_else(|| CompileError {
+                                source: self.source,
+                                location: constraint.source_location,
+                                error: format!("Cannot dereference {ty}"),
+                            })?;
+                            self.locals
+                                .variable_mut(right.local_index().unwrap())
+                                .unwrap()
+                                .ty = Some(ty);
+                            true
+                        }
+                        (None, Some(ty)) => {
+                            self.locals
+                                .variable_mut(left.local_index().unwrap())
+                                .unwrap()
+                                .ty = Some(ty.reference());
+
+                            true
+                        }
+                        (None, None) => false,
+                    };
+
+                    if made_progress {
+                        // If we made progress, we can remove this constraint.
+                        self.constraints.swap_remove(i);
+                    } else {
+                        // If we didn't make progress, just move to the next constraint.
+                        i += 1;
+                    }
                 }
             }
         }
@@ -375,7 +450,7 @@ fn propagate_variable_types<'s>(
     // Collect function signatures first
     for (name, function) in &ir.functions {
         let signature = FunctionSignature {
-            return_type: function.return_type,
+            return_type: ir::Variable::Value(function.return_type),
             arguments: function.arguments.clone(),
         };
         func_signatures.insert(*name, signature);
@@ -413,7 +488,7 @@ fn propagate_variable_types_inner<'s>(
                         // If there's an initial value, we can infer the type from it.
                         resolver.require(
                             VariableIndex::Local(dst.index),
-                            init_value.type_of(),
+                            ir::Variable::Value(init_value.type_of()),
                             instruction.source_location,
                         )?;
                     }
@@ -421,9 +496,8 @@ fn propagate_variable_types_inner<'s>(
                 ir::Ir::Assign(dst, src) => {
                     resolver.equate(*dst, *src, instruction.source_location)?;
                 }
-                ir::Ir::DerefAssign(dst, _src) => {
-                    // TODO: we likely want to encode the type of the dereferenced value
-                    resolver.require(*dst, Type::Address, instruction.source_location)?;
+                ir::Ir::DerefAssign(dst, src) => {
+                    resolver.reference(*src, *dst, instruction.source_location)?;
                 }
                 ir::Ir::Call(func, return_value, args) => {
                     if let Some(signature) = signatures.get(func) {
@@ -458,7 +532,11 @@ fn propagate_variable_types_inner<'s>(
                     match strings.lookup(*op) {
                         "<=" | "<" | ">=" | ">" | "==" | "!=" => {
                             // For comparison operators, the result is a boolean.
-                            resolver.require(*dst, ir::Type::Bool, instruction.source_location)?;
+                            resolver.require(
+                                *dst,
+                                ir::Variable::Value(ir::Type::Bool),
+                                instruction.source_location,
+                            )?;
                             // The left and right hand sides must be of the same type.
                             resolver.equate(*lhs, *rhs, instruction.source_location)?;
                         }
@@ -473,18 +551,10 @@ fn propagate_variable_types_inner<'s>(
                 ir::Ir::UnaryOperator(op, dst, src) => {
                     match strings.lookup(*op) {
                         "*" => {
-                            resolver.require(
-                                *src,
-                                ir::Type::Address,
-                                instruction.source_location,
-                            )?;
+                            resolver.reference(*src, *dst, instruction.source_location)?;
                         }
                         "&" => {
-                            resolver.require(
-                                *dst,
-                                ir::Type::Address,
-                                instruction.source_location,
-                            )?;
+                            resolver.reference(*dst, *src, instruction.source_location)?;
                         }
                         _ => {
                             // For now, the destination and source must be of the same type.
@@ -503,7 +573,11 @@ fn propagate_variable_types_inner<'s>(
         } = block.terminator
         {
             // Condition needs to be a boolean
-            resolver.require(condition, ir::Type::Bool, source_location)?;
+            resolver.require(
+                condition,
+                ir::Variable::Value(ir::Type::Bool),
+                source_location,
+            )?;
         }
     }
 

@@ -1,0 +1,5 @@
+Compile error
+ ---> at line 5 column 5
+  |
+5 |     return *z;
+  |     ^^^^^^^^^^ Type mismatch: expected int, found &int

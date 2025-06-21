@@ -650,7 +650,15 @@ impl From<ir::Type> for Type {
             ir::Type::Float => Type::Float,
             ir::Type::Bool => Type::Bool,
             ir::Type::String => Type::String,
-            ir::Type::Address => Type::Address,
+        }
+    }
+}
+
+impl From<ir::Variable> for Type {
+    fn from(ty: ir::Variable) -> Self {
+        match ty {
+            ir::Variable::Value(t) => Self::from(t),
+            ir::Variable::Reference(_, _) => Type::Address,
         }
     }
 }
@@ -1123,7 +1131,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                 .func
                 .variables
                 .variable(index)
-                .map(|v| Type::from(v.ty.unwrap_or(ir::Type::Void))), // TODO: revisit after removing unused variables, there should be no unresolved types
+                .map(|v| Type::from(v.ty.unwrap_or(ir::Variable::Value(ir::Type::Void)))), // TODO: revisit after removing unused variables, there should be no unresolved types
             VariableIndex::Global(index) => self
                 .compiler
                 .program

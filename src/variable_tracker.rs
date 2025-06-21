@@ -1,6 +1,6 @@
 use indexmap::{IndexMap, IndexSet};
 
-use crate::{ir::Type, string_interner::StringIndex};
+use crate::{ir::Variable, string_interner::StringIndex};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RestorePoint(usize);
@@ -29,7 +29,7 @@ pub enum Event {
 pub struct LocalVariableInfo {
     pub name: StringIndex,
     pub has_reference: bool,
-    pub ty: Option<Type>,
+    pub ty: Option<Variable>,
 }
 
 #[derive(Debug, Clone)]
@@ -81,7 +81,11 @@ impl VariableTracker {
         }
     }
 
-    pub fn declare_variable(&mut self, name: StringIndex, ty: Option<Type>) -> LocalVariableIndex {
+    pub fn declare_variable(
+        &mut self,
+        name: StringIndex,
+        ty: Option<Variable>,
+    ) -> LocalVariableIndex {
         let index = LocalVariableIndex(self.data.all_variables.len());
         if let Some(old) = self.currently_visible_variables.insert(name, index) {
             if !self.data.all_variables[old.0].has_reference {
