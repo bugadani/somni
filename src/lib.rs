@@ -1,5 +1,6 @@
 pub mod codegen;
 pub mod error;
+pub mod eval;
 pub mod ir;
 pub mod string_interner;
 #[cfg(test)]

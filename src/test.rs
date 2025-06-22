@@ -1,11 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    codegen::{self, TypedValue},
-    error::CompileError,
-    ir,
-    transform_ir::transform_ir,
-    vm::EvalContext,
+    codegen, error::CompileError, eval::TypedValue, ir, transform_ir::transform_ir, vm::EvalContext,
 };
 use somni_lexer::tokenize;
 use somni_parser::parse;

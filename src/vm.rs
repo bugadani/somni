@@ -1,15 +1,12 @@
 use std::{collections::HashMap, ops::Range};
 
 use crate::{
-    codegen::{
-        self, CodeAddress, Function, Instruction, MemoryAddress, OperatorError, Type, TypedValue,
-        ValueType,
-    },
+    codegen::{self, CodeAddress, Function, Instruction, MemoryAddress, Type, ValueType},
     error::MarkInSource,
+    eval::{ExprContext, ExpressionVisitor, OperatorError, TypedValue},
     string_interner::{StringIndex, Strings},
 };
 use somni_lexer::Location;
-use somni_parser::ast::{self, Expression};
 
 #[derive(Clone, Debug)]
 pub struct EvalError(Box<str>);
@@ -704,131 +701,57 @@ impl<'p> EvalContext<'p> {
     }
 }
 
-struct ExpressionVisitor<'a, 's> {
-    context: &'a mut EvalContext<'s>,
-    source: &'a str,
-}
+impl<'s> ExprContext for EvalContext<'s> {
+    fn intern_string(&mut self, s: &str) -> StringIndex {
+        if let Some(string_index) = self.strings.find(s) {
+            string_index
+        } else {
+            let string_index = self.strings.intern(s);
+            string_index
+        }
+    }
 
-impl<'a> ExpressionVisitor<'a, '_> {
-    fn visit_variable(&mut self, variable: &somni_lexer::Token) -> TypedValue {
-        let name = variable.source(self.source);
+    fn try_load_variable(&self, name: &str) -> Option<TypedValue> {
         let name_idx = self
-            .context
             .strings
             .find(name)
             .unwrap_or_else(|| panic!("Variable '{name}' not found"));
         let global = self
-            .context
             .program
             .globals
             .get(&name_idx)
             .unwrap_or_else(|| panic!("Variable '{name}' not found in program"));
 
-        self.context
+        let value = self
             .memory
             .load_typed(global.address, global.ty())
-            .unwrap_or_else(|_| panic!("Variable '{name}' not found in memory"))
+            .unwrap_or_else(|_| panic!("Variable '{name}' not found in memory"));
+
+        Some(value)
     }
 
-    fn visit_expression(&mut self, expression: &Expression) -> TypedValue {
-        // TODO: errors
-        match expression {
-            Expression::Variable { variable } => self.visit_variable(variable),
-            Expression::Literal { value } => match &value.value {
-                ast::LiteralValue::Integer(value) => TypedValue::Int(*value),
-                ast::LiteralValue::Float(value) => TypedValue::Float(*value),
-                ast::LiteralValue::String(value) => {
-                    if let Some(string_index) = self.context.strings.find(value) {
-                        TypedValue::String(string_index)
-                    } else {
-                        let string_index = self.context.strings.intern(value);
-                        TypedValue::String(string_index)
-                    }
-                }
-                ast::LiteralValue::Boolean(value) => TypedValue::Bool(*value),
-            },
-            Expression::UnaryOperator { name, operand } => match name.source(self.source) {
-                "!" => match self.visit_expression(operand) {
-                    TypedValue::Bool(b) => TypedValue::Bool(!b),
-                    value => panic!("Expected boolean, found {}", value.type_of()),
-                },
-                "-" => match self.visit_expression(operand) {
-                    TypedValue::SignedInt(i) => TypedValue::SignedInt(-i),
-                    TypedValue::Float(f) => TypedValue::Float(-f),
-                    value => panic!("Cannot negate {}", value.type_of()),
-                },
-                "&" => match operand.as_variable() {
-                    Some(variable) => {
-                        let name = variable.source(self.source);
-                        let name_idx = self.context.strings.find(name).unwrap_or_else(|| {
-                            panic!("Variable '{name}' not found");
-                        });
-                        let addr = self
-                            .context
-                            .program
-                            .globals
-                            .get_index_of(&name_idx)
-                            .unwrap_or_else(|| {
-                                panic!("Variable '{name}' not found in program");
-                            });
-                        TypedValue::from(addr as u64)
-                    }
-                    None => panic!("Cannot take address of non-variable expression"),
-                },
-                "*" => panic!("Dereference not supported"),
-                _ => panic!("Unknown unary operator: {}", name.source(self.source)),
-            },
-            Expression::BinaryOperator { name, operands } => {
-                let short_circuiting = ["&&", "||"];
-                let operator = name.source(self.source);
-
-                if short_circuiting.contains(&operator) {
-                    let lhs = self.visit_expression(&operands[0]);
-                    return match operator {
-                        "&&" if lhs == TypedValue::Bool(false) => TypedValue::Bool(false),
-                        "||" if lhs == TypedValue::Bool(true) => TypedValue::Bool(true),
-                        _ => self.visit_expression(&operands[1]),
-                    };
-                }
-
-                let lhs = self.visit_expression(&operands[0]);
-                let rhs = self.visit_expression(&operands[1]);
-                match name.source(self.source) {
-                    "+" => TypedValue::add(lhs, rhs).unwrap(),
-                    "-" => TypedValue::subtract(lhs, rhs).unwrap(),
-                    "*" => TypedValue::multiply(lhs, rhs).unwrap(),
-                    "/" => TypedValue::divide(lhs, rhs).unwrap(),
-                    "<" => TypedValue::less_than(lhs, rhs).unwrap(),
-                    ">" => TypedValue::less_than(rhs, lhs).unwrap(),
-                    "<=" => TypedValue::less_than_or_equal(lhs, rhs).unwrap(),
-                    ">=" => TypedValue::less_than_or_equal(rhs, lhs).unwrap(),
-                    "==" => TypedValue::equals(lhs, rhs).unwrap(),
-                    "!=" => TypedValue::not_equals(lhs, rhs).unwrap(),
-                    "|" => TypedValue::bitwise_or(lhs, rhs).unwrap(),
-                    "^" => TypedValue::bitwise_xor(lhs, rhs).unwrap(),
-                    "&" => TypedValue::bitwise_and(lhs, rhs).unwrap(),
-                    "<<" => TypedValue::shift_left(lhs, rhs).unwrap(),
-                    ">>" => TypedValue::shift_right(lhs, rhs).unwrap(),
-
-                    other => panic!("Unknown binary operator: {}", other),
-                }
+    fn call_function(&mut self, function_name: &str, args: &[TypedValue]) -> TypedValue {
+        match self.call(function_name, &args) {
+            EvalEvent::UnknownFunctionCall(fn_name) => {
+                todo!("unknown function call {:?}", self.string(fn_name))
             }
-            Expression::FunctionCall { name, arguments } => {
-                let function_name = name.source(self.source);
-                let mut args = Vec::new();
-                for arg in arguments {
-                    args.push(self.visit_expression(arg));
-                }
-
-                match self.context.call(function_name, &args) {
-                    EvalEvent::UnknownFunctionCall(fn_name) => {
-                        todo!("unknown function call {:?}", self.context.string(fn_name))
-                    }
-                    EvalEvent::Error(e) => todo!("{e:?}"),
-                    EvalEvent::Complete(value) => value,
-                }
-            }
+            EvalEvent::Error(e) => todo!("{e:?}"),
+            EvalEvent::Complete(value) => value,
         }
+    }
+
+    fn address_of(&self, name: &str) -> TypedValue {
+        let name_idx = self.strings.find(name).unwrap_or_else(|| {
+            panic!("Variable '{name}' not found in program");
+        });
+        let addr = self
+            .program
+            .globals
+            .get_index_of(&name_idx)
+            .unwrap_or_else(|| {
+                panic!("Variable '{name}' not found in program");
+            });
+        TypedValue::from(addr as u64)
     }
 }
 
