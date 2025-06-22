@@ -710,28 +710,30 @@ struct ExpressionVisitor<'a, 's> {
 }
 
 impl<'a> ExpressionVisitor<'a, '_> {
+    fn visit_variable(&mut self, variable: &somni_lexer::Token) -> TypedValue {
+        let name = variable.source(self.source);
+        let name_idx = self
+            .context
+            .strings
+            .find(name)
+            .unwrap_or_else(|| panic!("Variable '{name}' not found"));
+        let global = self
+            .context
+            .program
+            .globals
+            .get(&name_idx)
+            .unwrap_or_else(|| panic!("Variable '{name}' not found in program"));
+
+        self.context
+            .memory
+            .load_typed(global.address, global.ty())
+            .unwrap_or_else(|_| panic!("Variable '{name}' not found in memory"))
+    }
+
     fn visit_expression(&mut self, expression: &Expression) -> TypedValue {
         // TODO: errors
         match expression {
-            Expression::Variable { variable } => {
-                let name = variable.source(self.source);
-                let name_idx = self
-                    .context
-                    .strings
-                    .find(name)
-                    .unwrap_or_else(|| panic!("Variable '{name}' not found"));
-                let global = self
-                    .context
-                    .program
-                    .globals
-                    .get(&name_idx)
-                    .unwrap_or_else(|| panic!("Variable '{name}' not found in program"));
-
-                self.context
-                    .memory
-                    .load_typed(global.address, global.ty())
-                    .unwrap_or_else(|_| panic!("Variable '{name}' not found in memory"))
-            }
+            Expression::Variable { variable } => self.visit_variable(variable),
             Expression::Literal { value } => match &value.value {
                 ast::LiteralValue::Integer(value) => TypedValue::Int(*value),
                 ast::LiteralValue::Float(value) => TypedValue::Float(*value),
@@ -776,114 +778,41 @@ impl<'a> ExpressionVisitor<'a, '_> {
                 "*" => panic!("Dereference not supported"),
                 _ => panic!("Unknown unary operator: {}", name.source(self.source)),
             },
-            Expression::BinaryOperator { name, operands } => match name.source(self.source) {
-                "&&" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    if let TypedValue::Bool(false) = lhs {
-                        return TypedValue::Bool(false);
-                    }
-                    self.visit_expression(&operands[1])
-                }
-                "||" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    if let TypedValue::Bool(true) = lhs {
-                        return TypedValue::Bool(true);
-                    }
-                    self.visit_expression(&operands[1])
-                }
-                "+" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
+            Expression::BinaryOperator { name, operands } => {
+                let short_circuiting = ["&&", "||"];
+                let operator = name.source(self.source);
 
-                    TypedValue::add(lhs, rhs).unwrap()
-                }
-                "-" => {
+                if short_circuiting.contains(&operator) {
                     let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
-
-                    TypedValue::subtract(lhs, rhs).unwrap()
-                }
-                "*" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
-
-                    TypedValue::multiply(lhs, rhs).unwrap()
-                }
-                "/" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
-
-                    TypedValue::divide(lhs, rhs).unwrap()
-                }
-                "<" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
-
-                    TypedValue::less_than(lhs, rhs).unwrap()
-                }
-                ">" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
-
-                    TypedValue::less_than(rhs, lhs).unwrap()
-                }
-                "<=" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
-
-                    TypedValue::less_than_or_equal(lhs, rhs).unwrap()
-                }
-                ">=" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
-
-                    TypedValue::less_than_or_equal(rhs, lhs).unwrap()
-                }
-                "==" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
-
-                    TypedValue::equals(lhs, rhs).unwrap()
-                }
-                "!=" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
-
-                    TypedValue::not_equals(lhs, rhs).unwrap()
-                }
-                "|" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
-
-                    TypedValue::bitwise_or(lhs, rhs).unwrap()
-                }
-                "^" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
-
-                    TypedValue::bitwise_xor(lhs, rhs).unwrap()
-                }
-                "&" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
-
-                    TypedValue::bitwise_and(lhs, rhs).unwrap()
-                }
-                "<<" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
-
-                    TypedValue::shift_left(lhs, rhs).unwrap()
-                }
-                ">>" => {
-                    let lhs = self.visit_expression(&operands[0]);
-                    let rhs = self.visit_expression(&operands[1]);
-
-                    TypedValue::shift_right(lhs, rhs).unwrap()
+                    return match operator {
+                        "&&" if lhs == TypedValue::Bool(false) => TypedValue::Bool(false),
+                        "||" if lhs == TypedValue::Bool(true) => TypedValue::Bool(true),
+                        _ => self.visit_expression(&operands[1]),
+                    };
                 }
 
-                other => panic!("Unknown binary operator: {}", other),
-            },
+                let lhs = self.visit_expression(&operands[0]);
+                let rhs = self.visit_expression(&operands[1]);
+                match name.source(self.source) {
+                    "+" => TypedValue::add(lhs, rhs).unwrap(),
+                    "-" => TypedValue::subtract(lhs, rhs).unwrap(),
+                    "*" => TypedValue::multiply(lhs, rhs).unwrap(),
+                    "/" => TypedValue::divide(lhs, rhs).unwrap(),
+                    "<" => TypedValue::less_than(lhs, rhs).unwrap(),
+                    ">" => TypedValue::less_than(rhs, lhs).unwrap(),
+                    "<=" => TypedValue::less_than_or_equal(lhs, rhs).unwrap(),
+                    ">=" => TypedValue::less_than_or_equal(rhs, lhs).unwrap(),
+                    "==" => TypedValue::equals(lhs, rhs).unwrap(),
+                    "!=" => TypedValue::not_equals(lhs, rhs).unwrap(),
+                    "|" => TypedValue::bitwise_or(lhs, rhs).unwrap(),
+                    "^" => TypedValue::bitwise_xor(lhs, rhs).unwrap(),
+                    "&" => TypedValue::bitwise_and(lhs, rhs).unwrap(),
+                    "<<" => TypedValue::shift_left(lhs, rhs).unwrap(),
+                    ">>" => TypedValue::shift_right(lhs, rhs).unwrap(),
+
+                    other => panic!("Unknown binary operator: {}", other),
+                }
+            }
             Expression::FunctionCall { name, arguments } => {
                 let function_name = name.source(self.source);
                 let mut args = Vec::new();
