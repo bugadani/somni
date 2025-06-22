@@ -100,9 +100,7 @@ impl GlobalVariable {
         let colon = stream.expect_match(TokenKind::Symbol, &[":"])?;
         let type_token = TypeHint::parse(stream)?;
         let equals_token = stream.expect_match(TokenKind::Symbol, &["="])?;
-        let initializer = Expression::Literal {
-            value: Literal::parse(stream)?,
-        };
+        let initializer = Expression::parse(stream)?;
         let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
 
         Ok(Some(GlobalVariable {

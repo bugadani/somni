@@ -1,5 +1,7 @@
 var answer: int = 42;
 var global_var: int = 100;
+var global_var_signed: signed = 100;
+var global_var_signed_negative: signed = -100;
 
 // Simple function
 fn my_function() {}

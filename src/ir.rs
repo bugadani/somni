@@ -397,6 +397,7 @@ impl Program {
                     let name_idx = strings.intern(name);
                     let initial_value = Self::compile_initializer(
                         source,
+                        &global_variable.type_token,
                         &global_variable.initializer,
                         &mut strings,
                     )?;
@@ -418,19 +419,28 @@ impl Program {
 
     fn compile_initializer<'s>(
         source: &'s str,
+        ty: &ast::TypeHint,
         value: &ast::Expression,
         strings: &mut StringInterner,
     ) -> Result<GlobalInitializer, CompileError<'s>> {
+        let ty = match ty.type_name.source(source) {
+            "int" => Type::Int,
+            "signed" => Type::SignedInt,
+            "float" => Type::Float,
+            "bool" => Type::Bool,
+            "string" => Type::String,
+            other => {
+                return Err(CompileError {
+                    source: source,
+                    location: ty.type_name.location,
+                    error: format!("Unknown type `{other}`"),
+                });
+            }
+        };
+
         match value {
             ast::Expression::Literal { value } => {
-                let literal_type = match value.value {
-                    ast::LiteralValue::Integer(_) => Type::Int,
-                    ast::LiteralValue::Float(_) => Type::Float,
-                    ast::LiteralValue::Boolean(_) => Type::Bool,
-                    ast::LiteralValue::String(_) => Type::String,
-                };
-                let literal_value =
-                    Self::compile_literal_value(source, strings, literal_type, value)?;
+                let literal_value = Self::compile_literal_value(source, strings, ty, value)?;
                 Ok(GlobalInitializer::Value(literal_value))
             }
             _ => {
@@ -452,6 +462,17 @@ impl Program {
     ) -> Result<Value, CompileError<'s>> {
         let value = match (literal_type, &literal.value) {
             (Type::Int, ast::LiteralValue::Integer(value)) => Value::Int(*value),
+            (Type::SignedInt, ast::LiteralValue::Integer(value)) => {
+                if *value > i64::MAX as u64 {
+                    return Err(CompileError {
+                        source,
+                        location: literal.location,
+                        error: format!("{value} is not a valid `signed` value (too large)"),
+                    });
+                } else {
+                    Value::SignedInt(*value as i64)
+                }
+            }
             (Type::Float, ast::LiteralValue::Float(value)) => Value::Float(*value),
             (Type::Bool, ast::LiteralValue::Boolean(value)) => Value::Bool(*value),
             (Type::String, ast::LiteralValue::String(value)) => {
