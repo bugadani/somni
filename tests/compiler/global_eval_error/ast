@@ -1,0 +1,162 @@
+Program {
+    items: [
+        GlobalVariable(
+            GlobalVariable {
+                decl_token: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 0,
+                        end: 3,
+                    },
+                },
+                identifier: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 4,
+                        end: 5,
+                    },
+                },
+                colon: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 5,
+                        end: 6,
+                    },
+                },
+                type_token: TypeHint {
+                    type_name: Token {
+                        kind: Identifier,
+                        location: Location {
+                            start: 7,
+                            end: 10,
+                        },
+                    },
+                },
+                equals_token: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 11,
+                        end: 12,
+                    },
+                },
+                initializer: BinaryOperator {
+                    name: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 15,
+                            end: 16,
+                        },
+                    },
+                    operands: [
+                        Variable {
+                            variable: Token {
+                                kind: Identifier,
+                                location: Location {
+                                    start: 13,
+                                    end: 14,
+                                },
+                            },
+                        },
+                        Literal {
+                            value: Literal {
+                                value: Integer(
+                                    10,
+                                ),
+                                location: Location {
+                                    start: 17,
+                                    end: 19,
+                                },
+                            },
+                        },
+                    ],
+                },
+                semicolon: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 19,
+                        end: 20,
+                    },
+                },
+            },
+        ),
+        GlobalVariable(
+            GlobalVariable {
+                decl_token: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 21,
+                        end: 24,
+                    },
+                },
+                identifier: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 25,
+                        end: 26,
+                    },
+                },
+                colon: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 26,
+                        end: 27,
+                    },
+                },
+                type_token: TypeHint {
+                    type_name: Token {
+                        kind: Identifier,
+                        location: Location {
+                            start: 28,
+                            end: 31,
+                        },
+                    },
+                },
+                equals_token: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 32,
+                        end: 33,
+                    },
+                },
+                initializer: BinaryOperator {
+                    name: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 36,
+                            end: 37,
+                        },
+                    },
+                    operands: [
+                        Variable {
+                            variable: Token {
+                                kind: Identifier,
+                                location: Location {
+                                    start: 34,
+                                    end: 35,
+                                },
+                            },
+                        },
+                        Literal {
+                            value: Literal {
+                                value: Integer(
+                                    10,
+                                ),
+                                location: Location {
+                                    start: 38,
+                                    end: 40,
+                                },
+                            },
+                        },
+                    ],
+                },
+                semicolon: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 40,
+                        end: 41,
+                    },
+                },
+            },
+        ),
+    ],
+}

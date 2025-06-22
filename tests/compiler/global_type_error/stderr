@@ -1,5 +1,0 @@
-Compile error
- ---> at line 1 column 17
-  |
-1 | var c: string = 10;
-  |                 ^^ Expected string, found integer literal

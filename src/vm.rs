@@ -410,7 +410,6 @@ impl<'p> EvalContext<'p> {
     /// An expression can use globals and functions defined in the program, but it cannot
     /// call functions that are not defined in the program.
     pub fn eval_expression(&mut self, expression: &str) -> TypedValue {
-        // TODO: handle errors
         if !matches!(self.state, EvalState::Idle) {
             panic!("Cannot evaluate expression while the VM is running");
         }
@@ -427,7 +426,8 @@ impl<'p> EvalContext<'p> {
             context: self,
             source: expression,
         };
-        visitor.visit_expression(&ast)
+        // TODO: handle errors
+        visitor.visit_expression(&ast).unwrap()
     }
 
     fn execute(&mut self) -> EvalEvent {

@@ -1,6 +1,8 @@
 var pi: float = 3.14;
 
 var some_static_variable: int = 42;
+// Test that global initializers can be interpreted even if they refer to a variable that is resolved later.
+var global_var_negative: signed = -global_var_signed;
 var global_var_signed: signed = 100;
 
 fn add(a: int, b: int) -> int { return a + b; }

@@ -1,0 +1,5 @@
+Compile error
+ ---> at line 1 column 14
+  |
+1 | var c: int = d + 10;
+  |              ^^^^^^ Failed to evaluate initializer

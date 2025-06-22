@@ -1,7 +1,8 @@
 Globals:
-  pi = Float(3.14)
-  some_static_variable = Int(42)
-  global_var_signed = SignedInt(100)
+  pi = global float
+  some_static_variable = global int
+  global_var_negative = global signed
+  global_var_signed = global signed
 
 Functions:
 Function: add

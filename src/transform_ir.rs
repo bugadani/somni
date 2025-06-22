@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 
 use crate::{
     error::CompileError,
-    ir::{self, BlockIndex, GlobalInitializer, VariableIndex},
+    ir::{self, BlockIndex, VariableIndex},
     string_interner::StringIndex,
     variable_tracker::{LocalVariableIndex, ScopeData},
 };
@@ -112,10 +112,8 @@ impl<'a, 's> TypeResolver<'a, 's> {
                 let Some((_name, global_info)) = self.globals.get_index(global.0) else {
                     unreachable!();
                 };
-                match &global_info.initial_value {
-                    GlobalInitializer::Value(value) => Some(ir::Variable::Value(value.type_of())),
-                    GlobalInitializer::Expression(_) => unreachable!(),
-                }
+
+                Some(ir::Variable::Value(global_info.ty))
             }
         }
     }

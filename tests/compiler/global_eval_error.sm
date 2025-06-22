@@ -1,0 +1,2 @@
+var c: int = d + 10;
+var d: int = c + 10;

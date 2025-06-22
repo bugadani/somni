@@ -299,19 +299,13 @@ pub enum GlobalInitializer {
 }
 
 pub struct GlobalVariableInfo {
-    pub initial_value: GlobalInitializer,
+    pub initializer: ast::Expression,
+    pub ty: Type,
 }
 
 impl GlobalVariableInfo {
-    const DUMMY: Self = GlobalVariableInfo {
-        initial_value: GlobalInitializer::Value(Value::Void),
-    };
-
     fn print(&self, _program: &Program) -> String {
-        match &self.initial_value {
-            GlobalInitializer::Value(value) => format!("{value:?}"),
-            GlobalInitializer::Expression(_) => todo!(),
-        }
+        format!("global {}", self.ty)
     }
 }
 
@@ -373,7 +367,29 @@ impl Program {
                             error: format!("Global variable `{name}` is already defined"),
                         });
                     }
-                    globals.insert(name_idx, GlobalVariableInfo::DUMMY);
+
+                    let ty = match global_variable.type_token.type_name.source(source) {
+                        "int" => Type::Int,
+                        "signed" => Type::SignedInt,
+                        "float" => Type::Float,
+                        "bool" => Type::Bool,
+                        "string" => Type::String,
+                        other => {
+                            return Err(CompileError {
+                                source: source,
+                                location: global_variable.type_token.type_name.location,
+                                error: format!("Unknown type `{other}`"),
+                            });
+                        }
+                    };
+
+                    globals.insert(
+                        name_idx,
+                        GlobalVariableInfo {
+                            ty,
+                            initializer: global_variable.initializer.clone(),
+                        },
+                    );
                 }
                 ast::Item::Function(function) => {
                     let name = function.name.source(source);
@@ -392,21 +408,11 @@ impl Program {
 
         for item in &ast.items {
             match item {
-                ast::Item::GlobalVariable(global_variable) => {
-                    let name = global_variable.identifier.source(source);
-                    let name_idx = strings.intern(name);
-                    let initial_value = Self::compile_initializer(
-                        source,
-                        &global_variable.type_token,
-                        &global_variable.initializer,
-                        &mut strings,
-                    )?;
-                    globals.insert(name_idx, GlobalVariableInfo { initial_value });
-                }
                 ast::Item::Function(function) => {
                     let func = Function::compile(source, function, &mut strings, &globals)?;
                     functions.insert(func.name, func);
                 }
+                _ => {}
             }
         }
 
@@ -415,95 +421,6 @@ impl Program {
             functions,
             strings: strings.finalize(),
         })
-    }
-
-    fn compile_initializer<'s>(
-        source: &'s str,
-        ty: &ast::TypeHint,
-        value: &ast::Expression,
-        strings: &mut StringInterner,
-    ) -> Result<GlobalInitializer, CompileError<'s>> {
-        let ty = match ty.type_name.source(source) {
-            "int" => Type::Int,
-            "signed" => Type::SignedInt,
-            "float" => Type::Float,
-            "bool" => Type::Bool,
-            "string" => Type::String,
-            other => {
-                return Err(CompileError {
-                    source: source,
-                    location: ty.type_name.location,
-                    error: format!("Unknown type `{other}`"),
-                });
-            }
-        };
-
-        match value {
-            ast::Expression::Literal { value } => {
-                let literal_value = Self::compile_literal_value(source, strings, ty, value)?;
-                Ok(GlobalInitializer::Value(literal_value))
-            }
-            _ => {
-                // For now, we only support literals as global initializers.
-                Err(CompileError {
-                    source,
-                    location: value.location(),
-                    error: "Global variable initializers must be literals".to_string(),
-                })
-            }
-        }
-    }
-
-    fn compile_literal_value<'s>(
-        source: &'s str,
-        strings: &mut StringInterner,
-        literal_type: Type,
-        literal: &ast::Literal,
-    ) -> Result<Value, CompileError<'s>> {
-        let value = match (literal_type, &literal.value) {
-            (Type::Int, ast::LiteralValue::Integer(value)) => Value::Int(*value),
-            (Type::SignedInt, ast::LiteralValue::Integer(value)) => {
-                if *value > i64::MAX as u64 {
-                    return Err(CompileError {
-                        source,
-                        location: literal.location,
-                        error: format!("{value} is not a valid `signed` value (too large)"),
-                    });
-                } else {
-                    Value::SignedInt(*value as i64)
-                }
-            }
-            (Type::Float, ast::LiteralValue::Float(value)) => Value::Float(*value),
-            (Type::Bool, ast::LiteralValue::Boolean(value)) => Value::Bool(*value),
-            (Type::String, ast::LiteralValue::String(value)) => {
-                let string_index = strings.intern(value);
-                Value::String(string_index)
-            }
-            (Type::Void, _) => {
-                return Err(CompileError {
-                    source,
-                    location: literal.location,
-                    error: format!("{literal_type} is not supported in literals"),
-                });
-            }
-            _ => {
-                return Err(CompileError {
-                    source,
-                    location: literal.location,
-                    error: format!(
-                        "Expected {literal_type}, found {} literal",
-                        match literal.value {
-                            ast::LiteralValue::Integer(_) => "integer",
-                            ast::LiteralValue::Float(_) => "float",
-                            ast::LiteralValue::Boolean(_) => "boolean",
-                            ast::LiteralValue::String(_) => "string",
-                        }
-                    ),
-                });
-            }
-        };
-
-        Ok(value)
     }
 }
 

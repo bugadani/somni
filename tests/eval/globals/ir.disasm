@@ -1,6 +1,6 @@
 Globals:
-  n = Int(10)
-  m = Int(32)
+  n = global int
+  m = global int
 
 Functions:
 Function: double

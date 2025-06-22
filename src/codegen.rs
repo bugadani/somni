@@ -8,7 +8,7 @@ use indexmap::IndexMap;
 
 use crate::{
     error::CompileError,
-    eval::{OperatorError, TypedValue},
+    eval::{ExprContext, ExpressionVisitor, OperatorError, TypedValue},
     ir::{self, VariableIndex},
     string_interner::{StringIndex, Strings},
     variable_tracker::{self, LocalVariableIndex},
@@ -201,7 +201,7 @@ impl Add<usize> for MemoryAddress {
 }
 
 pub trait ValueType: Sized + Copy + Into<TypedValue> {
-    const BYTES: usize; // TODO
+    const BYTES: usize;
 
     fn write(&self, to: &mut [u8]);
     fn from_bytes(bytes: &[u8]) -> Self;
@@ -516,16 +516,16 @@ impl Display for Type {
 #[derive(Clone, Debug)]
 pub struct GlobalVariable {
     pub address: MemoryAddress,
-    pub initial_value: TypedValue,
+    pub initial_value: Option<TypedValue>,
 }
 
 impl GlobalVariable {
     pub fn value(&self) -> TypedValue {
-        self.initial_value
+        self.initial_value.expect("variable is unevaluated")
     }
 
     pub fn ty(&self) -> Type {
-        self.initial_value.type_of()
+        self.value().type_of()
     }
 }
 
@@ -578,6 +578,30 @@ impl Program {
     }
 }
 
+impl ExprContext for Program {
+    fn intern_string(&mut self, s: &str) -> StringIndex {
+        self.debug_info.strings.find(s).unwrap()
+    }
+
+    fn try_load_variable(&self, variable: &str) -> Option<TypedValue> {
+        let idx = self.debug_info.strings.find(variable)?;
+        self.globals[&idx].initial_value
+    }
+
+    fn address_of(&self, variable: &str) -> TypedValue {
+        let idx = self.debug_info.strings.find(variable).unwrap();
+        let MemoryAddress::Global(addr) = self.globals[&idx].address else {
+            unreachable!();
+        };
+
+        TypedValue::Int(addr as u64)
+    }
+
+    fn call_function(&mut self, _function_name: &str, _args: &[TypedValue]) -> TypedValue {
+        todo!("maybe")
+    }
+}
+
 pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, CompileError<'s>> {
     let mut this = Compiler {
         program: Program {
@@ -596,21 +620,48 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
 
     let mut global_addr = 0;
     for (name, global) in ir.globals.iter() {
-        match &global.initial_value {
-            ir::GlobalInitializer::Value(value) => {
-                let ty = Type::from(value.type_of());
-                this.program.globals.insert(
-                    *name,
-                    GlobalVariable {
-                        address: MemoryAddress::Global(global_addr),
-                        initial_value: TypedValue::from_value(value),
-                    },
-                );
-                global_addr += ty.size_of();
+        let ty = Type::from(global.ty);
+        this.program.globals.insert(
+            *name,
+            GlobalVariable {
+                address: MemoryAddress::Global(global_addr),
+                initial_value: None,
+            },
+        );
+        global_addr += ty.size_of();
+    }
+
+    loop {
+        let mut made_progress = false;
+
+        for (name, global) in ir.globals.iter() {
+            if this.program.globals[name].initial_value.is_some() {
+                continue;
             }
-            ir::GlobalInitializer::Expression(_) => {
-                todo!("Initializer expressions are not supported yet")
+
+            let mut visitor = ExpressionVisitor {
+                context: &mut this.program,
+                source: source,
+            };
+            if let Ok(value) = visitor.visit_expression(&global.initializer) {
+                this.program.globals[name].initial_value = Some(value);
+                made_progress = true;
             }
+        }
+
+        if !made_progress {
+            break;
+        }
+    }
+
+    // Check whether every global was evaluated
+    for (name, global) in ir.globals.iter() {
+        if this.program.globals[name].initial_value.is_none() {
+            return Err(CompileError {
+                source,
+                location: global.initializer.location(),
+                error: format!("Failed to evaluate initializer"),
+            });
         }
     }
 

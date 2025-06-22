@@ -183,19 +183,21 @@ pub struct ExpressionVisitor<'a, C> {
     pub source: &'a str,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct EvalError;
+
 impl<'a, C> ExpressionVisitor<'a, C>
 where
     C: ExprContext,
 {
-    fn visit_variable(&mut self, variable: &somni_lexer::Token) -> TypedValue {
+    fn visit_variable(&mut self, variable: &somni_lexer::Token) -> Result<TypedValue, EvalError> {
         let name = variable.source(self.source);
-        self.context.try_load_variable(name).unwrap()
+        self.context.try_load_variable(name).ok_or(EvalError)
     }
 
-    pub fn visit_expression(&mut self, expression: &Expression) -> TypedValue {
-        // TODO: errors
-        match expression {
-            Expression::Variable { variable } => self.visit_variable(variable),
+    pub fn visit_expression(&mut self, expression: &Expression) -> Result<TypedValue, EvalError> {
+        let result = match expression {
+            Expression::Variable { variable } => self.visit_variable(variable)?,
             Expression::Literal { value } => match &value.value {
                 ast::LiteralValue::Integer(value) => TypedValue::Int(*value),
                 ast::LiteralValue::Float(value) => TypedValue::Float(*value),
@@ -205,12 +207,14 @@ where
                 ast::LiteralValue::Boolean(value) => TypedValue::Bool(*value),
             },
             Expression::UnaryOperator { name, operand } => match name.source(self.source) {
-                "!" => match self.visit_expression(operand) {
+                "!" => match self.visit_expression(operand)? {
                     TypedValue::Bool(b) => TypedValue::Bool(!b),
                     value => panic!("Expected boolean, found {}", value.type_of()),
                 },
-                "-" => match self.visit_expression(operand) {
+                "-" => match self.visit_expression(operand)? {
+                    // TODO handle overflow errors
                     TypedValue::SignedInt(i) => TypedValue::SignedInt(-i),
+                    TypedValue::Int(i) => TypedValue::SignedInt(-(i as i64)),
                     TypedValue::Float(f) => TypedValue::Float(-f),
                     value => panic!("Cannot negate {}", value.type_of()),
                 },
@@ -229,16 +233,16 @@ where
                 let operator = name.source(self.source);
 
                 if short_circuiting.contains(&operator) {
-                    let lhs = self.visit_expression(&operands[0]);
+                    let lhs = self.visit_expression(&operands[0])?;
                     return match operator {
-                        "&&" if lhs == TypedValue::Bool(false) => TypedValue::Bool(false),
-                        "||" if lhs == TypedValue::Bool(true) => TypedValue::Bool(true),
+                        "&&" if lhs == TypedValue::Bool(false) => Ok(TypedValue::Bool(false)),
+                        "||" if lhs == TypedValue::Bool(true) => Ok(TypedValue::Bool(true)),
                         _ => self.visit_expression(&operands[1]),
                     };
                 }
 
-                let lhs = self.visit_expression(&operands[0]);
-                let rhs = self.visit_expression(&operands[1]);
+                let lhs = self.visit_expression(&operands[0])?;
+                let rhs = self.visit_expression(&operands[1])?;
                 match name.source(self.source) {
                     "+" => TypedValue::add(lhs, rhs).unwrap(),
                     "-" => TypedValue::subtract(lhs, rhs).unwrap(),
@@ -263,11 +267,13 @@ where
                 let function_name = name.source(self.source);
                 let mut args = Vec::new();
                 for arg in arguments {
-                    args.push(self.visit_expression(arg));
+                    args.push(self.visit_expression(arg)?);
                 }
 
                 self.context.call_function(function_name, &args)
             }
-        }
+        };
+
+        Ok(result)
     }
 }
