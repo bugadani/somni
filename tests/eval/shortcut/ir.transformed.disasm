@@ -1,7 +1,6 @@
 Globals:
   do_not_touch = global int
 
-Functions:
 Function: main
 block 0
   var return_value: int = None
@@ -75,6 +74,7 @@ block 9
   free(temp16)
   free(temp15)
   -> block 8
+
 Function: increment
 block 0
   var return_value: bool = None
@@ -93,3 +93,4 @@ block 0
 
 block 1
   -> return
+

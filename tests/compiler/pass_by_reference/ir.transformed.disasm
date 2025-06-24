@@ -1,6 +1,5 @@
 Globals:
 
-Functions:
 Function: pass_by_reference
 block 0
   var return_value: signed = None
@@ -23,6 +22,7 @@ block 0
 
 block 1
   -> return
+
 Function: take_by_reference
 block 0
   var return_value: signed = None
@@ -36,3 +36,4 @@ block 0
 
 block 1
   -> return
+

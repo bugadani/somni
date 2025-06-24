@@ -1,6 +1,5 @@
 Globals:
 
-Functions:
 Function: main
 block 0
   var return_value: int = None
@@ -35,3 +34,4 @@ block 3
   free(temp8)
   free(x)
   -> block 2
+

@@ -4,7 +4,6 @@ Globals:
   global_var_negative = global signed
   global_var_signed = global signed
 
-Functions:
 Function: add
 block 0
   var return_value: int = None
@@ -20,3 +19,4 @@ block 0
 
 block 1
   -> return
+

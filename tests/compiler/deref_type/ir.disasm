@@ -1,6 +1,5 @@
 Globals:
 
-Functions:
 Function: main
 block 0
   var return_value: int = None
@@ -36,3 +35,4 @@ block 2
 
 block 3
   -> block 1
+

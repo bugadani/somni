@@ -8,6 +8,7 @@ pub struct Program {
 #[derive(Debug)]
 pub enum Item {
     Function(Function),
+    ExternFunction(ExternalFunction),
     GlobalVariable(GlobalVariable),
 }
 
@@ -33,6 +34,18 @@ impl GlobalVariable {
 pub struct ReturnDecl {
     pub return_token: Token,
     pub return_type: TypeHint,
+}
+
+#[derive(Debug)]
+pub struct ExternalFunction {
+    pub extern_fn_token: Token,
+    pub fn_token: Token,
+    pub name: Token,
+    pub opening_paren: Token,
+    pub arguments: Vec<FunctionArgument>,
+    pub closing_paren: Token,
+    pub return_decl: Option<ReturnDecl>,
+    pub semicolon: Token,
 }
 
 #[derive(Debug)]

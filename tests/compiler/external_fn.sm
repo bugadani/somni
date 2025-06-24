@@ -1,0 +1,5 @@
+extern fn bar() -> string;
+
+fn foo() -> string {
+    return bar();
+}

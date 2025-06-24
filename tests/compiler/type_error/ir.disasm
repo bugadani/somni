@@ -1,6 +1,5 @@
 Globals:
 
-Functions:
 Function: f
 block 0
   var return_value: void = None
@@ -9,6 +8,7 @@ block 0
 
 block 1
   -> return
+
 Function: foo
 block 0
   var return_value: string = None
@@ -49,3 +49,4 @@ block 2
 
 block 3
   -> block 1
+

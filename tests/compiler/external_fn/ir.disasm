@@ -1,0 +1,27 @@
+Globals:
+
+Function: bar
+  External function
+
+Function: foo
+block 0
+  var return_value: string = None
+  var temp1: void = None
+  var temp2: void = None
+  temp2 = call bar()
+  temp1 = temp2
+  free(temp2)
+  return_value = temp1
+  free(temp1)
+  free(return_value)
+  -> block 2
+
+block 1
+  -> return
+
+block 2
+  -> block 1
+
+block 3
+  -> block 1
+

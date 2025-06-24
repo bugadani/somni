@@ -1,6 +1,5 @@
 Globals:
 
-Functions:
 Function: loopy
 block 0
   var return_value: int = None
@@ -75,3 +74,4 @@ block 10
   free(temp14)
   free(temp11)
   -> block 3
+

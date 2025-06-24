@@ -4,8 +4,9 @@
 //!
 //! ```text
 //! program -> item* EOF;
-//! item -> function | global ; // TODO types.
+//! item -> function | global | extern_fn; // TODO types.
 //!
+//! extern_fn -> 'extern' 'fn' identifier '(' function_argument ( ',' function_argument )* ','? ')' return_decl? ;
 //! global -> 'var' identifier ':' type '=' static_initializer ';' ;
 //!
 //! static_initializer -> literal ; // TODO: const eval expressions
@@ -47,9 +48,9 @@ pub mod ast;
 use std::num::ParseIntError;
 
 use crate::ast::{
-    Body, Break, Continue, Else, EmptyReturn, Expression, Function, FunctionArgument,
-    GlobalVariable, If, Item, Literal, LiteralValue, Loop, Program, ReturnDecl, ReturnWithValue,
-    Statement, TypeHint, VariableDefinition,
+    Body, Break, Continue, Else, EmptyReturn, Expression, ExternalFunction, Function,
+    FunctionArgument, GlobalVariable, If, Item, Literal, LiteralValue, Loop, Program, ReturnDecl,
+    ReturnWithValue, Statement, TypeHint, VariableDefinition,
 };
 use somni_lexer::{Location, Token, TokenKind};
 
@@ -82,6 +83,9 @@ impl Item {
         if let Some(global_var) = GlobalVariable::try_parse(stream)? {
             return Ok(Item::GlobalVariable(global_var));
         }
+        if let Some(function) = ExternalFunction::try_parse(stream)? {
+            return Ok(Item::ExternFunction(function));
+        }
         if let Some(function) = Function::try_parse(stream)? {
             return Ok(Item::Function(function));
         }
@@ -110,6 +114,63 @@ impl GlobalVariable {
             type_token,
             equals_token,
             initializer,
+            semicolon,
+        }))
+    }
+}
+
+impl ExternalFunction {
+    fn try_parse<'s>(stream: &mut TokenStream<'s>) -> Result<Option<Self>, ParserError> {
+        let Some(extern_fn_token) = stream.take_match(TokenKind::Identifier, &["extern"]) else {
+            return Ok(None);
+        };
+        let Some(fn_token) = stream.take_match(TokenKind::Identifier, &["fn"]) else {
+            return Ok(None);
+        };
+
+        let name = stream.expect_match(TokenKind::Identifier, &[])?;
+        let opening_paren = stream.expect_match(TokenKind::Symbol, &["("])?;
+
+        let mut arguments = Vec::new();
+        while let Some(arg_name) = stream.take_match(TokenKind::Identifier, &[]) {
+            let colon = stream.expect_match(TokenKind::Symbol, &[":"])?;
+            let reference_token = stream.take_match(TokenKind::Symbol, &["&"]);
+            let type_token = TypeHint::parse(stream)?;
+
+            arguments.push(FunctionArgument {
+                name: arg_name,
+                colon,
+                reference_token,
+                arg_type: type_token,
+            });
+
+            if stream.take_match(TokenKind::Symbol, &[","]).is_none() {
+                break;
+            }
+        }
+
+        let closing_paren = stream.expect_match(TokenKind::Symbol, &[")"])?;
+
+        let return_decl = if let Some(return_token) = stream.take_match(TokenKind::Symbol, &["->"])
+        {
+            Some(ReturnDecl {
+                return_token,
+                return_type: TypeHint::parse(stream)?,
+            })
+        } else {
+            None
+        };
+
+        let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
+
+        Ok(Some(ExternalFunction {
+            extern_fn_token,
+            fn_token,
+            name,
+            opening_paren,
+            arguments,
+            closing_paren,
+            return_decl,
             semicolon,
         }))
     }

@@ -1,6 +1,5 @@
 Globals:
 
-Functions:
 Function: take_by_reference
 block 0
   var return_value: void = None
@@ -20,6 +19,7 @@ block 0
 
 block 1
   -> return
+
 Function: main
 block 0
   var return_value: int = None
@@ -52,3 +52,4 @@ block 2
 
 block 3
   -> block 1
+

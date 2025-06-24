@@ -141,6 +141,7 @@ impl<'a> TestContext<'a> {
         self.stderr().exists()
     }
 
+    #[track_caller]
     fn handle_error<T>(&self, failure: &str, err: CompileError<'_>) -> Option<T> {
         self.handle_error_string(failure, format!("{err:?}"));
         None
@@ -150,6 +151,7 @@ impl<'a> TestContext<'a> {
         std::env::var("BLESS").as_deref() == Ok("1")
     }
 
+    #[track_caller]
     fn handle_error_string(&self, failure: &str, error: String) {
         let error = strip_ansi(error);
         if self.is_blessed() {

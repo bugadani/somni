@@ -1,0 +1,4 @@
+Function foo(...) -> string (stack: 24)
+  0000: call bar(?) -> String with sp=Local(16)
+  0001: copy Local(0) = Local(16)
+  0002: return

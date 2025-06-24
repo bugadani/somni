@@ -284,10 +284,14 @@ pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), Com
 
     // Remove unnecessary assignments (assignments without reads after them).
     for func in ir.functions.values_mut() {
+        let Some(implem) = func.implementation.as_mut() else {
+            continue;
+        };
+
         // For now we only optimize variables that are declared AND freed in the same block.
         // This is way too conservative, but relaxing it would require a figuring out loops.
         let mut relevant_variables_in_block = HashMap::new();
-        for (block_idx, block) in func.blocks.iter().enumerate() {
+        for (block_idx, block) in implem.blocks.iter().enumerate() {
             let mut declared = HashSet::new();
             let mut freed = HashSet::new();
             for instruction in &block.instructions {
@@ -313,7 +317,7 @@ pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), Com
             );
         }
 
-        propagate_destination(func, &relevant_variables_in_block);
+        propagate_destination(implem, &relevant_variables_in_block);
     }
     // Remove unused variables.
 
@@ -325,8 +329,11 @@ pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), Com
 fn bypass_redundant_jump_blocks(func: &mut ir::Function) {
     // We will keep track of replacements for blocks that are bypassed.
     let mut replacements = HashMap::new();
+    let Some(implem) = func.implementation.as_mut() else {
+        return;
+    };
 
-    for (index, block) in func.blocks.iter().enumerate() {
+    for (index, block) in implem.blocks.iter().enumerate() {
         if let ir::Termination::Jump { to, .. } = block.terminator {
             // If the block only contains a jump, we can bypass it.
             if block.instructions.is_empty() {
@@ -346,14 +353,14 @@ fn bypass_redundant_jump_blocks(func: &mut ir::Function) {
 
     let remap = |idx: &BlockIndex| replacements.get(idx).copied().unwrap_or(*idx);
 
-    remap_block_idxs(func, remap);
+    remap_block_idxs(implem, remap);
 }
 
-fn remap_block_idxs<F>(func: &mut ir::Function, remap: F)
+fn remap_block_idxs<F>(implem: &mut ir::FunctionImplementation, remap: F)
 where
     F: Fn(&BlockIndex) -> BlockIndex,
 {
-    for block in &mut func.blocks {
+    for block in &mut implem.blocks {
         match &mut block.terminator {
             ir::Termination::Jump { to, .. } => *to = remap(to),
             ir::Termination::If {
@@ -370,7 +377,10 @@ where
 }
 
 fn remove_unreachable_blocks(func: &mut ir::Function) {
-    let mut reachable = vec![false; func.blocks.len()];
+    let Some(implem) = func.implementation.as_mut() else {
+        return;
+    };
+    let mut reachable = vec![false; implem.blocks.len()];
     let mut stack = vec![BlockIndex(0)]; // Start with the first block.
 
     while let Some(BlockIndex(block_index)) = stack.pop() {
@@ -379,7 +389,7 @@ fn remove_unreachable_blocks(func: &mut ir::Function) {
         }
         reachable[block_index] = true;
 
-        let block = &func.blocks[block_index];
+        let block = &implem.blocks[block_index];
 
         match block.terminator {
             ir::Termination::Return { .. } => {}
@@ -404,11 +414,11 @@ fn remove_unreachable_blocks(func: &mut ir::Function) {
         BlockIndex(new_idx)
     };
 
-    remap_block_idxs(func, remap);
+    remap_block_idxs(implem, remap);
 
     // Remove unreachable blocks.
     let mut current = 0;
-    func.blocks.retain(|_| {
+    implem.blocks.retain(|_| {
         let retain = reachable[current];
         current += 1;
         retain
@@ -416,11 +426,14 @@ fn remove_unreachable_blocks(func: &mut ir::Function) {
 }
 
 fn merge_identical_blocks(func: &mut ir::Function) {
-    let mut identical_to = (0..).take(func.blocks.len()).collect::<Vec<_>>();
+    let Some(implem) = func.implementation.as_mut() else {
+        return;
+    };
+    let mut identical_to = (0..).take(implem.blocks.len()).collect::<Vec<_>>();
 
-    for (idx, block) in func.blocks.iter().enumerate() {
+    for (idx, block) in implem.blocks.iter().enumerate() {
         // Check if this block is identical to any previous block.
-        for (prev_idx, prev_block) in func.blocks.iter().enumerate().take(idx) {
+        for (prev_idx, prev_block) in implem.blocks.iter().enumerate().take(idx) {
             if block == prev_block {
                 // Mark this block as identical to the previous one.
                 identical_to[idx] = prev_idx;
@@ -434,7 +447,7 @@ fn merge_identical_blocks(func: &mut ir::Function) {
         BlockIndex(identical_to[idx.0])
     };
 
-    remap_block_idxs(func, remap);
+    remap_block_idxs(implem, remap);
 
     // remove_unreachable_blocks will trim the blocks
 }
@@ -476,9 +489,12 @@ fn propagate_variable_types_inner<'s>(
     globals: &IndexMap<StringIndex, ir::GlobalVariableInfo>,
     signatures: &HashMap<StringIndex, FunctionSignature>,
 ) -> Result<(), CompileError<'s>> {
-    let mut resolver = TypeResolver::new(source, globals, &mut function.variables);
+    let Some(implem) = function.implementation.as_mut() else {
+        return Ok(());
+    };
+    let mut resolver = TypeResolver::new(source, globals, &mut implem.variables);
 
-    for block in &mut function.blocks {
+    for block in &mut implem.blocks {
         for instruction in &block.instructions {
             match &instruction.instruction {
                 ir::Ir::Declare(dst, init_value) => {
@@ -593,10 +609,10 @@ fn propagate_variable_types_inner<'s>(
 }
 
 fn propagate_destination(
-    func: &mut ir::Function,
+    implem: &mut ir::FunctionImplementation,
     variables_in_block: &HashMap<usize, HashSet<LocalVariableIndex>>,
 ) {
-    for (block_idx, block) in func.blocks.iter_mut().enumerate() {
+    for (block_idx, block) in implem.blocks.iter_mut().enumerate() {
         let variables_in_block = &variables_in_block[&block_idx];
         for idx in (1..block.instructions.len()).rev() {
             if let ir::Ir::Assign(dst, src) = block.instructions[idx].instruction {

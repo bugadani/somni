@@ -531,11 +531,18 @@ impl GlobalVariable {
 
 #[derive(Clone, Debug)]
 pub struct Function {
-    pub name: StringIndex, // Name of the function
-    pub entry_point: CodeAddress,
-    pub stack_size: usize,
+    pub name: StringIndex,
     pub return_type: Type,
     pub arguments: Vec<(MemoryAddress, Type)>,
+    pub entry_point: CodeAddress,
+    pub stack_size: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExternalFunction {
+    pub name: StringIndex,
+    pub return_type: Type,
+    pub arguments: Vec<Type>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -551,6 +558,7 @@ pub struct Program {
     pub code: Vec<Instruction>,
     pub globals: IndexMap<StringIndex, GlobalVariable>,
     pub functions: IndexMap<StringIndex, Function>,
+    pub external_functions: IndexMap<StringIndex, ExternalFunction>,
     pub debug_info: DebugInfo,
 }
 
@@ -608,6 +616,7 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
             code: Vec::new(),
             globals: IndexMap::new(),
             functions: IndexMap::new(),
+            external_functions: IndexMap::new(),
             debug_info: DebugInfo {
                 source: source.to_string(),
                 strings: ir.strings.clone(),
@@ -666,19 +675,34 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
     }
 
     for (name, func) in ir.functions.iter() {
+        if func.implementation.is_none() {
+            this.program.external_functions.insert(
+                *name,
+                ExternalFunction {
+                    name: *name,
+                    return_type: Type::from(func.return_type),
+                    arguments: func.arguments.iter().map(|arg| Type::from(*arg)).collect(),
+                },
+            );
+            continue;
+        }
         this.program.functions.insert(
             *name,
             Function {
                 name: *name,
-                entry_point: CodeAddress(0),
-                stack_size: 0,
                 return_type: Type::from(func.return_type),
                 arguments: vec![],
+                entry_point: CodeAddress(0),
+                stack_size: 0,
             },
         );
     }
 
     for (name, func) in ir.functions.iter() {
+        if func.implementation.is_none() {
+            continue;
+        }
+
         let entry_point = CodeAddress(this.program.code.len());
 
         let mut function_compiler = FunctionCompiler {
@@ -709,10 +733,10 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
             *name,
             Function {
                 name: *name,
-                entry_point,
-                stack_size,
                 return_type: Type::from(func.return_type),
                 arguments,
+                entry_point,
+                stack_size,
             },
         );
     }
@@ -735,6 +759,9 @@ struct FunctionCompiler<'s, 'p> {
 
 impl<'s> FunctionCompiler<'s, '_> {
     fn compile(&mut self) -> Result<(), CompileError<'s>> {
+        let Some(implem) = self.func.implementation.as_ref() else {
+            return Ok(());
+        };
         let mut blocks: Vec<(usize, usize, Option<StackAllocator>)> = vec![(0, 0, None)];
 
         while let Some((current_block_idx, additional, variables)) = blocks.pop() {
@@ -768,7 +795,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                 }
             }
 
-            let block = &self.func.blocks[current_block_idx];
+            let block = &implem.blocks[current_block_idx];
             if address.is_none() {
                 self.codegen_block(block)?;
             }
@@ -896,7 +923,12 @@ impl<'s> FunctionCompiler<'s, '_> {
                                 .expect("Variable not found in stack allocator"),
                         ),
                     );
-                } else {
+                } else if self
+                    .compiler
+                    .program
+                    .external_functions
+                    .contains_key(fn_name)
+                {
                     self.push_instruction(
                         location,
                         Instruction::CallNamed(
@@ -906,6 +938,15 @@ impl<'s> FunctionCompiler<'s, '_> {
                                 .expect("Variable not found in stack allocator"),
                         ),
                     );
+                } else {
+                    return Err(CompileError {
+                        source: self.source,
+                        location: location,
+                        error: format!(
+                            "Call to underclared function {}",
+                            self.compiler.program.debug_info.strings.lookup(*fn_name)
+                        ),
+                    });
                 }
             }
             ir::Ir::BinaryOperator(op, dst, lhs, rhs) => {
@@ -1016,6 +1057,9 @@ impl<'s> FunctionCompiler<'s, '_> {
         match variable {
             VariableIndex::Local(index) | VariableIndex::Temporary(index) => self
                 .func
+                .implementation
+                .as_ref()
+                .unwrap()
                 .variables
                 .variable(index)
                 .map(|v| Type::from(v.ty.unwrap_or(ir::Variable::Value(ir::Type::Void)))), // TODO: revisit after removing unused variables, there should be no unresolved types

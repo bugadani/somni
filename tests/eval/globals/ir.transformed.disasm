@@ -2,7 +2,6 @@ Globals:
   n = global int
   m = global int
 
-Functions:
 Function: double
 block 0
   var return_value: void = None
@@ -17,6 +16,7 @@ block 0
 
 block 1
   -> return
+
 Function: doubled
 block 0
   var return_value: int = None
@@ -34,3 +34,4 @@ block 0
 
 block 1
   -> return
+

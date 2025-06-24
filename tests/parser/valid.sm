@@ -19,6 +19,9 @@ fn my_function(arg1: type,) -> type {}
 fn my_function(arg1: type, arg2: type) -> type {
 }
 
+// This function must be registered by the user, or it will cause an UnknownFunctionCall event.
+extern fn external_function(arg1: type, arg2: type) -> type;
+
 // Function with reference arguments
 fn my_function(
     // A comment here

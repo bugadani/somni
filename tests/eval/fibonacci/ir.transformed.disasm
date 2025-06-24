@@ -1,6 +1,5 @@
 Globals:
 
-Functions:
 Function: fib
 block 0
   var return_value: int = None
@@ -57,3 +56,4 @@ block 3
   free(n)
   free(return_value)
   -> block 1
+

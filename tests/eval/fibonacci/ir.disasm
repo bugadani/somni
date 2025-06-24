@@ -1,6 +1,5 @@
 Globals:
 
-Functions:
 Function: fib
 block 0
   var return_value: int = None
@@ -70,3 +69,4 @@ block 6
 
 block 7
   -> block 1
+

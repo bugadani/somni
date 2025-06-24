@@ -2,4 +2,3 @@ Globals:
   c = global int
   d = global int
 
-Functions:

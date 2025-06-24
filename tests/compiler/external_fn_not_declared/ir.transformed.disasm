@@ -1,0 +1,17 @@
+Globals:
+
+Function: foo
+block 0
+  var return_value: string = None
+  var temp1: string = None
+  var temp2: string = None
+  temp2 = call bar()
+  return_value = temp2
+  free(temp2)
+  free(temp1)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+

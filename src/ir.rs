@@ -9,7 +9,7 @@ use crate::{
 };
 
 use somni_lexer::{Location, Token};
-use somni_parser::ast;
+use somni_parser::ast::{self, FunctionArgument};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Value {
@@ -143,6 +143,9 @@ impl VariableIndex {
 impl LocalVariableIndex {
     fn name<'s>(&self, program: &'s Program, function: &Function) -> &'s str {
         let var = function
+            .implementation
+            .as_ref()
+            .unwrap()
             .variables
             .variable(*self)
             .expect("Local variable index out of bounds");
@@ -183,6 +186,9 @@ impl Ir {
                 "var {}: {} = {:?}",
                 program.strings.lookup(var.name),
                 function
+                    .implementation
+                    .as_ref()
+                    .unwrap()
                     .variables
                     .variable(var.index)
                     .unwrap()
@@ -341,9 +347,9 @@ impl Program {
 
         writeln!(&mut output).unwrap();
 
-        writeln!(&mut output, "Functions:").unwrap();
         for (_, function) in &self.functions {
             output.push_str(&function.print(self));
+            writeln!(&mut output).unwrap();
         }
 
         output
@@ -391,6 +397,21 @@ impl Program {
                         },
                     );
                 }
+                ast::Item::ExternFunction(function) => {
+                    let name = function.name.source(source);
+                    let name_idx = strings.intern(name);
+                    if functions.contains_key(&name_idx) {
+                        return Err(CompileError {
+                            source,
+                            location: function.name.location,
+                            error: format!("Function `{name}` is already defined"),
+                        });
+                    }
+                    functions.insert(
+                        name_idx,
+                        Function::compile_external(source, function, &mut strings)?,
+                    );
+                }
                 ast::Item::Function(function) => {
                     let name = function.name.source(source);
                     let name_idx = strings.intern(name);
@@ -426,19 +447,22 @@ impl Program {
 
 pub struct Function {
     pub name: StringIndex,
-    pub variables: ScopeData,
-    pub return_type: Type,
     pub arguments: Vec<Variable>,
+    pub return_type: Type,
+    pub implementation: Option<FunctionImplementation>,
+}
+
+pub struct FunctionImplementation {
+    pub variables: ScopeData,
     pub blocks: Vec<Block>,
 }
 
 impl Function {
     const DUMMY: Self = Function {
         name: StringIndex::dummy(),
-        variables: ScopeData::empty(),
         return_type: Type::Void,
         arguments: vec![],
-        blocks: vec![],
+        implementation: None,
     };
 
     pub fn print(&self, program: &Program) -> String {
@@ -449,33 +473,37 @@ impl Function {
             program.strings.lookup(self.name)
         )
         .unwrap();
-        for (idx, block) in self.blocks.iter().enumerate() {
-            if idx > 0 {
-                writeln!(&mut output).unwrap();
-            }
+        if let Some(implementation) = self.implementation.as_ref() {
+            for (idx, block) in implementation.blocks.iter().enumerate() {
+                if idx > 0 {
+                    writeln!(&mut output).unwrap();
+                }
 
-            writeln!(&mut output, "{:?}", BlockIndex(idx)).unwrap();
-            for instruction in &block.instructions {
-                writeln!(&mut output, "  {}", instruction.print(program, self)).unwrap();
-            }
+                writeln!(&mut output, "{:?}", BlockIndex(idx)).unwrap();
+                for instruction in &block.instructions {
+                    writeln!(&mut output, "  {}", instruction.print(program, self)).unwrap();
+                }
 
-            match block.terminator {
-                Termination::Return(_) => writeln!(&mut output, "  -> return").unwrap(),
-                Termination::Jump { to, .. } => writeln!(&mut output, "  -> {to:?}").unwrap(),
-                Termination::If {
-                    condition,
-                    then_block,
-                    else_block,
-                    ..
-                } => {
-                    let condition = condition.name(program, self);
-                    writeln!(
-                        &mut output,
-                        "  if {condition} -> {then_block:?} else {else_block:?}",
-                    )
-                    .unwrap()
+                match block.terminator {
+                    Termination::Return(_) => writeln!(&mut output, "  -> return").unwrap(),
+                    Termination::Jump { to, .. } => writeln!(&mut output, "  -> {to:?}").unwrap(),
+                    Termination::If {
+                        condition,
+                        then_block,
+                        else_block,
+                        ..
+                    } => {
+                        let condition = condition.name(program, self);
+                        writeln!(
+                            &mut output,
+                            "  if {condition} -> {then_block:?} else {else_block:?}",
+                        )
+                        .unwrap()
+                    }
                 }
             }
+        } else {
+            writeln!(&mut output, "  External function").unwrap();
         }
 
         output
@@ -513,31 +541,12 @@ impl Function {
             globals,
         };
 
-        // Check that argument names are unique.
-        let arg_names = func.arguments.iter().map(|a| a.name.source(source));
-        let mut seen_names = std::collections::HashMap::new();
-        const RESERVED_NAMES: &[&str] = &["return_value"];
-        for (idx, name) in arg_names.enumerate() {
-            if seen_names.insert(name, idx).is_some() {
-                return Err(CompileError {
-                    source,
-                    location: func.arguments[idx].name.location,
-                    error: format!("Duplicate argument name `{name}`"),
-                });
-            }
-            if RESERVED_NAMES.contains(&name) {
-                return Err(CompileError {
-                    source,
-                    location: func.arguments[idx].name.location,
-                    error: format!("Argument name `{name}` is reserved"),
-                });
-            }
-        }
+        Self::validate_arg_names(source, &func.arguments)?;
 
         // Allocate a return variable, if the function has a return type.
         let (return_type, return_token) = if let Some(return_type) = &func.return_decl {
             (
-                this.compile_type(&return_type.return_type)?,
+                FunctionCompiler::compile_type(source, &return_type.return_type)?,
                 return_type.return_type.type_name,
             )
         } else {
@@ -552,7 +561,7 @@ impl Function {
         // allocate variables for arguments
         let mut arguments = vec![];
         for argument in func.arguments.iter() {
-            let ty = this.compile_type(&argument.arg_type)?;
+            let ty = FunctionCompiler::compile_type(source, &argument.arg_type)?;
             let ty = if argument.reference_token.is_some() {
                 Variable::Reference(1, ty)
             } else {
@@ -571,9 +580,73 @@ impl Function {
             name: this.strings.intern(func.name.source(source)),
             return_type,
             arguments,
-            variables: this.variables.finalize(),
-            blocks: this.blocks.blocks,
+            implementation: Some(FunctionImplementation {
+                variables: this.variables.finalize(),
+                blocks: this.blocks.blocks,
+            }),
         })
+    }
+
+    pub fn compile_external<'s>(
+        source: &'s str,
+        func: &ast::ExternalFunction,
+        strings: &mut StringInterner,
+    ) -> Result<Function, CompileError<'s>> {
+        Self::validate_arg_names(source, &func.arguments)?;
+
+        // Allocate a return variable, if the function has a return type.
+        let return_type = if let Some(return_type) = &func.return_decl {
+            FunctionCompiler::compile_type(source, &return_type.return_type)?
+        } else {
+            Type::Void
+        };
+
+        // allocate variables for arguments
+        let mut arguments = vec![];
+        for argument in func.arguments.iter() {
+            let ty = FunctionCompiler::compile_type(source, &argument.arg_type)?;
+            let ty = if argument.reference_token.is_some() {
+                Variable::Reference(1, ty)
+            } else {
+                Variable::Value(ty)
+            };
+            arguments.push(ty);
+        }
+
+        Ok(Function {
+            name: strings.intern(func.name.source(source)),
+            return_type,
+            arguments,
+            implementation: None,
+        })
+    }
+
+    fn validate_arg_names<'s>(
+        source: &'s str,
+        arguments: &[FunctionArgument],
+    ) -> Result<(), CompileError<'s>> {
+        // Check that argument names are unique.
+        let arg_names = arguments.iter().map(|a| a.name.source(source));
+        let mut seen_names = std::collections::HashMap::new();
+        const RESERVED_NAMES: &[&str] = &["return_value"];
+        for (idx, name) in arg_names.enumerate() {
+            if seen_names.insert(name, idx).is_some() {
+                return Err(CompileError {
+                    source,
+                    location: arguments[idx].name.location,
+                    error: format!("Duplicate argument name `{name}`"),
+                });
+            }
+            if RESERVED_NAMES.contains(&name) {
+                return Err(CompileError {
+                    source,
+                    location: arguments[idx].name.location,
+                    error: format!("Argument name `{name}` is reserved"),
+                });
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -727,7 +800,10 @@ impl<'s> FunctionCompiler<'s, '_> {
 
         let name = ident.source(self.source);
         let var_ty = if let Some(type_token) = ty {
-            Some(Variable::Value(self.compile_type(type_token)?))
+            Some(Variable::Value(Self::compile_type(
+                self.source,
+                type_token,
+            )?))
         } else {
             None
         };
@@ -956,15 +1032,15 @@ impl<'s> FunctionCompiler<'s, '_> {
         Ok(())
     }
 
-    fn compile_type(&self, type_token: &ast::TypeHint) -> Result<Type, CompileError<'s>> {
-        match type_token.type_name.source(self.source) {
+    fn compile_type(source: &'s str, type_token: &ast::TypeHint) -> Result<Type, CompileError<'s>> {
+        match type_token.type_name.source(source) {
             "int" => Ok(Type::Int),
             "signed" => Ok(Type::SignedInt),
             "float" => Ok(Type::Float),
             "bool" => Ok(Type::Bool),
             "string" => Ok(Type::String),
             other => Err(CompileError {
-                source: self.source,
+                source,
                 location: type_token.type_name.location,
                 error: format!("Unknown type `{other}`"),
             }),

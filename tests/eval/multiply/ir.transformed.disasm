@@ -1,6 +1,5 @@
 Globals:
 
-Functions:
 Function: noop
 block 0
   var return_value: void = None
@@ -12,6 +11,7 @@ block 0
 
 block 1
   -> return
+
 Function: multiply
 block 0
   var return_value: int = None
@@ -84,3 +84,4 @@ block 8
   free(number)
   free(return_value)
   -> block 1
+
