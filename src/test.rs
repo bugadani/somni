@@ -59,6 +59,7 @@ pub fn run_eval_test(program: codegen::Program, path: impl AsRef<Path>) {
     );
 
     for expression in &expressions {
+        println!("Running `{expression}`");
         context.reset();
         let value = context.eval_expression(expression);
         if value != TypedValue::Bool(true) {
@@ -177,7 +178,7 @@ fn write_out_file(name: &Path, content: String) {
 
 pub fn strip_ansi(s: impl AsRef<str>) -> String {
     use ansi_parser::AnsiParser;
-    fn text_block(output: ansi_parser::Output) -> Option<&str> {
+    fn text_block(output: ansi_parser::Output<'_>) -> Option<&str> {
         match output {
             ansi_parser::Output::TextBlock(text) => Some(text),
             _ => None,

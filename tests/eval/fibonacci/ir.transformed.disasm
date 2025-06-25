@@ -22,30 +22,38 @@ block 2
   free(temp5)
   var temp7: int = None
   var temp8: int = None
-  temp8 = temp6
-  temp7 = call fib(temp8)
-  temp4 = temp7
+  var temp9: int = None
+  var temp10: int = None
+  temp10 = temp6
+  temp9 = call fib(temp10)
+  temp4 = temp9
+  free(temp10)
+  free(temp9)
   free(temp8)
   free(temp7)
   free(temp6)
-  var temp9: int = None
-  var temp10: int = Some(Int(2))
   var temp11: int = None
-  temp11 = n - temp10
-  free(temp10)
-  var temp12: int = None
+  var temp12: int = Some(Int(2))
   var temp13: int = None
-  temp13 = temp11
-  temp12 = call fib(temp13)
-  temp9 = temp12
-  free(temp13)
+  temp13 = n - temp12
   free(temp12)
-  free(temp11)
   var temp14: int = None
-  return_value = temp4 + temp9
-  free(temp4)
-  free(temp9)
+  var temp15: int = None
+  var temp16: int = None
+  var temp17: int = None
+  temp17 = temp13
+  temp16 = call fib(temp17)
+  temp11 = temp16
+  free(temp17)
+  free(temp16)
+  free(temp15)
   free(temp14)
+  free(temp13)
+  var temp18: int = None
+  return_value = temp4 + temp11
+  free(temp4)
+  free(temp11)
+  free(temp18)
   free(n)
   free(return_value)
   -> block 1

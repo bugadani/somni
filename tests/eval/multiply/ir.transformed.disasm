@@ -71,14 +71,18 @@ block 7
 
 block 8
   var temp13: void = None
-  var temp14: void = None
-  temp14 = call noop()
-  temp13 = temp14
+  var temp14: int = None
+  var temp15: int = None
+  var temp16: void = None
+  temp16 = call noop()
+  temp13 = temp16
+  free(temp16)
+  free(temp15)
   free(temp14)
   free(temp13)
-  var temp15: int = None
+  var temp17: int = None
   return_value = number * n
-  free(temp15)
+  free(temp17)
   free(add)
   free(n)
   free(number)

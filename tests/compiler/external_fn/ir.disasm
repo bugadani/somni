@@ -7,9 +7,13 @@ Function: foo
 block 0
   var return_value: string = None
   var temp1: void = None
-  var temp2: void = None
-  temp2 = call bar()
-  temp1 = temp2
+  var temp2: int = None
+  var temp3: int = None
+  var temp4: void = None
+  temp4 = call bar()
+  temp1 = temp4
+  free(temp4)
+  free(temp3)
   free(temp2)
   return_value = temp1
   free(temp1)

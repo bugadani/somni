@@ -15,7 +15,7 @@ Function multiply(...) -> int (stack: 50)
   0012: jump to 6
   0013: copy Local(0) = Local(25)
   0014: return
-  0015: call noop(..) with sp=Local(25)
-  0016: copy Local(25) = Local(25)
+  0015: call noop(..) with sp=Local(41)
+  0016: copy Local(25) = Local(41)
   0017: Local(0) = Local(8) * Local(16) (int)
   0018: jump to 14

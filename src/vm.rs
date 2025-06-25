@@ -31,32 +31,6 @@ enum EvalState {
     WaitingForFunctionResult(StringIndex, Type, MemoryAddress),
 }
 
-struct Frame {
-    program_counter: CodeAddress,
-    name: StringIndex,
-    frame_pointer: usize, // Upon call, the stack pointer is saved here.
-}
-
-impl Frame {
-    fn step(&mut self) {
-        self.program_counter += 1;
-    }
-
-    fn pc(&self) -> usize {
-        self.program_counter.0
-    }
-}
-
-impl Function {
-    fn stack_frame(&self) -> Frame {
-        Frame {
-            program_counter: self.entry_point,
-            name: self.name,
-            frame_pointer: 0, // Will be used to save callee stack pointer
-        }
-    }
-}
-
 pub trait Arguments {
     fn read(ctx: &EvalContext<'_>, sp: MemoryAddress) -> Self;
 }
@@ -111,8 +85,8 @@ pub struct EvalContext<'p> {
 
     memory: Memory,
 
-    current_frame: Frame,
-    call_stack: Vec<Frame>,
+    outer_function_name: StringIndex,
+    program_counter: CodeAddress,
 }
 
 /// Virtual memory.
@@ -305,15 +279,11 @@ impl<'p> EvalContext<'p> {
             state: EvalState::Idle,
             program,
             memory: Memory::new(),
-            call_stack: vec![],
             source,
             strings: strings.clone(),
             orig_strings: strings,
-            current_frame: Frame {
-                program_counter: CodeAddress(0),
-                name: StringIndex::dummy(), // Will be set when the first function is called
-                frame_pointer: 0,           // Will be set when the first function is called
-            },
+            outer_function_name: StringIndex::dummy(), // Will be set when the first function is called
+            program_counter: CodeAddress(0),
         }
     }
 
@@ -347,7 +317,8 @@ impl<'p> EvalContext<'p> {
                 .globals
                 .values()
                 .map(|v| v.ty().size_of())
-                .sum(),
+                .sum::<usize>()
+                + 16, // SP + PC
         );
         let mut address = 0;
         for (_, def) in self.program.globals.iter() {
@@ -373,8 +344,16 @@ impl<'p> EvalContext<'p> {
             return self.runtime_error(format!("Unknown function: {func}"));
         };
 
-        self.current_frame = function.stack_frame();
+        let sp = MemoryAddress::Global(self.memory.data.len());
+        if let Err(e) = self.store(sp - 16, 0_u64) {
+            return e;
+        }
+        if let Err(e) = self.store(sp - 8, 0_u64) {
+            return e;
+        }
 
+        self.outer_function_name = function.name;
+        self.program_counter = function.entry_point;
         self.memory.sp = self.memory.data.len();
         self.memory.allocate(function.stack_size);
 
@@ -462,7 +441,7 @@ impl<'p> EvalContext<'p> {
                 Instruction::CallNamed(function_name, ty, sp) => {
                     let Some(intrinsic) = self.intrinsics.get(&function_name) else {
                         self.state = EvalState::WaitingForFunctionResult(function_name, ty, sp);
-                        self.current_frame.step();
+                        self.program_counter += 1;
                         return EvalEvent::UnknownFunctionCall(function_name);
                     };
 
@@ -473,13 +452,22 @@ impl<'p> EvalContext<'p> {
                     }
                 }
                 Instruction::Return => {
-                    let Some(frame) = self.call_stack.pop() else {
+                    let pc = match self.load::<u64>(MemoryAddress::Global(self.memory.sp - 16)) {
+                        Ok(pc) => pc,
+                        Err(e) => return e,
+                    };
+                    let sp = match self.load::<u64>(MemoryAddress::Global(self.memory.sp - 8)) {
+                        Ok(sp) => sp,
+                        Err(e) => return e,
+                    };
+
+                    if sp == 0 {
                         // Outermost function has returned
 
                         let function = self
                             .program
                             .functions
-                            .get(&self.current_frame.name)
+                            .get(&self.outer_function_name)
                             .unwrap();
 
                         let retval = self
@@ -489,19 +477,19 @@ impl<'p> EvalContext<'p> {
                         self.state = EvalState::Running;
 
                         return EvalEvent::Complete(retval);
-                    };
-
-                    self.current_frame = frame;
-                    self.memory.sp = self.current_frame.frame_pointer;
+                    } else {
+                        self.memory.sp = sp as usize;
+                        self.program_counter = CodeAddress(pc as usize);
+                    }
                 }
                 Instruction::Jump(n) => {
-                    self.current_frame.program_counter = n;
+                    self.program_counter = n;
                     continue; // Skip the step() call below, as we already stepped forward
                 }
                 Instruction::JumpIfFalse(condition, target) => {
                     match self.load::<bool>(condition) {
                         Ok(false) => {
-                            self.current_frame.program_counter = target;
+                            self.program_counter = target;
                             continue; // Skip the step() call below, as we already stepped forward
                         }
                         Ok(true) => {}
@@ -592,7 +580,7 @@ impl<'p> EvalContext<'p> {
                 }
             }
 
-            self.current_frame.step();
+            self.program_counter += 1;
         }
     }
 
@@ -662,11 +650,42 @@ impl<'p> EvalContext<'p> {
     }
 
     pub fn print_backtrace(&self) {
-        let mut i = 1;
-        println!("Frame {i}: {}", self.string(self.current_frame.name));
-        for frame in self.call_stack.iter().rev() {
+        let mut fns = self
+            .program
+            .functions
+            .values()
+            .map(|f| (f.entry_point.0, f.name))
+            .collect::<Vec<_>>();
+
+        fns.sort_by_key(|(e, _f)| *e);
+
+        let mut prev_sp = self.memory.sp;
+        let mut i = 0;
+        while prev_sp != 0 {
             i += 1;
-            println!("Frame {i}: {}", self.string(frame.name));
+            let pc = self
+                .load::<u64>(MemoryAddress::Global(prev_sp - 16))
+                .unwrap();
+            let sp = self
+                .load::<u64>(MemoryAddress::Global(prev_sp - 8))
+                .unwrap();
+
+            let name = if sp == 0 {
+                self.string(self.outer_function_name)
+            } else {
+                let mut name = None;
+                for (ep, func) in fns.iter().copied() {
+                    if ep > pc as usize {
+                        break;
+                    }
+                    name = Some(func);
+                }
+
+                name.map(|idx| self.string(idx)).unwrap_or("<unknown>")
+            };
+
+            println!("Frame {i}: {name}");
+            prev_sp = sp as usize;
         }
     }
 
@@ -675,13 +694,12 @@ impl<'p> EvalContext<'p> {
         function: &'p Function,
         sp: MemoryAddress,
     ) -> Result<(), EvalEvent> {
-        self.current_frame.frame_pointer = self.memory.sp;
+        self.store(sp - 16, self.program_counter.0 as u64)?;
+        self.store(sp - 8, self.memory.sp as u64)?;
         self.memory.sp = self.memory.address(sp);
         // Allocate memory for the function's local variables.
         self.memory.allocate(function.stack_size);
-
-        let old_frame = std::mem::replace(&mut self.current_frame, function.stack_frame());
-        self.call_stack.push(old_frame);
+        self.program_counter = function.entry_point;
 
         Ok(())
     }
@@ -692,11 +710,11 @@ impl<'p> EvalContext<'p> {
     }
 
     fn current_instruction(&self) -> Instruction {
-        self.program.code[self.current_frame.pc()]
+        self.program.code[self.program_counter.0]
     }
 
     fn current_location(&self) -> Location {
-        let pc = self.current_frame.program_counter;
+        let pc = self.program_counter;
         self.program.debug_info.instruction_locations[pc.0]
     }
 }
@@ -733,7 +751,9 @@ impl<'s> ExprContext for EvalContext<'s> {
     fn call_function(&mut self, function_name: &str, args: &[TypedValue]) -> TypedValue {
         match self.call(function_name, &args) {
             EvalEvent::UnknownFunctionCall(fn_name) => {
-                todo!("unknown function call {:?}", self.string(fn_name))
+                println!("unknown function call {:?}", self.string(fn_name));
+                self.print_backtrace();
+                todo!();
             }
             EvalEvent::Error(e) => todo!("{e:?}"),
             EvalEvent::Complete(value) => value,

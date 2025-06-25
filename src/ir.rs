@@ -768,6 +768,33 @@ impl<'s> FunctionCompiler<'s, '_> {
         VariableIndex::Temporary(temp)
     }
 
+    fn declare_typed_temporary(
+        &mut self,
+        location: Location,
+        ty: Type,
+        allocation_method: AllocationMethod,
+    ) -> VariableIndex {
+        let temp_name = self
+            .strings
+            .intern(&format!("temp{}", self.variables.len()));
+        let temp = self
+            .variables
+            .declare_variable(temp_name, Some(Variable::Value(ty)));
+        self.blocks.push_instruction(
+            location,
+            Ir::Declare(
+                VariableDeclaration {
+                    index: temp,
+                    name: temp_name,
+                    allocation_method,
+                },
+                None,
+            ),
+        );
+
+        VariableIndex::Temporary(temp)
+    }
+
     fn compile_statement(&mut self, statement: &ast::Statement) -> Result<(), CompileError<'s>> {
         match statement {
             ast::Statement::VariableDefinition(variable_def) => {
@@ -1337,9 +1364,15 @@ impl<'s> FunctionCompiler<'s, '_> {
         let function_index = self.strings.intern(function_name);
 
         // Generate the instruction for the function call. Here we allocate the stack frame, copy
-        // arguments into it, then generate the call.
+        // arguments into it, then generate the call. The two temporaries above the stack pointer are
+        // used by the call/return instructions. This way the stack pointer
+        // still points at the return value.
         // TODO: would be better to declare signature as a structure so that we don't have to
-        // treat allocations differently.
+        // treat call-related allocations differently.
+        let _pc_temporary =
+            self.declare_typed_temporary(name.location, Type::Int, AllocationMethod::TopOfStack);
+        let _sp_temporary =
+            self.declare_typed_temporary(name.location, Type::Int, AllocationMethod::TopOfStack);
         let retval_temporary =
             self.declare_temporary(name.location, Value::Void, AllocationMethod::TopOfStack);
         let arg_temporaries = arguments

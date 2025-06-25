@@ -26,11 +26,15 @@ block 0
   z = temp6
   free(temp6)
   var temp7: void = None
-  var temp8: void = None
-  var temp9: void = None
-  temp9 = x
-  temp8 = call f(temp9)
-  temp7 = temp8
+  var temp8: int = None
+  var temp9: int = None
+  var temp10: void = None
+  var temp11: void = None
+  temp11 = x
+  temp10 = call f(temp11)
+  temp7 = temp10
+  free(temp11)
+  free(temp10)
   free(temp9)
   free(temp8)
   free(temp7)

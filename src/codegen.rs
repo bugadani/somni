@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, hash_map::Entry},
     fmt::Display,
-    ops::{Add, AddAssign},
+    ops::{Add, AddAssign, Sub},
 };
 
 use indexmap::IndexMap;
@@ -196,6 +196,17 @@ impl Add<usize> for MemoryAddress {
         match self {
             MemoryAddress::Global(addr) => MemoryAddress::Global(addr + rhs),
             MemoryAddress::Local(addr) => MemoryAddress::Local(addr + rhs),
+        }
+    }
+}
+
+impl Sub<usize> for MemoryAddress {
+    type Output = MemoryAddress;
+
+    fn sub(self, rhs: usize) -> Self::Output {
+        match self {
+            MemoryAddress::Global(addr) => MemoryAddress::Global(addr - rhs),
+            MemoryAddress::Local(addr) => MemoryAddress::Local(addr - rhs),
         }
     }
 }

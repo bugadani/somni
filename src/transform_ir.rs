@@ -279,7 +279,6 @@ pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), Com
         merge_identical_blocks(func);
         remove_unreachable_blocks(func);
     }
-
     propagate_variable_types(source, ir)?;
 
     // Remove unnecessary assignments (assignments without reads after them).

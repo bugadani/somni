@@ -7,11 +7,15 @@ block 0
   var temp2: void = None
   var temp3: void = None
   temp3 = &x
-  var temp4: void = None
-  var temp5: void = None
-  temp5 = temp3
-  temp4 = call take_by_reference(temp5)
-  temp2 = temp4
+  var temp4: int = None
+  var temp5: int = None
+  var temp6: void = None
+  var temp7: void = None
+  temp7 = temp3
+  temp6 = call take_by_reference(temp7)
+  temp2 = temp6
+  free(temp7)
+  free(temp6)
   free(temp5)
   free(temp4)
   free(temp3)
