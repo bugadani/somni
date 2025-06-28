@@ -146,6 +146,19 @@ impl Memory {
         Ok(TypedValue::from_typed_bytes(return_type, data))
     }
 
+    fn copy(
+        &mut self,
+        addr: MemoryAddress,
+        dst: MemoryAddress,
+        amount: usize,
+    ) -> Result<(), String> {
+        let from = self.address(addr);
+        let to = self.address(dst);
+
+        self.data.copy_within(from..from + amount, to);
+        Ok(())
+    }
+
     fn as_mut(&mut self, addr: Range<MemoryAddress>) -> Result<&mut [u8], String> {
         let from = self.address(addr.start);
         let to = self.address(addr.end);
@@ -553,14 +566,14 @@ impl<'p> EvalContext<'p> {
                 let address = self.load::<u64>(lhs)?;
                 let address = MemoryAddress::Global(address as usize);
 
-                self.copy(ty, address, dst)?;
+                self.copy(address, dst, ty.size_of())?;
             }
-            Instruction::Copy(ty, dst, from) => self.copy(ty, from, dst)?,
+            Instruction::Copy(dst, from, amount) => self.copy(from, dst, amount as usize)?,
             Instruction::DerefCopy(ty, addr, from) => {
                 let dst = self.load::<u64>(addr)?;
                 let dst = MemoryAddress::Global(dst as usize);
 
-                self.copy(ty, from, dst)?;
+                self.copy(from, dst, ty.size_of())?;
             }
             Instruction::LoadValue(addr, value) => self.store_typed(addr, value)?,
         }
@@ -601,15 +614,15 @@ impl<'p> EvalContext<'p> {
         Ok(V::from_bytes(&bytes))
     }
 
-    fn load_typed(&self, addr: MemoryAddress, ty: Type) -> Result<TypedValue, EvalEvent> {
+    fn copy(
+        &mut self,
+        addr: MemoryAddress,
+        dst: MemoryAddress,
+        amount: usize,
+    ) -> Result<(), EvalEvent> {
         self.memory
-            .load_typed(addr, ty)
-            .map_err(|e| self.runtime_error(format_args!("Failed to load value: {e}")))
-    }
-
-    fn copy(&mut self, ty: Type, addr: MemoryAddress, dst: MemoryAddress) -> Result<(), EvalEvent> {
-        self.load_typed(addr, ty)
-            .and_then(|value| self.store_typed(dst, value))
+            .copy(addr, dst, amount)
+            .map_err(|e| self.runtime_error(format_args!("Failed to copy value: {e}")))
     }
 
     pub fn unknown_call_args<A: Arguments>(&self) -> Option<A> {

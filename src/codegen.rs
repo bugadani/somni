@@ -86,7 +86,7 @@ pub enum Instruction {
     Return,
     Jump(CodeAddress),
     JumpIfFalse(MemoryAddress, CodeAddress),
-    Copy(Type, MemoryAddress, MemoryAddress),
+    Copy(MemoryAddress, MemoryAddress, u32), // number of bytes
     DerefCopy(Type, MemoryAddress, MemoryAddress),
     LoadValue(MemoryAddress, TypedValue),
     Call(usize, MemoryAddress),
@@ -119,7 +119,7 @@ impl Instruction {
             Instruction::JumpIfFalse(addr, address) => {
                 format!("if {:?} == false jump to {}", addr, address.0)
             }
-            Instruction::Copy(_, dst, src) => format!("copy {dst:?} = {src:?}"),
+            Instruction::Copy(dst, src, _) => format!("copy {dst:?} = {src:?}"),
             Instruction::DerefCopy(_, dst, src) => format!("copy *{dst:?} = {src:?}"),
             Instruction::LoadValue(dst, value) => format!("load {dst:?} = {value:?}"),
             Instruction::Call(fn_index, stack_frame) => {
@@ -905,7 +905,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                     .address_of_variable(*src)
                     .expect("Variable not found in stack allocator");
 
-                self.push_instruction(location, Instruction::Copy(ty, dst, src));
+                self.push_instruction(location, Instruction::Copy(dst, src, ty.size_of() as u32));
             }
             ir::Ir::DerefAssign(dst, src) => {
                 let ty = self
