@@ -155,6 +155,21 @@ impl Memory {
     }
 }
 
+macro_rules! dispatch_type {
+    ($op:ident, $pat:tt => $code:tt) => {{
+        macro_rules! inner { $pat => $code; }
+
+        match $op {
+            codegen::Type::Int => inner!(u64),
+            codegen::Type::SignedInt => inner!(i64),
+            codegen::Type::Float => inner!(f64),
+            codegen::Type::Bool => inner!(bool),
+            codegen::Type::String => inner!(StringIndex),
+            codegen::Type::Void => inner!(()),
+        }
+    }};
+}
+
 macro_rules! for_each_binary_operator {
     ($pat:tt => $code:tt) => {
         macro_rules! inner { $pat => $code; }
@@ -181,6 +196,7 @@ macro_rules! for_each_binary_operator {
 macro_rules! dispatch_binary_operator {
     ($op:ident, $pat:tt => $code:tt) => {{
         macro_rules! inner { $pat => $code; }
+
         match $op {
             codegen::BinaryOperator::TestLessThan => inner!(less_than),
             codegen::BinaryOperator::TestLessThanOrEqual => inner!(less_than_or_equal),
@@ -200,7 +216,7 @@ macro_rules! dispatch_binary_operator {
 }
 
 macro_rules! for_each_unary_operator {
-    ( $pat:tt => $code:tt) => {
+    ($pat:tt => $code:tt) => {
         macro_rules! inner { $pat => $code; }
 
         inner!(codegen::UnaryOperator::Negate, negate);
@@ -211,6 +227,7 @@ macro_rules! for_each_unary_operator {
 macro_rules! dispatch_unary_operator {
     ($op:ident, $pat:tt => $code:tt) => {{
         macro_rules! inner { $pat => $code; }
+
         match $op {
             codegen::UnaryOperator::Negate => inner!(negate),
             codegen::UnaryOperator::Not => inner!(not),
@@ -260,16 +277,9 @@ for_each_binary_operator!(
                 lhs: MemoryAddress,
                 rhs: MemoryAddress,
             ) -> Result<(), EvalEvent> {
-                match self {
-                    codegen::Type::Int => Self::binary_operator(ctx, dst, lhs, rhs, u64::$op),
-                    codegen::Type::SignedInt => Self::binary_operator(ctx, dst, lhs, rhs, i64::$op),
-                    codegen::Type::Float => Self::binary_operator(ctx, dst, lhs, rhs, f64::$op),
-                    codegen::Type::Bool => Self::binary_operator(ctx, dst, lhs, rhs, bool::$op),
-                    codegen::Type::String => {
-                        Self::binary_operator(ctx, dst, lhs, rhs, StringIndex::$op)
-                    }
-                    codegen::Type::Void => Self::binary_operator(ctx, dst, lhs, rhs, <()>::$op),
-                }
+                dispatch_type!(self, ($ty:ty) => {
+                    Self::binary_operator(ctx, dst, lhs, rhs, <$ty>::$op)
+                })
             }
         }
     }
@@ -283,26 +293,9 @@ for_each_unary_operator!(
                 dst: MemoryAddress,
                 operand: MemoryAddress,
             ) -> Result<(), EvalEvent> {
-                match self {
-                    codegen::Type::Int => {
-                        Self::unary_operator(ctx, dst, operand, <u64 as ValueType>::$op)
-                    }
-                    codegen::Type::SignedInt => {
-                        Self::unary_operator(ctx, dst, operand, <i64 as ValueType>::$op)
-                    }
-                    codegen::Type::Float => {
-                        Self::unary_operator(ctx, dst, operand, <f64 as ValueType>::$op)
-                    }
-                    codegen::Type::Bool => {
-                        Self::unary_operator(ctx, dst, operand, <bool as ValueType>::$op)
-                    }
-                    codegen::Type::String => {
-                        Self::unary_operator(ctx, dst, operand, <StringIndex as ValueType>::$op)
-                    }
-                    codegen::Type::Void => {
-                        Self::unary_operator(ctx, dst, operand, <() as ValueType>::$op)
-                    }
-                }
+                dispatch_type!(self, ($ty:ty) => {
+                    Self::unary_operator(ctx, dst, operand, <$ty>::$op)
+                })
             }
         }
     }
