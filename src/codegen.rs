@@ -472,7 +472,6 @@ pub enum Type {
     Float,
     Bool,
     String,
-    Address,
 }
 impl Type {
     pub fn size_of(&self) -> usize {
@@ -483,7 +482,6 @@ impl Type {
             Type::Float => <f64 as ValueType>::BYTES,
             Type::Bool => <bool as ValueType>::BYTES,
             Type::String => <StringIndex as ValueType>::BYTES,
-            Type::Address => <u64 as ValueType>::BYTES, // Assuming address is represented as u64
         }
     }
 }
@@ -505,7 +503,7 @@ impl From<ir::Variable> for Type {
     fn from(ty: ir::Variable) -> Self {
         match ty {
             ir::Variable::Value(t) => Self::from(t),
-            ir::Variable::Reference(_, _) => Type::Address,
+            ir::Variable::Reference(_, _) => Type::Int,
         }
     }
 }
@@ -519,7 +517,6 @@ impl Display for Type {
             Type::Bool => write!(f, "bool"),
             Type::String => write!(f, "string"),
             Type::Float => write!(f, "float"),
-            Type::Address => write!(f, "address"),
         }
     }
 }

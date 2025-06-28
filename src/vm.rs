@@ -172,7 +172,6 @@ macro_rules! dispatch_binary {
                 codegen::Type::String => {
                     Self::binary_operator(ctx, dst, lhs, rhs, StringIndex::$op)
                 }
-                codegen::Type::Address => Self::binary_operator(ctx, dst, lhs, rhs, u64::$op),
                 codegen::Type::Void => Self::binary_operator(ctx, dst, lhs, rhs, <()>::$op),
             }
         }
@@ -202,9 +201,6 @@ macro_rules! dispatch_unary {
                 }
                 codegen::Type::String => {
                     Self::unary_operator(ctx, dst, operand, <StringIndex as ValueType>::$op)
-                }
-                codegen::Type::Address => {
-                    Self::unary_operator(ctx, dst, operand, <u64 as ValueType>::$op)
                 }
                 codegen::Type::Void => {
                     Self::unary_operator(ctx, dst, operand, <() as ValueType>::$op)

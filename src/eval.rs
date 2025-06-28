@@ -131,7 +131,7 @@ impl TypedValue {
     pub fn from_typed_bytes(ty: Type, value: &[u8]) -> TypedValue {
         match ty {
             Type::Void => Self::Void,
-            Type::Int | Type::Address => Self::Int(<_>::from_bytes(value)),
+            Type::Int => Self::Int(<_>::from_bytes(value)),
             Type::SignedInt => Self::SignedInt(<_>::from_bytes(value)),
             Type::Float => Self::Float(<_>::from_bytes(value)),
             Type::Bool => Self::Bool(<_>::from_bytes(value)),
