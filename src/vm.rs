@@ -414,170 +414,132 @@ impl<'p> EvalContext<'p> {
         }
 
         loop {
-            let instruction = self.current_instruction();
+            if let Err(e) = self.step() {
+                return e;
+            }
+        }
+    }
 
-            // println!(
-            //     "{}",
-            //     crate::error::MarkInSource(
-            //         self.source,
-            //         self.current_location(),
-            //         &format!("Executing instruction: {instruction:?}"),
-            //         "",
-            //     )
-            // );
+    fn step(&mut self) -> Result<(), EvalEvent> {
+        let instruction = self.current_instruction();
 
-            match instruction {
-                Instruction::Call(function_index, sp) => {
-                    let (_, function) = self.program.functions.get_index(function_index).unwrap();
-                    if let Err(e) = self.call_function(function, sp) {
-                        return e;
-                    }
-                    continue; // Skip the step() call below, as we already stepped (into function)
-                }
-                Instruction::CallNamed(function_name, ty, sp) => {
-                    let Some(intrinsic) = self.intrinsics.get(&function_name) else {
-                        self.state = EvalState::WaitingForFunctionResult(function_name, ty, sp);
-                        self.program_counter += 1;
-                        return EvalEvent::UnknownFunctionCall(function_name);
-                    };
+        // println!(
+        //     "{}",
+        //     crate::error::MarkInSource(
+        //         self.source,
+        //         self.current_location(),
+        //         &format!("Executing instruction: {instruction:?}"),
+        //         "",
+        //     )
+        // );
 
-                    let first_arg = sp + ty.size_of();
-                    let retval = intrinsic.call(self, first_arg);
-                    if let Err(e) = self.store_typed(sp, retval) {
-                        return e;
-                    }
-                }
-                Instruction::Return => {
-                    let pc = match self.load::<u64>(MemoryAddress::Global(self.memory.sp - 16)) {
-                        Ok(pc) => pc,
-                        Err(e) => return e,
-                    };
-                    let sp = match self.load::<u64>(MemoryAddress::Global(self.memory.sp - 8)) {
-                        Ok(sp) => sp,
-                        Err(e) => return e,
-                    };
+        match instruction {
+            Instruction::Call(function_index, sp) => {
+                let (_, function) = self.program.functions.get_index(function_index).unwrap();
+                self.call_function(function, sp)?;
+                return Ok(()); // Skip the step() call below, as we already stepped (into function)
+            }
+            Instruction::CallNamed(function_name, ty, sp) => {
+                let Some(intrinsic) = self.intrinsics.get(&function_name) else {
+                    self.state = EvalState::WaitingForFunctionResult(function_name, ty, sp);
+                    self.program_counter += 1;
+                    return Err(EvalEvent::UnknownFunctionCall(function_name));
+                };
 
-                    if sp == 0 {
-                        // Outermost function has returned
+                let first_arg = sp + ty.size_of();
+                let retval = intrinsic.call(self, first_arg);
+                self.store_typed(sp, retval)?;
+            }
+            Instruction::Return => {
+                let pc = self.load::<u64>(MemoryAddress::Global(self.memory.sp - 16))?;
+                let sp = self.load::<u64>(MemoryAddress::Global(self.memory.sp - 8))?;
 
-                        let function = self
-                            .program
-                            .functions
-                            .get(&self.outer_function_name)
-                            .unwrap();
+                if sp == 0 {
+                    // Outermost function has returned
 
-                        let retval = self
-                            .memory
-                            .load_typed(MemoryAddress::Local(0), function.return_type)
-                            .unwrap();
-                        self.state = EvalState::Running;
+                    let function = self
+                        .program
+                        .functions
+                        .get(&self.outer_function_name)
+                        .unwrap();
 
-                        return EvalEvent::Complete(retval);
-                    } else {
-                        self.memory.sp = sp as usize;
-                        self.program_counter = CodeAddress(pc as usize);
-                    }
-                }
-                Instruction::Jump(n) => {
-                    self.program_counter = n;
-                    continue; // Skip the step() call below, as we already stepped forward
-                }
-                Instruction::JumpIfFalse(condition, target) => {
-                    match self.load::<bool>(condition) {
-                        Ok(false) => {
-                            self.program_counter = target;
-                            continue; // Skip the step() call below, as we already stepped forward
-                        }
-                        Ok(true) => {}
-                        Err(e) => return e,
-                    }
-                }
-                Instruction::BinaryOperator {
-                    ty,
-                    operator,
-                    dst,
-                    lhs,
-                    rhs,
-                } => {
-                    let result = match operator {
-                        codegen::BinaryOperator::TestLessThan => ty.less_than(self, dst, lhs, rhs),
-                        codegen::BinaryOperator::TestLessThanOrEqual => {
-                            ty.less_than_or_equal(self, dst, lhs, rhs)
-                        }
-                        codegen::BinaryOperator::TestEquals => ty.equals(self, dst, lhs, rhs),
-                        codegen::BinaryOperator::TestNotEquals => {
-                            ty.not_equals(self, dst, lhs, rhs)
-                        }
-                        codegen::BinaryOperator::BitwiseOr => ty.bitwise_or(self, dst, lhs, rhs),
-                        codegen::BinaryOperator::BitwiseXor => ty.bitwise_xor(self, dst, lhs, rhs),
-                        codegen::BinaryOperator::BitwiseAnd => ty.bitwise_and(self, dst, lhs, rhs),
-                        codegen::BinaryOperator::ShiftLeft => ty.shift_left(self, dst, lhs, rhs),
-                        codegen::BinaryOperator::ShiftRight => ty.shift_right(self, dst, lhs, rhs),
-                        codegen::BinaryOperator::Add => ty.add(self, dst, lhs, rhs),
-                        codegen::BinaryOperator::Subtract => ty.subtract(self, dst, lhs, rhs),
-                        codegen::BinaryOperator::Multiply => ty.multiply(self, dst, lhs, rhs),
-                        codegen::BinaryOperator::Divide => ty.divide(self, dst, lhs, rhs),
-                    };
+                    let retval = self
+                        .memory
+                        .load_typed(MemoryAddress::Local(0), function.return_type)
+                        .unwrap();
+                    self.state = EvalState::Running;
 
-                    if let Err(e) = result {
-                        return e;
-                    }
-                }
-                Instruction::UnaryOperator {
-                    ty,
-                    operator,
-                    dst,
-                    op,
-                } => {
-                    let result = match operator {
-                        codegen::UnaryOperator::Negate => ty.negate(self, dst, op),
-                        codegen::UnaryOperator::Not => ty.not(self, dst, op),
-                    };
-
-                    if let Err(e) = result {
-                        return e;
-                    }
-                }
-                Instruction::AddressOf(dst, lhs) => {
-                    let value = self.memory.address(lhs) as u64;
-                    if let Err(e) = self.store_typed(dst, TypedValue::Int(value)) {
-                        return e;
-                    }
-                }
-                Instruction::Dereference(ty, dst, lhs) => {
-                    let address = match self.load::<u64>(lhs) {
-                        Ok(addr) => MemoryAddress::Global(addr as usize),
-                        Err(e) => return e,
-                    };
-
-                    if let Err(e) = self.copy(ty, address, dst) {
-                        return e;
-                    }
-                }
-                Instruction::Copy(ty, dst, from) => {
-                    if let Err(e) = self.copy(ty, from, dst) {
-                        return e;
-                    }
-                }
-                Instruction::DerefCopy(ty, addr, from) => {
-                    let dst = match self.load::<u64>(addr) {
-                        Ok(addr) => MemoryAddress::Global(addr as usize),
-                        Err(e) => return e,
-                    };
-
-                    if let Err(e) = self.copy(ty, from, dst) {
-                        return e;
-                    }
-                }
-                Instruction::LoadValue(addr, value) => {
-                    if let Err(e) = self.store_typed(addr, value) {
-                        return e;
-                    }
+                    return Err(EvalEvent::Complete(retval));
+                } else {
+                    self.memory.sp = sp as usize;
+                    self.program_counter = CodeAddress(pc as usize);
                 }
             }
+            Instruction::Jump(n) => {
+                self.program_counter = n;
+                return Ok(()); // Skip the step() call below, as we already stepped forward
+            }
+            Instruction::JumpIfFalse(condition, target) => {
+                if !self.load::<bool>(condition)? {
+                    self.program_counter = target;
+                    return Ok(()); // Skip the step() call below, as we already stepped forward
+                }
+            }
+            Instruction::BinaryOperator {
+                ty,
+                operator,
+                dst,
+                lhs,
+                rhs,
+            } => match operator {
+                codegen::BinaryOperator::TestLessThan => ty.less_than(self, dst, lhs, rhs)?,
+                codegen::BinaryOperator::TestLessThanOrEqual => {
+                    ty.less_than_or_equal(self, dst, lhs, rhs)?
+                }
+                codegen::BinaryOperator::TestEquals => ty.equals(self, dst, lhs, rhs)?,
+                codegen::BinaryOperator::TestNotEquals => ty.not_equals(self, dst, lhs, rhs)?,
+                codegen::BinaryOperator::BitwiseOr => ty.bitwise_or(self, dst, lhs, rhs)?,
+                codegen::BinaryOperator::BitwiseXor => ty.bitwise_xor(self, dst, lhs, rhs)?,
+                codegen::BinaryOperator::BitwiseAnd => ty.bitwise_and(self, dst, lhs, rhs)?,
+                codegen::BinaryOperator::ShiftLeft => ty.shift_left(self, dst, lhs, rhs)?,
+                codegen::BinaryOperator::ShiftRight => ty.shift_right(self, dst, lhs, rhs)?,
+                codegen::BinaryOperator::Add => ty.add(self, dst, lhs, rhs)?,
+                codegen::BinaryOperator::Subtract => ty.subtract(self, dst, lhs, rhs)?,
+                codegen::BinaryOperator::Multiply => ty.multiply(self, dst, lhs, rhs)?,
+                codegen::BinaryOperator::Divide => ty.divide(self, dst, lhs, rhs)?,
+            },
+            Instruction::UnaryOperator {
+                ty,
+                operator,
+                dst,
+                op,
+            } => match operator {
+                codegen::UnaryOperator::Negate => ty.negate(self, dst, op)?,
+                codegen::UnaryOperator::Not => ty.not(self, dst, op)?,
+            },
+            Instruction::AddressOf(dst, lhs) => {
+                let value = self.memory.address(lhs) as u64;
+                self.store_typed(dst, TypedValue::Int(value))?;
+            }
+            Instruction::Dereference(ty, dst, lhs) => {
+                let address = self.load::<u64>(lhs)?;
+                let address = MemoryAddress::Global(address as usize);
 
-            self.program_counter += 1;
+                self.copy(ty, address, dst)?;
+            }
+            Instruction::Copy(ty, dst, from) => self.copy(ty, from, dst)?,
+            Instruction::DerefCopy(ty, addr, from) => {
+                let dst = self.load::<u64>(addr)?;
+                let dst = MemoryAddress::Global(dst as usize);
+
+                self.copy(ty, from, dst)?;
+            }
+            Instruction::LoadValue(addr, value) => self.store_typed(addr, value)?,
         }
+
+        self.program_counter += 1;
+
+        Ok(())
     }
 
     fn store<V: ValueType>(&mut self, addr: MemoryAddress, value: V) -> Result<(), EvalEvent> {
