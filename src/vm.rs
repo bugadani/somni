@@ -738,22 +738,31 @@ impl<'s> ExprContext for EvalContext<'s> {
                 self.print_backtrace();
                 todo!();
             }
-            EvalEvent::Error(e) => todo!("{e:?}"),
+            EvalEvent::Error(e) => {
+                panic!(
+                    "{}",
+                    MarkInSource(
+                        self.source,
+                        self.current_location(),
+                        "Runtime error",
+                        &format!("{e:?}") // TODO: pretty-print this
+                    )
+                )
+            }
             EvalEvent::Complete(value) => value,
         }
     }
 
     fn address_of(&self, name: &str) -> TypedValue {
-        let name_idx = self.strings.find(name).unwrap_or_else(|| {
-            panic!("Variable '{name}' not found in program");
-        });
+        let name_idx = self
+            .strings
+            .find(name)
+            .unwrap_or_else(|| panic!("Variable '{name}' not found in program"));
         let addr = self
             .program
             .globals
             .get_index_of(&name_idx)
-            .unwrap_or_else(|| {
-                panic!("Variable '{name}' not found in program");
-            });
+            .unwrap_or_else(|| panic!("Variable '{name}' not found in program"));
         TypedValue::from(addr as u64)
     }
 }
