@@ -170,7 +170,7 @@ impl Memory {
 
 macro_rules! dispatch_type {
     ($op:ident, $pat:tt => $code:tt) => {{
-        macro_rules! inner { $pat => $code; }
+        macro_rules! inner { $pat => { $code }; }
 
         match $op {
             codegen::Type::Int => inner!(u64),
@@ -239,7 +239,7 @@ macro_rules! for_each_unary_operator {
 
 macro_rules! dispatch_unary_operator {
     ($op:ident, $pat:tt => $code:tt) => {{
-        macro_rules! inner { $pat => $code; }
+        macro_rules! inner { $pat => { $code }; }
 
         match $op {
             codegen::UnaryOperator::Negate => inner!(negate),
@@ -248,40 +248,8 @@ macro_rules! dispatch_unary_operator {
     }};
 }
 
-impl codegen::Type {
-    fn unary_operator<V: ValueType, R: ValueType>(
-        ctx: &mut EvalContext<'_>,
-        dst: MemoryAddress,
-        operand: MemoryAddress,
-        op: fn(V) -> Result<R, OperatorError>,
-    ) -> Result<(), EvalEvent> {
-        let operand = ctx.load::<V>(operand)?;
-
-        match op(operand) {
-            Ok(result) => ctx.store(dst, result),
-            Err(e) => Err(ctx.runtime_error(format!("Failed to apply operator: {e:?}"))),
-        }
-    }
-
-    fn binary_operator<V: ValueType, R: ValueType>(
-        ctx: &mut EvalContext<'_>,
-        dst: MemoryAddress,
-        lhs: MemoryAddress,
-        rhs: MemoryAddress,
-        op: fn(V, V) -> Result<R, OperatorError>,
-    ) -> Result<(), EvalEvent> {
-        let lhs = ctx.load::<V>(lhs)?;
-        let rhs = ctx.load::<V>(rhs)?;
-
-        match op(lhs, rhs) {
-            Ok(result) => ctx.store(dst, result),
-            Err(e) => Err(ctx.runtime_error(format!("Failed to apply operator: {e:?}"))),
-        }
-    }
-}
-
 for_each_binary_operator!(
-    ($_name:ty, $op:ident) => {
+    ($_name:path, $op:ident) => {
         impl codegen::Type {
             fn $op(
                 self,
@@ -291,14 +259,20 @@ for_each_binary_operator!(
                 rhs: MemoryAddress,
             ) -> Result<(), EvalEvent> {
                 dispatch_type!(self, ($ty:ty) => {
-                    Self::binary_operator(ctx, dst, lhs, rhs, <$ty>::$op)
+                    let lhs = ctx.load::<$ty>(lhs)?;
+                    let rhs = ctx.load::<$ty>(rhs)?;
+
+                    match <$ty>::$op(lhs, rhs) {
+                        Ok(result) => ctx.store(dst, result),
+                        Err(e) => Err(operator_error(ctx, e)),
+                    }
                 })
             }
         }
     }
 );
 for_each_unary_operator!(
-    ($_name:ty, $op:ident) => {
+    ($_name:path, $op:ident) => {
         impl codegen::Type {
             fn $op(
                 self,
@@ -307,12 +281,22 @@ for_each_unary_operator!(
                 operand: MemoryAddress,
             ) -> Result<(), EvalEvent> {
                 dispatch_type!(self, ($ty:ty) => {
-                    Self::unary_operator(ctx, dst, operand, <$ty>::$op)
+                    let operand = ctx.load::<$ty>(operand)?;
+
+                    match <$ty>::$op(operand) {
+                        Ok(result) => ctx.store(dst, result),
+                        Err(e) => Err(operator_error(ctx, e)),
+                    }
                 })
             }
         }
     }
 );
+
+#[cold]
+fn operator_error(ctx: &EvalContext<'_>, error: OperatorError) -> EvalEvent {
+    ctx.runtime_error(format_args!("Failed to apply operator: {error:?}"))
+}
 
 impl<'p> EvalContext<'p> {
     fn string(&self, index: StringIndex) -> &str {
