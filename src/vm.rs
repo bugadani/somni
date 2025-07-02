@@ -506,7 +506,7 @@ impl<'p> EvalContext<'p> {
                         .memory
                         .load_typed(MemoryAddress::Local(0), function.return_type)
                         .unwrap();
-                    self.state = EvalState::Running;
+                    self.state = EvalState::Idle;
 
                     return Err(EvalEvent::Complete(retval));
                 } else {

@@ -59,8 +59,15 @@ pub fn run_eval_test(program: codegen::Program, path: impl AsRef<Path>) {
     );
 
     for expression in &expressions {
+        let expression = if let Some(e) = expression.strip_prefix('+') {
+            // `//@+` preserves VM state (like changes to globals)
+            e.trim()
+        } else {
+            // `//@` resets VM state (like changes to globals)
+            context.reset();
+            expression
+        };
         println!("Running `{expression}`");
-        context.reset();
         let value = context.eval_expression(expression);
         if value != TypedValue::Bool(true) {
             ctx.handle_error_string(
