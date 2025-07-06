@@ -75,7 +75,6 @@ block 8
   var temp15: int = None
   var temp16: void = None
   temp16 = call noop()
-  temp13 = temp16
   free(temp16)
   free(temp15)
   free(temp14)

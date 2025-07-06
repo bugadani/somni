@@ -10,6 +10,5 @@ Function main(...) -> int (stack: 48)
   0007: Local(16) = &Local(8)
   0008: copy Local(40) = Local(16)
   0009: call take_by_reference(..) with sp=Local(40)
-  0010: copy Local(16) = Local(40)
-  0011: copy Local(0) = Local(8)
-  0012: return
+  0010: copy Local(0) = Local(8)
+  0011: return

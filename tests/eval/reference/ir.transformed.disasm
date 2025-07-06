@@ -36,7 +36,6 @@ block 0
   var temp8: &int = None
   temp8 = temp4
   temp7 = call take_by_reference(temp8)
-  temp3 = temp7
   free(temp8)
   free(temp7)
   free(temp6)
