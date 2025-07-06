@@ -1,4 +1,4 @@
-Function double(...) -> void (stack: 16)
+Function double(...) -> void (stack: 8)
   0000: load Local(0) = Int(2)
   0001: Global(0) = Global(0) * Local(0) (int)
   0002: return

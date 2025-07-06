@@ -4,7 +4,6 @@ Function: pass_by_reference
 block 0
   var return_value: signed = None
   var x: signed = None
-  var temp2: signed = None
   var temp3: &signed = None
   temp3 = &x
   var temp4: int = None
@@ -19,7 +18,6 @@ block 0
   free(temp5)
   free(temp4)
   free(temp3)
-  free(temp2)
   free(x)
   free(return_value)
   -> block 1
@@ -31,9 +29,7 @@ Function: take_by_reference
 block 0
   var return_value: signed = None
   var x: &signed = None
-  var temp2: signed = None
   return_value = *x
-  free(temp2)
   free(x)
   free(return_value)
   -> block 1

@@ -3,7 +3,6 @@ Globals:
 Function: foo
 block 0
   var return_value: string = None
-  var temp1: string = None
   var temp2: int = None
   var temp3: int = None
   var temp4: string = None
@@ -12,7 +11,6 @@ block 0
   free(temp4)
   free(temp3)
   free(temp2)
-  free(temp1)
   free(return_value)
   -> block 1
 
