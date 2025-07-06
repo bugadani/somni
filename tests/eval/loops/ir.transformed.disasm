@@ -3,10 +3,7 @@ Globals:
 Function: loopy
 block 0
   var return_value: int = None
-  var n: int = None
-  var temp2: int = Some(Int(7))
-  n = temp2
-  free(temp2)
+  var n: int = Some(Int(7))
   -> block 3
 
 block 1

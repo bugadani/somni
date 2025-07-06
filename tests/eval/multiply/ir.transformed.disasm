@@ -21,10 +21,7 @@ block 1
   -> return
 
 block 2
-  var acc: int = None
-  var temp5: int = Some(Int(0))
-  acc = temp5
-  free(temp5)
+  var acc: int = Some(Int(0))
   -> block 4
 
 block 3

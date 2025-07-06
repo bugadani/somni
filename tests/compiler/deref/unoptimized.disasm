@@ -1,8 +1,7 @@
 Function main(...) -> int (stack: 40)
-  0000: load Local(16) = Int(0)
-  0001: copy Local(8) = Local(16)
-  0002: Local(16) = &Local(8)
-  0003: Local(24) = &Local(16)
-  0004: Local(32) = *Local(24)
-  0005: Local(0) = *Local(32)
-  0006: return
+  0000: load Local(8) = Int(0)
+  0001: Local(16) = &Local(8)
+  0002: Local(24) = &Local(16)
+  0003: Local(32) = *Local(24)
+  0004: Local(0) = *Local(32)
+  0005: return

@@ -23,10 +23,7 @@ block 1
 Function: main
 block 0
   var return_value: int = None
-  var input: int = None
-  var temp2: int = Some(Int(5))
-  input = temp2
-  free(temp2)
+  var input: int = Some(Int(5))
   var temp4: &int = None
   temp4 = &input
   var temp5: int = None

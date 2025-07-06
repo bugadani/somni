@@ -319,6 +319,7 @@ pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), Com
         for (block_idx, block) in implem.blocks.iter_mut().enumerate() {
             let variables_in_block = &relevant_variables_in_block[&block_idx];
             propagate_destination(block, variables_in_block);
+            propagate_value(block, variables_in_block);
             remove_unused_assignments(block, variables_in_block);
             remove_unused_variables(block, variables_in_block);
         }
@@ -655,6 +656,46 @@ fn propagate_destination(block: &mut ir::Block, variables_in_block: &HashSet<Loc
             }
         }
     }
+}
+
+fn propagate_value(block: &mut ir::Block, _: &HashSet<LocalVariableIndex>) {
+    let mut candidates = HashMap::new();
+    let mut values = HashMap::new();
+    let mut to_delete = vec![];
+    for idx in 0..block.instructions.len() {
+        match block.instructions[idx].instruction {
+            ir::Ir::Declare(new, None) => {
+                candidates.insert(new.index, (idx, new));
+            }
+            ir::Ir::Declare(new, Some(value)) => {
+                values.insert(new.index, value);
+            }
+            ir::Ir::Assign(dst, src) => {
+                let Some(dst) = dst.local_index() else {
+                    continue;
+                };
+                if let Some((instruction_idx, decl)) = candidates.remove(&dst) {
+                    let Some(src) = src.local_index() else {
+                        continue;
+                    };
+                    if let Some(value) = values.get(&src) {
+                        block.instructions[instruction_idx].instruction =
+                            ir::Ir::Declare(decl, Some(*value));
+                        to_delete.push(idx);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Remove instructions
+    let mut current = 0;
+    block.instructions.retain(|_| {
+        let delete = to_delete.contains(&current);
+        current += 1;
+        !delete
+    });
 }
 
 fn remove_unused_assignments(
