@@ -1,4 +1,4 @@
-Function loopy(...) -> int (stack: 26)
+Function loopy(...) -> int (stack: 33)
   0000: load Local(16) = Int(7)
   0001: copy Local(8) = Local(16)
   0002: load Local(16) = Int(4)

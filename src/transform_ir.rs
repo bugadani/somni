@@ -319,8 +319,8 @@ pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), Com
         for (block_idx, block) in implem.blocks.iter_mut().enumerate() {
             let variables_in_block = &relevant_variables_in_block[&block_idx];
             propagate_destination(block, variables_in_block);
-            remove_unused_assignments(block, variables_in_block);
-            remove_unused_variables(block, variables_in_block);
+            //remove_unused_assignments(block, variables_in_block);
+            //remove_unused_variables(block, variables_in_block);
         }
     }
     // Remove unused variables.

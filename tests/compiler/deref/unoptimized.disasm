@@ -1,4 +1,4 @@
-Function main(...) -> int (stack: 40)
+Function main(...) -> int (stack: 56)
   0000: load Local(16) = Int(0)
   0001: copy Local(8) = Local(16)
   0002: Local(16) = &Local(8)

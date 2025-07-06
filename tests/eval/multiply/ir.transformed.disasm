@@ -7,6 +7,8 @@ block 0
   var temp2: int = Some(Int(2))
   n = temp2
   free(temp2)
+  free(n)
+  free(return_value)
   -> block 1
 
 block 1
@@ -51,10 +53,18 @@ block 5
   -> block 4
 
 block 6
+  var temp8: int = None
   acc = acc + number
+  free(temp8)
+  var temp9: void = None
+  free(temp9)
   var temp10: int = Some(Int(1))
+  var temp11: int = None
   n = n - temp10
   free(temp10)
+  free(temp11)
+  var temp12: void = None
+  free(temp12)
   -> block 5
 
 block 7
@@ -62,14 +72,19 @@ block 7
   -> block 3
 
 block 8
+  var temp13: void = None
   var temp14: int = None
   var temp15: int = None
   var temp16: void = None
   temp16 = call noop()
+  temp13 = temp16
   free(temp16)
   free(temp15)
   free(temp14)
+  free(temp13)
+  var temp17: int = None
   return_value = number * n
+  free(temp17)
   free(add)
   free(n)
   free(number)

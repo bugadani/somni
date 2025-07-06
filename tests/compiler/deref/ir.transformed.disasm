@@ -8,12 +8,22 @@ block 0
   x = temp2
   free(temp2)
   var y: &int = None
+  var temp4: &int = None
   y = &x
+  free(temp4)
   var z: & int = None
+  var temp6: & int = None
   z = &y
+  free(temp6)
   var yy: &int = None
+  var temp8: &int = None
   yy = *z
+  free(temp8)
+  var xx: int = None
+  var temp10: int = None
   return_value = *yy
+  free(temp10)
+  free(xx)
   free(yy)
   free(z)
   free(y)

@@ -1,4 +1,4 @@
-Function main(...) -> int (stack: 33)
+Function main(...) -> int (stack: 41)
   0000: load Local(16) = Int(10)
   0001: copy Local(8) = Local(16)
   0002: load Local(16) = Bool(true)

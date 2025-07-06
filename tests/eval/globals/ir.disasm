@@ -13,6 +13,7 @@ block 0
   free(temp2)
   var temp3: void = None
   free(temp3)
+  free(return_value)
   -> block 1
 
 block 1

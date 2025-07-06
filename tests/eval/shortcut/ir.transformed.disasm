@@ -19,6 +19,7 @@ block 2
   if temp8 -> block 4 else block 5
 
 block 3
+  var temp3: bool = None
   var temp4: int = None
   var temp5: int = None
   var temp6: bool = None
@@ -27,6 +28,7 @@ block 3
   free(temp6)
   free(temp5)
   free(temp4)
+  free(temp3)
   -> block 2
 
 block 4
@@ -37,6 +39,7 @@ block 4
   if temp14 -> block 7 else block 6
 
 block 5
+  var temp9: bool = None
   var temp10: int = None
   var temp11: int = None
   var temp12: bool = None
@@ -45,6 +48,7 @@ block 5
   free(temp12)
   free(temp11)
   free(temp10)
+  free(temp9)
   -> block 4
 
 block 6
@@ -55,6 +59,7 @@ block 6
   if temp20 -> block 9 else block 8
 
 block 7
+  var temp15: bool = None
   var temp16: int = None
   var temp17: int = None
   var temp18: bool = None
@@ -63,6 +68,7 @@ block 7
   free(temp18)
   free(temp17)
   free(temp16)
+  free(temp15)
   -> block 6
 
 block 8
@@ -73,6 +79,7 @@ block 8
   -> block 1
 
 block 9
+  var temp21: bool = None
   var temp22: int = None
   var temp23: int = None
   var temp24: bool = None
@@ -81,14 +88,19 @@ block 9
   free(temp24)
   free(temp23)
   free(temp22)
+  free(temp21)
   -> block 8
 
 Function: increment
 block 0
   var return_value: bool = None
   var temp1: int = Some(Int(1))
+  var temp2: int = None
   do_not_touch = do_not_touch + temp1
   free(temp1)
+  free(temp2)
+  var temp3: void = None
+  free(temp3)
   var temp4: bool = Some(Bool(true))
   return_value = temp4
   free(temp4)

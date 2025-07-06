@@ -4,6 +4,8 @@ Function: f
 block 0
   var return_value: void = None
   var x: float = None
+  free(x)
+  free(return_value)
   -> block 1
 
 block 1

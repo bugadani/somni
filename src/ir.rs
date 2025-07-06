@@ -552,6 +552,8 @@ impl Function {
         } else {
             (Type::Void, func.fn_token)
         };
+
+        let rp = this.variables.create_restore_point();
         this.declare_variable(
             "return_value",
             Some(Variable::Value(return_type)),
@@ -575,6 +577,8 @@ impl Function {
         for statement in func.body.statements.iter() {
             this.compile_statement(statement)?;
         }
+
+        this.rollback_scope(func.closing_paren.location, rp);
 
         Ok(Function {
             name: this.strings.intern(func.name.source(source)),

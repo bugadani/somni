@@ -13,6 +13,8 @@ block 1
   -> return
 
 block 2
+  free(n)
+  free(return_value)
   -> block 1
 
 block 3

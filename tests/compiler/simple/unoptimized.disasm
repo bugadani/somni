@@ -1,3 +1,3 @@
-Function add(...) -> int (stack: 24)
+Function add(...) -> int (stack: 32)
   0000: Local(0) = Local(8) + Local(16) (int)
   0001: return

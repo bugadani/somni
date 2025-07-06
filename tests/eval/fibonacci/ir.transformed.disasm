@@ -49,9 +49,11 @@ block 2
   free(temp15)
   free(temp14)
   free(temp13)
+  var temp18: int = None
   return_value = temp4 + temp11
   free(temp4)
   free(temp11)
+  free(temp18)
   free(n)
   free(return_value)
   -> block 1
