@@ -1,4 +1,4 @@
-Function main(...) -> int (stack: 28)
+Function main(...) -> int (stack: 27)
   0000: load Local(8) = Bool(true)
   0001: load Local(9) = Bool(true)
   0002: if Local(9) == false jump to 21
@@ -8,22 +8,22 @@ Function main(...) -> int (stack: 28)
   0006: load Local(8) = Bool(false)
   0007: load Local(9) = Bool(false)
   0008: if Local(9) == false jump to 11
-  0009: call increment(..) with sp=Local(27)
-  0010: copy Local(8) = Local(27)
+  0009: call increment(..) with sp=Local(26)
+  0010: copy Local(8) = Local(26)
   0011: load Local(8) = Bool(false)
   0012: load Local(9) = Bool(true)
   0013: if Local(9) == false jump to 16
-  0014: call increment(..) with sp=Local(27)
-  0015: copy Local(8) = Local(27)
+  0014: call increment(..) with sp=Local(26)
+  0015: copy Local(8) = Local(26)
   0016: copy Local(0) = Global(0)
   0017: return
-  0018: call increment(..) with sp=Local(27)
-  0019: copy Local(8) = Local(27)
+  0018: call increment(..) with sp=Local(26)
+  0019: copy Local(8) = Local(26)
   0020: jump to 6
-  0021: call increment(..) with sp=Local(27)
-  0022: copy Local(8) = Local(27)
+  0021: call increment(..) with sp=Local(26)
+  0022: copy Local(8) = Local(26)
   0023: jump to 3
-Function increment(...) -> bool (stack: 17)
+Function increment(...) -> bool (stack: 9)
   0024: load Local(1) = Int(1)
   0025: Global(0) = Global(0) + Local(1) (int)
   0026: load Local(1) = Bool(true)

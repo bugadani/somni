@@ -319,8 +319,8 @@ pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), Com
         for (block_idx, block) in implem.blocks.iter_mut().enumerate() {
             let variables_in_block = &relevant_variables_in_block[&block_idx];
             propagate_destination(block, variables_in_block);
-            //remove_unused_assignments(block, variables_in_block);
-            //remove_unused_variables(block, variables_in_block);
+            remove_unused_assignments(block, variables_in_block);
+            remove_unused_variables(block, variables_in_block);
         }
     }
     // Remove unused variables.
@@ -697,7 +697,6 @@ fn remove_unused_assignments(
         // Next, try to remove the operation
         match &block.instructions[idx].instruction {
             ir::Ir::Assign(dst, _)
-            | ir::Ir::DerefAssign(dst, _)
             | ir::Ir::UnaryOperator(_, dst, _)
             | ir::Ir::BinaryOperator(_, dst, _, _) => {
                 if let Some(dst) = dst.local_index() {

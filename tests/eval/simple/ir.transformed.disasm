@@ -8,10 +8,8 @@ block 0
   n = temp2
   free(temp2)
   var temp3: int = Some(Int(2))
-  var temp4: bool = None
   return_value = n == temp3
   free(temp3)
-  free(temp4)
   free(n)
   free(return_value)
   -> block 1

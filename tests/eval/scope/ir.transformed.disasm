@@ -26,12 +26,8 @@ block 3
   x = temp5
   free(temp5)
   var temp6: int = Some(Int(10))
-  var temp7: int = None
   x = x + temp6
   free(temp6)
-  free(temp7)
-  var temp8: void = None
-  free(temp8)
   free(x)
   -> block 2
 
