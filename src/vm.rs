@@ -361,10 +361,6 @@ impl<'p> EvalContext<'p> {
 
     /// Calls a function by its name with the given arguments.
     ///
-    /// Note that this resets the VM before calling the function, so it will not
-    /// preserve the current state of the VM. If you want to continue executing the current
-    /// function, use [`Self::run`] instead.
-    ///
     /// If the function returns with [`EvalEvent::UnknownFunctionCall`], it means that the script
     /// tried to call a function that is not defined in the program. You can use
     /// [`Self::string`] to read the function name, and [`Self::unknown_call_args()`]
