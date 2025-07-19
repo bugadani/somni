@@ -323,9 +323,9 @@ impl<'p> EvalContext<'p> {
     ///
     /// If the function returns with [`EvalEvent::UnknownFunctionCall`], it means that the script
     /// tried to call a function that is not defined in the program. You can use
-    /// [`Self::unknown_function_info()`] to get the name and arguments of the function that
-    /// was called. Set the return value with [`Self::set_return_value()`], then call [`Self::run`]
-    /// to continue execution.
+    /// [`Self::string`] to read the function name, and [`Self::unknown_call_args()`]
+    /// to get the arguments of the function that was called. Set the return value with
+    /// [`Self::set_return_value()`], then call [`Self::run`] to continue execution.
     pub fn run(&mut self) -> EvalEvent {
         if matches!(self.state, EvalState::Idle) {
             // Restore VM state.
@@ -367,9 +367,9 @@ impl<'p> EvalContext<'p> {
     ///
     /// If the function returns with [`EvalEvent::UnknownFunctionCall`], it means that the script
     /// tried to call a function that is not defined in the program. You can use
-    /// [`Self::unknown_function_info()`] to get the name and arguments of the function that
-    /// was called. Set the return value with [`Self::set_return_value()`], then call [`Self::run`]
-    /// to continue execution.
+    /// [`Self::string`] to read the function name, and [`Self::unknown_call_args()`]
+    /// to get the arguments of the function that was called. Set the return value with
+    /// [`Self::set_return_value()`], then call [`Self::run`] to continue execution.
     pub fn call(&mut self, func: &str, args: &[TypedValue]) -> EvalEvent {
         let Some(function) = self.load_function_by_name(func) else {
             return self.runtime_error(format!("Unknown function: {func}"));
