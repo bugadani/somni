@@ -1,13 +1,13 @@
+pub mod string_interner;
+
+use std::fmt::Display;
+
 use somni_parser::{
     ast::{self, Expression},
     lexer,
 };
 
-use crate::{
-    codegen::{Type, ValueType},
-    ir,
-    string_interner::StringIndex,
-};
+use crate::string_interner::StringIndex;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TypedValue {
@@ -109,7 +109,7 @@ impl TypedValue {
     dispatch_binary_to_value_type!(multiply);
     dispatch_binary_to_value_type!(divide);
 
-    pub(crate) fn write(&self, to: &mut [u8]) {
+    pub fn write(&self, to: &mut [u8]) {
         match self {
             TypedValue::Void => ().write(to),
             TypedValue::Int(value) => value.write(to),
@@ -117,17 +117,6 @@ impl TypedValue {
             TypedValue::Float(value) => value.write(to),
             TypedValue::Bool(value) => value.write(to),
             TypedValue::String(value) => value.write(to),
-        }
-    }
-
-    pub(crate) fn from_value(value: &ir::Value) -> TypedValue {
-        match value {
-            ir::Value::Void => Self::from(()),
-            ir::Value::Int(value) => Self::from(*value),
-            ir::Value::SignedInt(value) => Self::from(*value),
-            ir::Value::Float(value) => Self::from(*value),
-            ir::Value::Bool(value) => Self::from(*value),
-            ir::Value::String(value) => Self::from(*value),
         }
     }
 
@@ -278,5 +267,290 @@ where
         };
 
         Ok(result)
+    }
+}
+pub trait ValueType: Sized + Copy + Into<TypedValue> {
+    const BYTES: usize;
+
+    fn write(&self, to: &mut [u8]);
+    fn from_bytes(bytes: &[u8]) -> Self;
+
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError>;
+    fn less_than(a: Self, b: Self) -> Result<bool, OperatorError>;
+
+    fn less_than_or_equal(a: Self, b: Self) -> Result<bool, OperatorError> {
+        let less = Self::less_than(a, b)?;
+        Ok(less || Self::equals(a, b)?)
+    }
+    fn not_equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        let equals = Self::equals(a, b)?;
+        Ok(!equals)
+    }
+    fn bitwise_or(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn bitwise_xor(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn bitwise_and(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn shift_left(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn shift_right(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn add(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn subtract(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn multiply(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn divide(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn not(_a: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn negate(_a: Self) -> Result<Self, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+}
+
+impl ValueType for () {
+    const BYTES: usize = 0;
+
+    fn write(&self, _to: &mut [u8]) {}
+
+    fn from_bytes(_: &[u8]) -> Self {}
+
+    fn less_than(_: Self, _: Self) -> Result<bool, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+
+    fn equals(_: Self, _: Self) -> Result<bool, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+}
+
+impl ValueType for u64 {
+    const BYTES: usize = 8;
+
+    fn write(&self, to: &mut [u8]) {
+        to.copy_from_slice(&self.to_le_bytes());
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        u64::from_le_bytes(bytes.try_into().unwrap())
+    }
+
+    fn less_than(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a < b)
+    }
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a == b)
+    }
+    fn add(a: Self, b: Self) -> Result<Self, OperatorError> {
+        a.checked_add(b).ok_or(OperatorError::RuntimeError)
+    }
+    fn subtract(a: Self, b: Self) -> Result<Self, OperatorError> {
+        a.checked_sub(b).ok_or(OperatorError::RuntimeError)
+    }
+    fn multiply(a: Self, b: Self) -> Result<Self, OperatorError> {
+        a.checked_mul(b).ok_or(OperatorError::RuntimeError)
+    }
+    fn divide(a: Self, b: Self) -> Result<Self, OperatorError> {
+        if b == 0 {
+            Err(OperatorError::RuntimeError)
+        } else {
+            Ok(a / b)
+        }
+    }
+    fn bitwise_or(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a | b)
+    }
+    fn bitwise_xor(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a ^ b)
+    }
+    fn bitwise_and(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a & b)
+    }
+    fn shift_left(a: Self, b: Self) -> Result<Self, OperatorError> {
+        if b < 64 {
+            Ok(a << b)
+        } else {
+            Err(OperatorError::RuntimeError)
+        }
+    }
+    fn shift_right(a: Self, b: Self) -> Result<Self, OperatorError> {
+        if b < 64 {
+            Ok(a >> b)
+        } else {
+            Err(OperatorError::RuntimeError)
+        }
+    }
+}
+
+impl ValueType for i64 {
+    const BYTES: usize = 8;
+
+    fn write(&self, to: &mut [u8]) {
+        to.copy_from_slice(&self.to_le_bytes());
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        i64::from_le_bytes(bytes.try_into().unwrap())
+    }
+
+    fn less_than(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a < b)
+    }
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a == b)
+    }
+    fn add(a: Self, b: Self) -> Result<Self, OperatorError> {
+        a.checked_add(b).ok_or(OperatorError::RuntimeError)
+    }
+    fn subtract(a: Self, b: Self) -> Result<Self, OperatorError> {
+        a.checked_sub(b).ok_or(OperatorError::RuntimeError)
+    }
+    fn multiply(a: Self, b: Self) -> Result<Self, OperatorError> {
+        a.checked_mul(b).ok_or(OperatorError::RuntimeError)
+    }
+    fn divide(a: Self, b: Self) -> Result<Self, OperatorError> {
+        if b == 0 {
+            Err(OperatorError::RuntimeError)
+        } else {
+            Ok(a / b)
+        }
+    }
+    fn bitwise_or(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a | b)
+    }
+    fn bitwise_xor(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a ^ b)
+    }
+    fn bitwise_and(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a & b)
+    }
+    fn shift_left(a: Self, b: Self) -> Result<Self, OperatorError> {
+        if b < 64 {
+            Ok(a << b)
+        } else {
+            Err(OperatorError::RuntimeError)
+        }
+    }
+    fn shift_right(a: Self, b: Self) -> Result<Self, OperatorError> {
+        if b < 64 {
+            Ok(a >> b)
+        } else {
+            Err(OperatorError::RuntimeError)
+        }
+    }
+}
+
+impl ValueType for f64 {
+    const BYTES: usize = 8;
+
+    fn write(&self, to: &mut [u8]) {
+        to.copy_from_slice(&self.to_le_bytes());
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        f64::from_le_bytes(bytes.try_into().unwrap())
+    }
+
+    fn less_than(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a < b)
+    }
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a == b)
+    }
+    fn add(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a + b)
+    }
+    fn subtract(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a - b)
+    }
+    fn multiply(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a * b)
+    }
+    fn divide(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a / b)
+    }
+}
+
+impl ValueType for bool {
+    const BYTES: usize = 1;
+
+    fn write(&self, to: &mut [u8]) {
+        to.copy_from_slice(&[*self as u8]);
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        bytes[0] != 0
+    }
+
+    fn less_than(_: Self, _: Self) -> Result<bool, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a == b)
+    }
+}
+
+impl ValueType for StringIndex {
+    const BYTES: usize = 8;
+
+    fn write(&self, to: &mut [u8]) {
+        to.copy_from_slice(&self.0.to_le_bytes());
+    }
+    fn from_bytes(bytes: &[u8]) -> Self {
+        StringIndex(u64::from_le_bytes(bytes.try_into().unwrap()) as usize)
+    }
+    fn less_than(_: Self, _: Self) -> Result<bool, OperatorError> {
+        Err(OperatorError::NotSupported)
+    }
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a == b)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum Type {
+    Void,
+    Int,
+    SignedInt,
+    Float,
+    Bool,
+    String,
+}
+impl Type {
+    pub fn size_of(&self) -> usize {
+        match self {
+            Type::Void => <() as ValueType>::BYTES,
+            Type::Int => <u64 as ValueType>::BYTES,
+            Type::SignedInt => <i64 as ValueType>::BYTES,
+            Type::Float => <f64 as ValueType>::BYTES,
+            Type::Bool => <bool as ValueType>::BYTES,
+            Type::String => <StringIndex as ValueType>::BYTES,
+        }
+    }
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Void => write!(f, "void"),
+            Type::Int => write!(f, "int"),
+            Type::SignedInt => write!(f, "signed"),
+            Type::Bool => write!(f, "bool"),
+            Type::String => write!(f, "string"),
+            Type::Float => write!(f, "float"),
+        }
     }
 }

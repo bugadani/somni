@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
+use somni_expr::string_interner::{self, StringIndex};
 
 use crate::{
     error::CompileError,
     ir::{self, BlockIndex, VariableIndex},
-    string_interner::StringIndex,
     variable_tracker::{LocalVariableIndex, ScopeData},
 };
 use somni_parser::lexer::Location;
@@ -490,7 +490,7 @@ fn propagate_variable_types_inner<'s>(
     source: &'s str,
     _name: StringIndex,
     function: &mut ir::Function,
-    strings: &crate::string_interner::Strings,
+    strings: &string_interner::Strings,
     globals: &IndexMap<StringIndex, ir::GlobalVariableInfo>,
     signatures: &HashMap<StringIndex, FunctionSignature>,
 ) -> Result<(), CompileError<'s>> {

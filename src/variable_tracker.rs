@@ -1,6 +1,7 @@
 use indexmap::{IndexMap, IndexSet};
 
-use crate::{ir::Variable, string_interner::StringIndex};
+use crate::ir::Variable;
+use somni_expr::string_interner::StringIndex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RestorePoint(usize);
@@ -193,7 +194,8 @@ impl VariableTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::string_interner::StringInterner;
+
+    use somni_expr::string_interner::StringInterner;
 
     #[test]
     fn test_variable_tracker() {

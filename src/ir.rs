@@ -1,10 +1,14 @@
 use std::fmt::{Debug, Display, Write as _};
 
 use indexmap::IndexMap;
+use somni_expr::{
+    TypedValue,
+    string_interner::{StringIndex, StringInterner, Strings},
+};
 
 use crate::{
     error::CompileError,
-    string_interner::{StringIndex, StringInterner, Strings},
+    ir,
     variable_tracker::{LocalVariableIndex, RestorePoint, ScopeData, VariableTracker},
 };
 
@@ -21,6 +25,19 @@ pub enum Value {
     Float(f64),
     Bool(bool),
     String(StringIndex),
+}
+
+impl Value {
+    pub(crate) fn into_typed_value(self) -> TypedValue {
+        match self {
+            ir::Value::Void => TypedValue::from(()),
+            ir::Value::Int(value) => TypedValue::from(value),
+            ir::Value::SignedInt(value) => TypedValue::from(value),
+            ir::Value::Float(value) => TypedValue::from(value),
+            ir::Value::Bool(value) => TypedValue::from(value),
+            ir::Value::String(value) => TypedValue::from(value),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

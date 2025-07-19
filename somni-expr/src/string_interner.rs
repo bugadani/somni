@@ -20,7 +20,7 @@ impl Strings {
         Strings::default()
     }
 
-    pub(crate) fn intern(&mut self, value: &str) -> StringIndex {
+    pub fn intern(&mut self, value: &str) -> StringIndex {
         let start = self.strings.len();
         let length = value.len();
         self.strings.push_str(value);
@@ -35,7 +35,7 @@ impl Strings {
         &self.strings[start..start + length]
     }
 
-    pub(crate) fn find(&self, name: &str) -> Option<StringIndex> {
+    pub fn find(&self, name: &str) -> Option<StringIndex> {
         for (index, (start, length)) in self.positions.iter().enumerate() {
             if &self.strings[*start..*start + *length] == name {
                 return Some(StringIndex(index));

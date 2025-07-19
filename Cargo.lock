@@ -574,6 +574,14 @@ dependencies = [
  "criterion",
  "indexmap",
  "pretty_assertions",
+ "somni-expr",
+ "somni-parser",
+]
+
+[[package]]
+name = "somni-expr"
+version = "0.1.0"
+dependencies = [
  "somni-parser",
 ]
 

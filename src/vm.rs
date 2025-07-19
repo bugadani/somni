@@ -1,9 +1,11 @@
 use std::{collections::HashMap, ops::Range};
 
 use crate::{
-    codegen::{self, CodeAddress, Function, Instruction, MemoryAddress, Type, ValueType},
+    codegen::{self, CodeAddress, Function, Instruction, MemoryAddress},
     error::MarkInSource,
-    eval::{ExprContext, ExpressionVisitor, OperatorError, TypedValue},
+};
+use somni_expr::{
+    ExprContext, ExpressionVisitor, OperatorError, Type, TypedValue, ValueType,
     string_interner::{StringIndex, Strings},
 };
 use somni_parser::{
@@ -138,11 +140,7 @@ impl Memory {
         Ok(variable)
     }
 
-    fn load_typed(
-        &self,
-        local: MemoryAddress,
-        return_type: codegen::Type,
-    ) -> Result<TypedValue, String> {
+    fn load_typed(&self, local: MemoryAddress, return_type: Type) -> Result<TypedValue, String> {
         let data = self.load(local, return_type.size_of())?;
 
         Ok(TypedValue::from_typed_bytes(return_type, data))
@@ -175,12 +173,12 @@ macro_rules! dispatch_type {
         macro_rules! inner { $pat => { $code }; }
 
         match $op {
-            codegen::Type::Int => inner!(u64),
-            codegen::Type::SignedInt => inner!(i64),
-            codegen::Type::Float => inner!(f64),
-            codegen::Type::Bool => inner!(bool),
-            codegen::Type::String => inner!(StringIndex),
-            codegen::Type::Void => inner!(()),
+            Type::Int => inner!(u64),
+            Type::SignedInt => inner!(i64),
+            Type::Float => inner!(f64),
+            Type::Bool => inner!(bool),
+            Type::String => inner!(StringIndex),
+            Type::Void => inner!(()),
         }
     }};
 }
@@ -252,45 +250,41 @@ macro_rules! dispatch_unary_operator {
 
 for_each_binary_operator!(
     ($_name:path, $op:ident) => {
-        impl codegen::Type {
-            fn $op(
-                self,
-                ctx: &mut EvalContext<'_>,
-                dst: MemoryAddress,
-                lhs: MemoryAddress,
-                rhs: MemoryAddress,
-            ) -> Result<(), EvalEvent> {
-                dispatch_type!(self, ($ty:ty) => {
-                    let lhs = ctx.load::<$ty>(lhs)?;
-                    let rhs = ctx.load::<$ty>(rhs)?;
+        fn $op(
+            ty: Type,
+            ctx: &mut EvalContext<'_>,
+            dst: MemoryAddress,
+            lhs: MemoryAddress,
+            rhs: MemoryAddress,
+        ) -> Result<(), EvalEvent> {
+            dispatch_type!(ty, ($ty:ty) => {
+                let lhs = ctx.load::<$ty>(lhs)?;
+                let rhs = ctx.load::<$ty>(rhs)?;
 
-                    match <$ty>::$op(lhs, rhs) {
-                        Ok(result) => ctx.store(dst, result),
-                        Err(e) => Err(operator_error(ctx, e)),
-                    }
-                })
-            }
+                match <$ty>::$op(lhs, rhs) {
+                    Ok(result) => ctx.store(dst, result),
+                    Err(e) => Err(operator_error(ctx, e)),
+                }
+            })
         }
     }
 );
 for_each_unary_operator!(
     ($_name:path, $op:ident) => {
-        impl codegen::Type {
-            fn $op(
-                self,
-                ctx: &mut EvalContext<'_>,
-                dst: MemoryAddress,
-                operand: MemoryAddress,
-            ) -> Result<(), EvalEvent> {
-                dispatch_type!(self, ($ty:ty) => {
-                    let operand = ctx.load::<$ty>(operand)?;
+        fn $op(
+            ty: Type,
+            ctx: &mut EvalContext<'_>,
+            dst: MemoryAddress,
+            operand: MemoryAddress,
+        ) -> Result<(), EvalEvent> {
+            dispatch_type!(ty, ($ty:ty) => {
+                let operand = ctx.load::<$ty>(operand)?;
 
-                    match <$ty>::$op(operand) {
-                        Ok(result) => ctx.store(dst, result),
-                        Err(e) => Err(operator_error(ctx, e)),
-                    }
-                })
-            }
+                match <$ty>::$op(operand) {
+                    Ok(result) => ctx.store(dst, result),
+                    Err(e) => Err(operator_error(ctx, e)),
+                }
+            })
         }
     }
 );
@@ -533,7 +527,7 @@ impl<'p> EvalContext<'p> {
                 lhs,
                 rhs,
             } => {
-                dispatch_binary_operator!(operator, ($function:tt) => { ty.$function(self, dst, lhs, rhs)? })
+                dispatch_binary_operator!(operator, ($function:tt) => { $function(ty, self, dst, lhs, rhs)? })
             }
             Instruction::UnaryOperator {
                 ty,
@@ -541,7 +535,7 @@ impl<'p> EvalContext<'p> {
                 dst,
                 op,
             } => {
-                dispatch_unary_operator!(operator, ($function:tt) => { ty.$function(self, dst, op)? })
+                dispatch_unary_operator!(operator, ($function:tt) => { $function(ty, self, dst, op)? })
             }
 
             Instruction::AddressOf(dst, lhs) => {
