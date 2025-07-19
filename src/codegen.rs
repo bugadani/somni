@@ -308,6 +308,7 @@ impl Program {
     }
 }
 
+// This enables evaluating initializer expressions
 impl ExprContext for Program {
     fn intern_string(&mut self, s: &str) -> StringIndex {
         self.debug_info.strings.find(s).unwrap()
