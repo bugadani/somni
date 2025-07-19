@@ -1,4 +1,7 @@
-use somni_parser::ast::{self, Expression};
+use somni_parser::{
+    ast::{self, Expression},
+    lexer,
+};
 
 use crate::{
     codegen::{Type, ValueType},
@@ -190,7 +193,7 @@ impl<'a, C> ExpressionVisitor<'a, C>
 where
     C: ExprContext,
 {
-    fn visit_variable(&mut self, variable: &somni_lexer::Token) -> Result<TypedValue, EvalError> {
+    fn visit_variable(&mut self, variable: &lexer::Token) -> Result<TypedValue, EvalError> {
         let name = variable.source(self.source);
         self.context.try_load_variable(name).ok_or(EvalError)
     }
@@ -260,7 +263,7 @@ where
                     "<<" => TypedValue::shift_left(lhs, rhs).unwrap(),
                     ">>" => TypedValue::shift_right(lhs, rhs).unwrap(),
 
-                    other => panic!("Unknown binary operator: {}", other),
+                    other => panic!("Unknown binary operator: {other}"),
                 }
             }
             Expression::FunctionCall { name, arguments } => {

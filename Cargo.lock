@@ -574,20 +574,12 @@ dependencies = [
  "criterion",
  "indexmap",
  "pretty_assertions",
- "somni-lexer",
  "somni-parser",
 ]
 
 [[package]]
-name = "somni-lexer"
-version = "0.1.0"
-
-[[package]]
 name = "somni-parser"
 version = "0.1.0"
-dependencies = [
- "somni-lexer",
-]
 
 [[package]]
 name = "stable_deref_trait"

@@ -106,7 +106,7 @@ impl CharProvider<'_> {
     }
 }
 
-pub fn tokenize<'s>(source: &'s str) -> impl Iterator<Item = Result<Token, LexerError>> {
+pub fn tokenize(source: &str) -> impl Iterator<Item = Result<Token, LexerError>> {
     let mut chars = CharProvider {
         chars: source.char_indices(),
     };

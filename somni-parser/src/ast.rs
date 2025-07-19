@@ -1,4 +1,4 @@
-use somni_lexer::{Location, Token};
+use crate::lexer::{Location, Token};
 
 #[derive(Debug)]
 pub struct Program {

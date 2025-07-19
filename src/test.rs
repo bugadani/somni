@@ -3,8 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::{
     codegen, error::CompileError, eval::TypedValue, ir, transform_ir::transform_ir, vm::EvalContext,
 };
-use somni_lexer::tokenize;
-use somni_parser::parse;
+use somni_parser::{lexer::tokenize, parser::parse};
 
 fn walk(dir: &Path, on_file: &impl Fn(&Path)) {
     for entry in std::fs::read_dir(dir).unwrap().flatten() {

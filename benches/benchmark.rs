@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use criterion::Criterion;
 use somni::{
     codegen,
     error::CompileError,
@@ -7,8 +8,7 @@ use somni::{
     transform_ir::transform_ir,
     vm::{EvalContext, EvalEvent},
 };
-
-use criterion::Criterion;
+use somni_parser::{lexer, parser};
 
 pub fn vm(c: &mut Criterion) {
     let source_code = r#"
@@ -23,11 +23,11 @@ fn main() {
     fib(20);
 }"#;
 
-    let tokens = somni_lexer::tokenize(source_code)
+    let tokens = lexer::tokenize(source_code)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| CompileError::new(source_code, e))
         .unwrap();
-    let ast = match somni_parser::parse(&source_code, &tokens) {
+    let ast = match parser::parse(&source_code, &tokens) {
         Ok(ast) => ast,
         Err(e) => {
             println!("Error parsing `{source_code}`");

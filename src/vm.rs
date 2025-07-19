@@ -6,7 +6,10 @@ use crate::{
     eval::{ExprContext, ExpressionVisitor, OperatorError, TypedValue},
     string_interner::{StringIndex, Strings},
 };
-use somni_lexer::Location;
+use somni_parser::{
+    lexer::{self, Location},
+    parser,
+};
 
 #[derive(Clone, Debug)]
 pub struct EvalError(Box<str>);
@@ -36,9 +39,7 @@ pub trait Arguments {
 }
 
 impl Arguments for () {
-    fn read(_: &EvalContext<'_>, _: MemoryAddress) -> Self {
-        ()
-    }
+    fn read(_: &EvalContext<'_>, _: MemoryAddress) -> Self {}
 }
 
 impl<V> Arguments for (V,)
@@ -50,8 +51,9 @@ where
     }
 }
 
+type DynFunction<'p> = dyn Fn(&EvalContext<'p>, MemoryAddress) -> TypedValue;
 pub struct SomniFn<'p> {
-    func: Box<dyn Fn(&EvalContext<'p>, MemoryAddress) -> TypedValue>,
+    func: Box<DynFunction<'p>>,
 }
 
 impl<'p> SomniFn<'p> {
@@ -430,11 +432,11 @@ impl<'p> EvalContext<'p> {
 
         // TODO: we can allow new globals to be defined in the expression, but that would require
         // storing a copy of the original globals, so that they can be reset?
-        let tokens = somni_lexer::tokenize(expression)
+        let tokens = lexer::tokenize(expression)
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
 
-        let ast = somni_parser::parse_expression(expression, &tokens).unwrap();
+        let ast = parser::parse_expression(expression, &tokens).unwrap();
 
         let mut visitor = ExpressionVisitor {
             context: self,
@@ -595,7 +597,7 @@ impl<'p> EvalContext<'p> {
         let bytes = self.memory.load(addr, V::BYTES).map_err(|e| {
             self.runtime_error(format_args!("Failed to load value from address: {e}"))
         })?;
-        Ok(V::from_bytes(&bytes))
+        Ok(V::from_bytes(bytes))
     }
 
     fn copy(
@@ -707,8 +709,7 @@ impl<'s> ExprContext for EvalContext<'s> {
         if let Some(string_index) = self.strings.find(s) {
             string_index
         } else {
-            let string_index = self.strings.intern(s);
-            string_index
+            self.strings.intern(s)
         }
     }
 
@@ -732,7 +733,7 @@ impl<'s> ExprContext for EvalContext<'s> {
     }
 
     fn call_function(&mut self, function_name: &str, args: &[TypedValue]) -> TypedValue {
-        match self.call(function_name, &args) {
+        match self.call(function_name, args) {
             EvalEvent::UnknownFunctionCall(fn_name) => {
                 println!("unknown function call {:?}", self.string(fn_name));
                 self.print_backtrace();

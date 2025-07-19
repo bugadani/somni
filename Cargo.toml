@@ -10,7 +10,6 @@ harness = false
 
 [dependencies]
 indexmap = "2.9.0"
-somni-lexer = { path = "somni-lexer" }
 somni-parser = { path = "somni-parser" }
 
 [dev-dependencies]
@@ -25,6 +24,5 @@ debug = true
 members = [
     ".",
     "xtask",
-    "somni-lexer",
     "somni-parser",
 ]

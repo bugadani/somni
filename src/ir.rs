@@ -8,8 +8,10 @@ use crate::{
     variable_tracker::{LocalVariableIndex, RestorePoint, ScopeData, VariableTracker},
 };
 
-use somni_lexer::{Location, Token};
-use somni_parser::ast::{self, FunctionArgument};
+use somni_parser::{
+    ast::{self, FunctionArgument},
+    lexer::{Location, Token},
+};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Value {
@@ -382,7 +384,7 @@ impl Program {
                         "string" => Type::String,
                         other => {
                             return Err(CompileError {
-                                source: source,
+                                source,
                                 location: global_variable.type_token.type_name.location,
                                 error: format!("Unknown type `{other}`"),
                             });
@@ -428,12 +430,9 @@ impl Program {
         }
 
         for item in &ast.items {
-            match item {
-                ast::Item::Function(function) => {
-                    let func = Function::compile(source, function, &mut strings, &globals)?;
-                    functions.insert(func.name, func);
-                }
-                _ => {}
+            if let ast::Item::Function(function) = item {
+                let func = Function::compile(source, function, &mut strings, &globals)?;
+                functions.insert(func.name, func);
             }
         }
 

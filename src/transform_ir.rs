@@ -8,7 +8,7 @@ use crate::{
     string_interner::StringIndex,
     variable_tracker::{LocalVariableIndex, ScopeData},
 };
-use somni_lexer::Location;
+use somni_parser::lexer::Location;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ConstraintKind {
@@ -214,7 +214,7 @@ impl<'a, 's> TypeResolver<'a, 's> {
                             return Err(CompileError {
                                 source: self.source,
                                 location: constraint.source_location,
-                                error: format!("Globals cannot be references"),
+                                error: "Globals cannot be references".to_string(),
                             });
                         }
                         _ => self.current_type_of(left),

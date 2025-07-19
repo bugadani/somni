@@ -13,7 +13,7 @@ use crate::{
     string_interner::{StringIndex, Strings},
     variable_tracker::{self, LocalVariableIndex},
 };
-use somni_lexer::Location;
+use somni_parser::lexer::Location;
 
 // This is just to keep the size of Instruction small enough. Re-evaluate this later.
 #[derive(Clone, Copy, Debug)]
@@ -60,7 +60,7 @@ impl std::fmt::Display for BinaryOperator {
             BinaryOperator::Multiply => "*",
             BinaryOperator::Divide => "/",
         };
-        write!(f, "{}", operator)
+        f.write_str(operator)
     }
 }
 
@@ -76,7 +76,7 @@ impl std::fmt::Display for UnaryOperator {
             UnaryOperator::Negate => "-",
             UnaryOperator::Not => "!",
         };
-        write!(f, "{}", operator)
+        f.write_str(operator)
     }
 }
 
@@ -268,9 +268,7 @@ impl ValueType for () {
 
     fn write(&self, _to: &mut [u8]) {}
 
-    fn from_bytes(_: &[u8]) -> Self {
-        ()
-    }
+    fn from_bytes(_: &[u8]) -> Self {}
 
     fn less_than(_: Self, _: Self) -> Result<bool, OperatorError> {
         Err(OperatorError::NotSupported)
@@ -658,7 +656,7 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
 
             let mut visitor = ExpressionVisitor {
                 context: &mut this.program,
-                source: source,
+                source,
             };
             if let Ok(value) = visitor.visit_expression(&global.initializer) {
                 this.program.globals[name].initial_value = Some(value);
@@ -677,7 +675,7 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
             return Err(CompileError {
                 source,
                 location: global.initializer.location(),
-                error: format!("Failed to evaluate initializer"),
+                error: "Failed to evaluate initializer".to_string(),
             });
         }
     }
@@ -949,7 +947,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                 } else {
                     return Err(CompileError {
                         source: self.source,
-                        location: location,
+                        location,
                         error: format!(
                             "Call to underclared function {}",
                             self.compiler.program.debug_info.strings.lookup(*fn_name)
@@ -1174,7 +1172,7 @@ impl StackAllocator {
         let address = self.address_of_allocation(self.allocations.len() - 1);
         self.var_addresses
             .insert(var.index, MemoryAddress::Local(address));
-        return MemoryAddress::Local(address);
+        MemoryAddress::Local(address)
     }
 
     fn free_variable(&mut self, var: LocalVariableIndex) {
@@ -1190,11 +1188,9 @@ impl StackAllocator {
         let mut freed = alloc.size();
 
         // If the next allocation is a hole, also grab its size.
-        if let Some(next) = self.allocations.get_mut(pos + 1) {
-            if let Allocation::Hole { size } = next {
-                freed += *size;
-                *size = 0;
-            }
+        if let Some(Allocation::Hole { size }) = self.allocations.get_mut(pos + 1) {
+            freed += *size;
+            *size = 0;
         };
 
         let mut set_size_of = pos;

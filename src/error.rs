@@ -1,7 +1,9 @@
 use std::fmt::{Debug, Display};
 
-use somni_lexer::{LexerError, Location};
-use somni_parser::ParserError;
+use somni_parser::{
+    lexer::{LexerError, Location},
+    parser::ParserError,
+};
 
 pub trait ErrorWithLocation: Display {
     fn location(&self) -> Location;
