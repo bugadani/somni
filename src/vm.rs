@@ -5,7 +5,7 @@ use crate::{
     error::MarkInSource,
 };
 use somni_expr::{
-    ExprContext, ExpressionVisitor, OperatorError, Type, TypedValue, ValueType,
+    DynFunction, ExprContext, ExpressionVisitor, OperatorError, Type, TypedValue, ValueType,
     string_interner::{StringIndex, Strings},
 };
 use somni_parser::{
@@ -40,50 +40,85 @@ pub trait Arguments {
     fn read(ctx: &EvalContext<'_>, sp: MemoryAddress) -> Self;
 }
 
-impl Arguments for () {
-    fn read(_: &EvalContext<'_>, _: MemoryAddress) -> Self {}
+somni_expr::for_all_tuples! {
+    ($($arg:ident),*) => {
+        impl<$($arg),*> Arguments for ($($arg,)*)
+        where
+            $($arg: ValueType,)*
+        {
+            #[allow(non_snake_case)]
+            fn read(ctx: &EvalContext<'_>, sp: MemoryAddress) -> Self {
+                let offset = 0;
+                $(
+                let $arg = ctx.load::<$arg>(sp + offset).unwrap();
+                let offset = offset + <$arg>::BYTES;
+                )*
+
+                ($($arg,)*)
+            }
+        }
+    };
 }
 
-impl<V> Arguments for (V,)
-where
-    V: ValueType,
-{
-    fn read(ctx: &EvalContext<'_>, sp: MemoryAddress) -> Self {
-        (ctx.load::<V>(sp).unwrap(),)
-    }
+pub trait NativeFunction<A>: DynFunction<A> + Clone {
+    fn call_from_vm(&self, ctx: &EvalContext<'_>, sp: MemoryAddress) -> TypedValue;
 }
 
-type DynFunction<'p> = dyn Fn(&EvalContext<'p>, MemoryAddress) -> TypedValue;
+somni_expr::for_all_tuples! {
+    ($($arg:ident),*) => {
+        impl<$($arg,)* R, F> NativeFunction<($($arg,)*)> for F
+        where
+            $($arg: ValueType,)*
+            F: Fn($($arg,)*) -> R,
+            F: Clone,
+            R: ValueType,
+        {
+            #[allow(non_snake_case)]
+            fn call_from_vm(&self, ctx: &EvalContext<'_>, sp: MemoryAddress) -> TypedValue {
+                let offset = 0;
+                $(
+                let $arg = ctx.load::<$arg>(sp + offset).unwrap();
+                let offset = offset + <$arg>::BYTES;
+                )*
+
+                self($($arg),*).into()
+            }
+        }
+    };
+}
+
 pub struct SomniFn<'p> {
-    func: Box<DynFunction<'p>>,
+    #[allow(clippy::type_complexity)]
+    func: Box<dyn Fn(&EvalContext<'p>, MemoryAddress) -> TypedValue + 'p>,
+    #[allow(clippy::type_complexity)]
+    expr_func: Box<dyn Fn(&[TypedValue]) -> TypedValue + 'p>,
 }
 
 impl<'p> SomniFn<'p> {
-    pub fn new<A, R, F>(func: F) -> Self
+    pub fn new<A, F>(func: F) -> Self
     where
-        F: Fn(A) -> R,
-        F: 'static,
-        A: Arguments + 'static,
-        R: ValueType + 'static,
+        F: NativeFunction<A> + 'p,
     {
+        let expr_func = func.clone();
         Self {
-            func: Box::new(move |ctx, sp| {
-                let args = A::read(ctx, sp);
-                func(args).into()
-            }),
+            func: Box::new(move |ctx, sp| func.call_from_vm(ctx, sp)),
+            expr_func: Box::new(move |args| expr_func.call(args)),
         }
     }
 
-    fn call(&self, ctx: &EvalContext<'p>, sp: MemoryAddress) -> TypedValue {
+    fn call_from_vm(&self, ctx: &EvalContext<'p>, sp: MemoryAddress) -> TypedValue {
         (self.func)(ctx, sp)
+    }
+
+    fn call_from_expr(&self, args: &[TypedValue]) -> TypedValue {
+        (self.expr_func)(args)
     }
 }
 
 pub struct EvalContext<'p> {
     source: &'p str,
-    orig_strings: &'p Strings,
     program: &'p codegen::Program,
-    strings: Strings,
+    strings: &'p mut Strings,
     intrinsics: HashMap<StringIndex, SomniFn<'p>>,
     state: EvalState,
 
@@ -300,22 +335,29 @@ impl<'p> EvalContext<'p> {
     }
 
     fn load_function_by_name(&self, name: &str) -> Option<&'p codegen::Function> {
-        let name = self.strings.find(name)?;
-        self.program.functions.get(&name)
+        let name_index = self.strings.find(name)?;
+        self.program.functions.get(&name_index)
     }
 
-    pub fn new(source: &'p str, strings: &'p Strings, program: &'p codegen::Program) -> Self {
+    pub fn new(source: &'p str, strings: &'p mut Strings, program: &'p codegen::Program) -> Self {
         EvalContext {
             intrinsics: HashMap::new(),
             state: EvalState::Idle,
             program,
             memory: Memory::new(),
             source,
-            strings: strings.clone(),
-            orig_strings: strings,
+            strings,
             outer_function_name: StringIndex::dummy(), // Will be set when the first function is called
             program_counter: CodeAddress(0),
         }
+    }
+
+    pub fn add_function<A>(&mut self, name: &str, f: impl NativeFunction<A> + 'p) {
+        let name = self
+            .strings
+            .find(name)
+            .unwrap_or_else(|| self.strings.intern(name));
+        self.intrinsics.insert(name, SomniFn::new(f));
     }
 
     /// Calls the `main` function and starts the evaluation. If the program is already running,
@@ -340,7 +382,6 @@ impl<'p> EvalContext<'p> {
 
     pub fn reset(&mut self) {
         // TODO: only if eval_expression is supported
-        self.strings = self.orig_strings.clone();
         self.state = EvalState::Idle;
         self.memory = Memory::new();
         self.memory.allocate(
@@ -368,6 +409,12 @@ impl<'p> EvalContext<'p> {
     /// [`Self::set_return_value()`], then call [`Self::run`] to continue execution.
     pub fn call(&mut self, func: &str, args: &[TypedValue]) -> EvalEvent {
         let Some(function) = self.load_function_by_name(func) else {
+            if let Some(fn_name) = self.strings.find(func) {
+                if let Some(intrinsic) = self.intrinsics.get(&fn_name) {
+                    return EvalEvent::Complete(intrinsic.call_from_expr(args));
+                }
+            }
+
             return self.runtime_error(format!("Unknown function: {func}"));
         };
 
@@ -478,7 +525,7 @@ impl<'p> EvalContext<'p> {
                 };
 
                 let first_arg = sp + ty.size_of();
-                let retval = intrinsic.call(self, first_arg);
+                let retval = intrinsic.call_from_vm(self, first_arg);
                 self.store_typed(sp, retval)?;
             }
             Instruction::Return => {

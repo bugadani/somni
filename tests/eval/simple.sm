@@ -1,6 +1,8 @@
-//@ main() == true
+//@ assert(main()) // assert is a no-op that returns its input
+
+extern fn add_from_rust(a: int, b: int) -> int;
 
 fn main() -> bool {
-    var n = 2;
-    return n == 2;
+    var n = add_from_rust(2, 3);
+    return n == 5;
 }

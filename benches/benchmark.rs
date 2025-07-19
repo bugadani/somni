@@ -48,7 +48,7 @@ fn main() {
         println!("{:?}", e);
         panic!("Transformation failed");
     }
-    let strings = &ir.strings;
+    let mut strings = ir.strings.clone();
     let program = match codegen::compile(&source_code, &ir) {
         Ok(program) => program,
         Err(e) => {
@@ -60,7 +60,7 @@ fn main() {
 
     c.bench_function("fib 20", |b| {
         b.iter(|| {
-            let mut context = EvalContext::new(source_code, strings, &program);
+            let mut context = EvalContext::new(source_code, &mut strings, &program);
 
             loop {
                 match context.run() {

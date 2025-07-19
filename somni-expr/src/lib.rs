@@ -702,6 +702,8 @@ pub trait DynFunction<A> {
     fn call(&self, args: &[TypedValue]) -> TypedValue;
 }
 
+#[macro_export]
+#[doc(hidden)]
 macro_rules! for_all_tuples {
     ($pat:tt => $code:tt;) => {
         macro_rules! inner { $pat => $code; }

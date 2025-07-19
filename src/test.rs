@@ -50,11 +50,11 @@ pub fn run_eval_test(program: codegen::Program, path: impl AsRef<Path>) {
         .filter_map(|line| line.trim().strip_prefix("//@"))
         .collect::<Vec<_>>();
 
-    let mut context = EvalContext::new(
-        &program.debug_info.source,
-        &program.debug_info.strings,
-        &program,
-    );
+    let mut strings = program.debug_info.strings.clone();
+    let mut context = EvalContext::new(&program.debug_info.source, &mut strings, &program);
+
+    context.add_function("add_from_rust", |a: u64, b: u64| a + b);
+    context.add_function("assert", |a: bool| a);
 
     for expression in &expressions {
         let expression = if let Some(e) = expression.strip_prefix('+') {

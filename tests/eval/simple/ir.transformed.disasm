@@ -1,12 +1,27 @@
 Globals:
 
+Function: add_from_rust
+  External function
+
 Function: main
 block 0
   var return_value: bool = None
-  var n: int = Some(Int(2))
-  var temp3: int = Some(Int(2))
-  return_value = n == temp3
-  free(temp3)
+  var n: int = None
+  var temp5: int = None
+  var temp6: int = None
+  var temp7: int = None
+  var temp8: int = Some(Int(2))
+  var temp9: int = Some(Int(3))
+  temp7 = call add_from_rust(temp8, temp9)
+  n = temp7
+  free(temp9)
+  free(temp8)
+  free(temp7)
+  free(temp6)
+  free(temp5)
+  var temp10: int = Some(Int(5))
+  return_value = n == temp10
+  free(temp10)
   free(n)
   free(return_value)
   -> block 1
