@@ -2,12 +2,13 @@ pub mod string_interner;
 
 use std::fmt::Display;
 
+use indexmap::IndexMap;
 use somni_parser::{
     ast::{self, Expression},
-    lexer,
+    lexer, parser,
 };
 
-use crate::string_interner::StringIndex;
+use crate::string_interner::{StringIndex, StringInterner};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TypedValue {
@@ -137,29 +138,101 @@ impl From<u64> for TypedValue {
         TypedValue::Int(value)
     }
 }
+impl TryFrom<TypedValue> for u64 {
+    type Error = ();
+
+    fn try_from(value: TypedValue) -> Result<Self, Self::Error> {
+        if let TypedValue::Int(value) = value {
+            Ok(value)
+        } else {
+            Err(())
+        }
+    }
+}
+
 impl From<i64> for TypedValue {
     fn from(value: i64) -> Self {
         TypedValue::SignedInt(value)
     }
 }
+impl TryFrom<TypedValue> for i64 {
+    type Error = ();
+
+    fn try_from(value: TypedValue) -> Result<Self, Self::Error> {
+        if let TypedValue::SignedInt(value) = value {
+            Ok(value)
+        } else {
+            Err(())
+        }
+    }
+}
+
 impl From<f64> for TypedValue {
     fn from(value: f64) -> Self {
         TypedValue::Float(value)
     }
 }
+impl TryFrom<TypedValue> for f64 {
+    type Error = ();
+
+    fn try_from(value: TypedValue) -> Result<Self, Self::Error> {
+        if let TypedValue::Float(value) = value {
+            Ok(value)
+        } else {
+            Err(())
+        }
+    }
+}
+
 impl From<bool> for TypedValue {
     fn from(value: bool) -> Self {
         TypedValue::Bool(value)
     }
 }
+impl TryFrom<TypedValue> for bool {
+    type Error = ();
+
+    fn try_from(value: TypedValue) -> Result<Self, Self::Error> {
+        if let TypedValue::Bool(value) = value {
+            Ok(value)
+        } else {
+            Err(())
+        }
+    }
+}
+
 impl From<StringIndex> for TypedValue {
     fn from(value: StringIndex) -> Self {
         TypedValue::String(value)
     }
 }
+impl TryFrom<TypedValue> for StringIndex {
+    type Error = ();
+
+    fn try_from(value: TypedValue) -> Result<Self, Self::Error> {
+        if let TypedValue::String(str) = value {
+            Ok(str)
+        } else {
+            Err(())
+        }
+    }
+}
+
 impl From<()> for TypedValue {
     fn from(_: ()) -> Self {
         TypedValue::Void
+    }
+}
+
+impl TryFrom<TypedValue> for () {
+    type Error = ();
+
+    fn try_from(value: TypedValue) -> Result<Self, Self::Error> {
+        if let TypedValue::Void = value {
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 }
 
@@ -175,7 +248,7 @@ pub struct ExpressionVisitor<'a, C> {
     pub source: &'a str,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EvalError;
 
 impl<'a, C> ExpressionVisitor<'a, C>
@@ -269,7 +342,7 @@ where
         Ok(result)
     }
 }
-pub trait ValueType: Sized + Copy + Into<TypedValue> {
+pub trait ValueType: Sized + Copy + TryFrom<TypedValue, Error = ()> + Into<TypedValue> {
     const BYTES: usize;
 
     fn write(&self, to: &mut [u8]);
@@ -552,5 +625,158 @@ impl Display for Type {
             Type::String => write!(f, "string"),
             Type::Float => write!(f, "float"),
         }
+    }
+}
+
+#[derive(Default)]
+pub struct Context<'ctx> {
+    variables: IndexMap<String, TypedValue>,
+    functions: IndexMap<String, ExprFn<'ctx>>,
+    strings: StringInterner,
+}
+
+impl ExprContext for Context<'_> {
+    fn intern_string(&mut self, s: &str) -> StringIndex {
+        self.strings.intern(s)
+    }
+
+    fn try_load_variable(&self, variable: &str) -> Option<TypedValue> {
+        self.variables.get(variable).copied()
+    }
+
+    fn address_of(&self, variable: &str) -> TypedValue {
+        let index = self.variables.get_index_of(variable).unwrap();
+        TypedValue::Int(index as u64)
+    }
+
+    fn call_function(&mut self, function_name: &str, args: &[TypedValue]) -> TypedValue {
+        self.functions[function_name].call(args)
+    }
+}
+
+impl<'ctx> Context<'ctx> {
+    pub fn new() -> Self {
+        Self {
+            variables: IndexMap::new(),
+            functions: IndexMap::new(),
+            strings: StringInterner::new(),
+        }
+    }
+
+    pub fn evaluate_any(&mut self, expression: &str) -> Result<TypedValue, EvalError> {
+        // TODO: we can allow new globals to be defined in the expression, but that would require
+        // storing a copy of the original globals, so that they can be reset?
+        let tokens = lexer::tokenize(expression)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        let ast = parser::parse_expression(expression, &tokens).unwrap();
+
+        let mut visitor = ExpressionVisitor {
+            context: self,
+            source: expression,
+        };
+
+        visitor.visit_expression(&ast)
+    }
+
+    pub fn evaluate<V: ValueType>(&mut self, expression: &str) -> Result<V, EvalError> {
+        let result = self.evaluate_any(expression)?;
+        result.try_into().map_err(|_| EvalError)
+    }
+
+    pub fn add_variable(&mut self, name: &str, value: TypedValue) {
+        self.variables.insert(name.to_string(), value);
+    }
+
+    pub fn add_function<F, A>(&mut self, name: &str, func: F)
+    where
+        F: DynFunction<A> + 'ctx,
+    {
+        let func = ExprFn::new(func);
+        self.functions.insert(name.to_string(), func);
+    }
+}
+
+pub trait DynFunction<A> {
+    fn call(&self, args: &[TypedValue]) -> TypedValue;
+}
+
+macro_rules! for_all_tuples {
+    ($pat:tt => $code:tt;) => {
+        macro_rules! inner { $pat => $code; }
+
+        inner!();
+        inner!(V1);
+        inner!(V1, V2);
+        inner!(V1, V2, V3);
+        inner!(V1, V2, V3, V4);
+        inner!(V1, V2, V3, V4, V5);
+        inner!(V1, V2, V3, V4, V5, V6);
+        inner!(V1, V2, V3, V4, V5, V6, V7);
+        inner!(V1, V2, V3, V4, V5, V6, V7, V8);
+        inner!(V1, V2, V3, V4, V5, V6, V7, V8, V9);
+        inner!(V1, V2, V3, V4, V5, V6, V7, V8, V9, V10);
+    };
+}
+
+for_all_tuples! {
+    ($($arg:ident),*) => {
+        impl<$($arg,)* R, F> DynFunction<($($arg,)*)> for F
+        where
+            $($arg: ValueType,)*
+            F: Fn($($arg,)*) -> R,
+            R: ValueType,
+        {
+            #[allow(non_snake_case)]
+            fn call(&self, args: &[TypedValue]) -> TypedValue {
+                let mut args = args.iter().copied();
+                $(
+                let $arg = <$arg>::try_from(args.next().unwrap()).unwrap();
+                )*
+
+                assert!(args.next().is_none());
+
+                self($($arg),*).into()
+            }
+        }
+    };
+}
+
+struct ExprFn<'ctx> {
+    #[allow(clippy::type_complexity)]
+    func: Box<dyn Fn(&[TypedValue]) -> TypedValue + 'ctx>,
+}
+
+impl<'ctx> ExprFn<'ctx> {
+    fn new<A, F>(func: F) -> Self
+    where
+        F: DynFunction<A> + 'ctx,
+    {
+        Self {
+            func: Box::new(move |args| func.call(args)),
+        }
+    }
+
+    fn call(&self, args: &[TypedValue]) -> TypedValue {
+        (self.func)(args)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_evaluating_exprs() {
+        let mut ctx = Context::new();
+
+        ctx.add_variable("value", TypedValue::Int(30));
+        ctx.add_function("func", |v: u64| 2 * v);
+        ctx.add_function("func2", |v1: u64, v2: u64| v1 + v2);
+
+        assert_eq!(ctx.evaluate::<bool>("value / 5 == 6"), Ok(true));
+        assert_eq!(ctx.evaluate::<u64>("func(20) / 5"), Ok(8));
+        assert_eq!(ctx.evaluate::<u64>("func2(20, 20) / 5"), Ok(8));
     }
 }

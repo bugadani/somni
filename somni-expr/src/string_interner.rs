@@ -64,8 +64,12 @@ impl StringInterner {
         self.reverse_lookup.get(value).cloned()
     }
 
+    pub fn find(&self, value: &str) -> Option<StringIndex> {
+        self.reverse_lookup.get(value).copied()
+    }
+
     pub fn intern(&mut self, value: &str) -> StringIndex {
-        if let Some(index) = self.reverse_lookup.get(value).copied() {
+        if let Some(index) = self.find(value) {
             return index;
         }
 

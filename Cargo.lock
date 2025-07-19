@@ -582,6 +582,7 @@ dependencies = [
 name = "somni-expr"
 version = "0.1.0"
 dependencies = [
+ "indexmap",
  "somni-parser",
 ]
 

@@ -8,8 +8,11 @@ rust-version = "1.87.0"
 name = "benchmark"
 harness = false
 
-[dependencies]
+[workspace.dependencies]
 indexmap = "2.9.0"
+
+[dependencies]
+indexmap.workspace = true
 somni-parser = { path = "somni-parser" }
 somni-expr = { path = "somni-expr" }
 
