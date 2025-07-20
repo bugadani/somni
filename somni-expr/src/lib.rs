@@ -5,7 +5,8 @@ use std::fmt::Display;
 use indexmap::IndexMap;
 use somni_parser::{
     ast::{self, Expression},
-    lexer, parser,
+    lexer::{self, Location},
+    parser,
 };
 
 use crate::string_interner::{StringIndex, StringInterner};
@@ -23,7 +24,20 @@ pub enum TypedValue {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum OperatorError {
     NotSupported,
+    TypeError,
     RuntimeError,
+}
+
+impl Display for OperatorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            OperatorError::NotSupported => "Operation not supported",
+            OperatorError::TypeError => "Type error",
+            OperatorError::RuntimeError => "Runtime error",
+        };
+
+        f.write_str(message)
+    }
 }
 
 macro_rules! dispatch_binary_to_bool {
@@ -48,7 +62,7 @@ macro_rules! dispatch_binary_to_bool {
                 (TypedValue::String(value), TypedValue::String(other)) => {
                     ValueType::$method(value, other)
                 }
-                (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
+                _ => return Err(OperatorError::TypeError),
             };
 
             result.map(TypedValue::Bool)
@@ -78,7 +92,7 @@ macro_rules! dispatch_binary_to_value_type {
                 (TypedValue::String(value), TypedValue::String(other)) => {
                     Ok(TypedValue::from(ValueType::$method(value, other)?))
                 }
-                (a, b) => panic!("Cannot compare {} and {}", a.type_of(), b.type_of()),
+                _ => return Err(OperatorError::TypeError),
             }
         }
     };
@@ -240,7 +254,11 @@ pub trait ExprContext {
     fn intern_string(&mut self, s: &str) -> StringIndex;
     fn try_load_variable(&self, variable: &str) -> Option<TypedValue>;
     fn address_of(&self, variable: &str) -> TypedValue;
-    fn call_function(&mut self, function_name: &str, args: &[TypedValue]) -> TypedValue;
+    fn call_function(
+        &mut self,
+        function_name: &str,
+        args: &[TypedValue],
+    ) -> Result<TypedValue, FunctionCallError>;
 }
 
 pub struct ExpressionVisitor<'a, C> {
@@ -248,8 +266,11 @@ pub struct ExpressionVisitor<'a, C> {
     pub source: &'a str,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct EvalError;
+#[derive(Clone, Debug, PartialEq)]
+pub struct EvalError {
+    pub message: Box<str>,
+    pub location: Location,
+}
 
 impl<'a, C> ExpressionVisitor<'a, C>
 where
@@ -257,7 +278,10 @@ where
 {
     fn visit_variable(&mut self, variable: &lexer::Token) -> Result<TypedValue, EvalError> {
         let name = variable.source(self.source);
-        self.context.try_load_variable(name).ok_or(EvalError)
+        self.context.try_load_variable(name).ok_or(EvalError {
+            message: format!("Variable {name} was not found").into_boxed_str(),
+            location: variable.location,
+        })
     }
 
     pub fn visit_expression(&mut self, expression: &Expression) -> Result<TypedValue, EvalError> {
@@ -274,24 +298,52 @@ where
             Expression::UnaryOperator { name, operand } => match name.source(self.source) {
                 "!" => match self.visit_expression(operand)? {
                     TypedValue::Bool(b) => TypedValue::Bool(!b),
-                    value => panic!("Expected boolean, found {}", value.type_of()),
+                    value => {
+                        return Err(EvalError {
+                            message: format!("Expected boolean, found {}", value.type_of())
+                                .into_boxed_str(),
+                            location: operand.location(),
+                        });
+                    }
                 },
                 "-" => match self.visit_expression(operand)? {
                     // TODO handle overflow errors
                     TypedValue::SignedInt(i) => TypedValue::SignedInt(-i),
                     TypedValue::Int(i) => TypedValue::SignedInt(-(i as i64)),
                     TypedValue::Float(f) => TypedValue::Float(-f),
-                    value => panic!("Cannot negate {}", value.type_of()),
+                    value => {
+                        return Err(EvalError {
+                            message: format!("Cannot negate {}", value.type_of()).into_boxed_str(),
+                            location: operand.location(),
+                        });
+                    }
                 },
                 "&" => match operand.as_variable() {
                     Some(variable) => {
                         let name = variable.source(self.source);
                         self.context.address_of(name)
                     }
-                    None => panic!("Cannot take address of non-variable expression"),
+                    None => {
+                        return Err(EvalError {
+                            message: String::from("Cannot take address of non-variable expression")
+                                .into_boxed_str(),
+                            location: operand.location(),
+                        });
+                    }
                 },
-                "*" => panic!("Dereference not supported"),
-                _ => panic!("Unknown unary operator: {}", name.source(self.source)),
+                "*" => {
+                    return Err(EvalError {
+                        message: String::from("Dereference not supported").into_boxed_str(),
+                        location: operand.location(),
+                    });
+                }
+                _ => {
+                    return Err(EvalError {
+                        message: format!("Unknown unary operator: {}", name.source(self.source))
+                            .into_boxed_str(),
+                        location: expression.location(),
+                    });
+                }
             },
             Expression::BinaryOperator { name, operands } => {
                 let short_circuiting = ["&&", "||"];
@@ -308,24 +360,40 @@ where
 
                 let lhs = self.visit_expression(&operands[0])?;
                 let rhs = self.visit_expression(&operands[1])?;
-                match name.source(self.source) {
-                    "+" => TypedValue::add(lhs, rhs).unwrap(),
-                    "-" => TypedValue::subtract(lhs, rhs).unwrap(),
-                    "*" => TypedValue::multiply(lhs, rhs).unwrap(),
-                    "/" => TypedValue::divide(lhs, rhs).unwrap(),
-                    "<" => TypedValue::less_than(lhs, rhs).unwrap(),
-                    ">" => TypedValue::less_than(rhs, lhs).unwrap(),
-                    "<=" => TypedValue::less_than_or_equal(lhs, rhs).unwrap(),
-                    ">=" => TypedValue::less_than_or_equal(rhs, lhs).unwrap(),
-                    "==" => TypedValue::equals(lhs, rhs).unwrap(),
-                    "!=" => TypedValue::not_equals(lhs, rhs).unwrap(),
-                    "|" => TypedValue::bitwise_or(lhs, rhs).unwrap(),
-                    "^" => TypedValue::bitwise_xor(lhs, rhs).unwrap(),
-                    "&" => TypedValue::bitwise_and(lhs, rhs).unwrap(),
-                    "<<" => TypedValue::shift_left(lhs, rhs).unwrap(),
-                    ">>" => TypedValue::shift_right(lhs, rhs).unwrap(),
+                let result = match name.source(self.source) {
+                    "+" => TypedValue::add(lhs, rhs),
+                    "-" => TypedValue::subtract(lhs, rhs),
+                    "*" => TypedValue::multiply(lhs, rhs),
+                    "/" => TypedValue::divide(lhs, rhs),
+                    "<" => TypedValue::less_than(lhs, rhs),
+                    ">" => TypedValue::less_than(rhs, lhs),
+                    "<=" => TypedValue::less_than_or_equal(lhs, rhs),
+                    ">=" => TypedValue::less_than_or_equal(rhs, lhs),
+                    "==" => TypedValue::equals(lhs, rhs),
+                    "!=" => TypedValue::not_equals(lhs, rhs),
+                    "|" => TypedValue::bitwise_or(lhs, rhs),
+                    "^" => TypedValue::bitwise_xor(lhs, rhs),
+                    "&" => TypedValue::bitwise_and(lhs, rhs),
+                    "<<" => TypedValue::shift_left(lhs, rhs),
+                    ">>" => TypedValue::shift_right(lhs, rhs),
 
-                    other => panic!("Unknown binary operator: {other}"),
+                    other => {
+                        return Err(EvalError {
+                            message: format!("Unknown binary operator: {other}").into_boxed_str(),
+                            location: expression.location(),
+                        });
+                    }
+                };
+
+                match result {
+                    Ok(r) => r,
+                    Err(error) => {
+                        return Err(EvalError {
+                            message: format!("Failed to evaluate expression: {error}")
+                                .into_boxed_str(),
+                            location: expression.location(),
+                        });
+                    }
                 }
             }
             Expression::FunctionCall { name, arguments } => {
@@ -335,7 +403,43 @@ where
                     args.push(self.visit_expression(arg)?);
                 }
 
-                self.context.call_function(function_name, &args)
+                match self.context.call_function(function_name, &args) {
+                    Ok(result) => result,
+                    Err(FunctionCallError::IncorrectArgumentCount { expected }) => {
+                        return Err(EvalError {
+                            message: format!(
+                                "{function_name} takes {expected} arguments, {} given",
+                                args.len()
+                            )
+                            .into_boxed_str(),
+                            location: expression.location(),
+                        });
+                    }
+                    Err(FunctionCallError::IncorrectArgumentType { idx, expected }) => {
+                        return Err(EvalError {
+                            message: format!(
+                                "{function_name} expects argument {idx} to be {expected}, got {}",
+                                args[idx].type_of()
+                            )
+                            .into_boxed_str(),
+                            location: arguments[idx].location(),
+                        });
+                    }
+                    Err(FunctionCallError::FunctionNotFound) => {
+                        return Err(EvalError {
+                            message: format!("Function {function_name} is not found")
+                                .into_boxed_str(),
+                            location: expression.location(),
+                        });
+                    }
+                    Err(FunctionCallError::Other(error)) => {
+                        return Err(EvalError {
+                            message: format!("Failed to call {function_name}: {error}")
+                                .into_boxed_str(),
+                            location: expression.location(),
+                        });
+                    }
+                }
             }
         };
 
@@ -344,6 +448,7 @@ where
 }
 pub trait ValueType: Sized + Copy + TryFrom<TypedValue, Error = ()> + Into<TypedValue> {
     const BYTES: usize;
+    const TYPE: Type;
 
     fn write(&self, to: &mut [u8]);
     fn from_bytes(bytes: &[u8]) -> Self;
@@ -396,6 +501,7 @@ pub trait ValueType: Sized + Copy + TryFrom<TypedValue, Error = ()> + Into<Typed
 
 impl ValueType for () {
     const BYTES: usize = 0;
+    const TYPE: Type = Type::Void;
 
     fn write(&self, _to: &mut [u8]) {}
 
@@ -412,6 +518,7 @@ impl ValueType for () {
 
 impl ValueType for u64 {
     const BYTES: usize = 8;
+    const TYPE: Type = Type::Int;
 
     fn write(&self, to: &mut [u8]) {
         to.copy_from_slice(&self.to_le_bytes());
@@ -470,6 +577,7 @@ impl ValueType for u64 {
 
 impl ValueType for i64 {
     const BYTES: usize = 8;
+    const TYPE: Type = Type::SignedInt;
 
     fn write(&self, to: &mut [u8]) {
         to.copy_from_slice(&self.to_le_bytes());
@@ -528,6 +636,7 @@ impl ValueType for i64 {
 
 impl ValueType for f64 {
     const BYTES: usize = 8;
+    const TYPE: Type = Type::Float;
 
     fn write(&self, to: &mut [u8]) {
         to.copy_from_slice(&self.to_le_bytes());
@@ -559,6 +668,7 @@ impl ValueType for f64 {
 
 impl ValueType for bool {
     const BYTES: usize = 1;
+    const TYPE: Type = Type::Bool;
 
     fn write(&self, to: &mut [u8]) {
         to.copy_from_slice(&[*self as u8]);
@@ -578,6 +688,7 @@ impl ValueType for bool {
 
 impl ValueType for StringIndex {
     const BYTES: usize = 8;
+    const TYPE: Type = Type::String;
 
     fn write(&self, to: &mut [u8]) {
         to.copy_from_slice(&self.0.to_le_bytes());
@@ -649,7 +760,11 @@ impl ExprContext for Context<'_> {
         TypedValue::Int(index as u64)
     }
 
-    fn call_function(&mut self, function_name: &str, args: &[TypedValue]) -> TypedValue {
+    fn call_function(
+        &mut self,
+        function_name: &str,
+        args: &[TypedValue],
+    ) -> Result<TypedValue, FunctionCallError> {
         self.functions[function_name].call(args)
     }
 }
@@ -666,11 +781,24 @@ impl<'ctx> Context<'ctx> {
     pub fn evaluate_any(&mut self, expression: &str) -> Result<TypedValue, EvalError> {
         // TODO: we can allow new globals to be defined in the expression, but that would require
         // storing a copy of the original globals, so that they can be reset?
-        let tokens = lexer::tokenize(expression)
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
-
-        let ast = parser::parse_expression(expression, &tokens).unwrap();
+        let tokens = match lexer::tokenize(expression).collect::<Result<Vec<_>, _>>() {
+            Ok(tokens) => tokens,
+            Err(e) => {
+                return Err(EvalError {
+                    message: format!("Syntax error: {e}").into_boxed_str(),
+                    location: e.location,
+                });
+            }
+        };
+        let ast = match parser::parse_expression(expression, &tokens) {
+            Ok(ast) => ast,
+            Err(e) => {
+                return Err(EvalError {
+                    message: format!("Parser error: {e}").into_boxed_str(),
+                    location: e.location,
+                });
+            }
+        };
 
         let mut visitor = ExpressionVisitor {
             context: self,
@@ -682,7 +810,15 @@ impl<'ctx> Context<'ctx> {
 
     pub fn evaluate<V: ValueType>(&mut self, expression: &str) -> Result<V, EvalError> {
         let result = self.evaluate_any(expression)?;
-        result.try_into().map_err(|_| EvalError)
+        let result_ty = result.type_of();
+        result.try_into().map_err(|_| EvalError {
+            message: format!(
+                "Expression evaluates to {result_ty}, which cannot be converted to {}",
+                V::TYPE
+            )
+            .into_boxed_str(),
+            location: Location::dummy(),
+        })
     }
 
     pub fn add_variable(&mut self, name: &str, value: TypedValue) {
@@ -699,7 +835,7 @@ impl<'ctx> Context<'ctx> {
 }
 
 pub trait DynFunction<A> {
-    fn call(&self, args: &[TypedValue]) -> TypedValue;
+    fn call(&self, args: &[TypedValue]) -> Result<TypedValue, FunctionCallError>;
 }
 
 #[macro_export]
@@ -722,6 +858,17 @@ macro_rules! for_all_tuples {
     };
 }
 
+pub enum FunctionCallError {
+    FunctionNotFound,
+    IncorrectArgumentCount { expected: usize },
+    IncorrectArgumentType { idx: usize, expected: Type },
+    Other(&'static str),
+}
+
+macro_rules! ignore {
+    ($arg:tt) => {};
+}
+
 for_all_tuples! {
     ($($arg:ident),*) => {
         impl<$($arg,)* R, F> DynFunction<($($arg,)*)> for F
@@ -730,16 +877,32 @@ for_all_tuples! {
             F: Fn($($arg,)*) -> R,
             R: ValueType,
         {
-            #[allow(non_snake_case)]
-            fn call(&self, args: &[TypedValue]) -> TypedValue {
-                let mut args = args.iter().copied();
+            #[allow(non_snake_case, unused)]
+            fn call(&self, args: &[TypedValue]) -> Result<TypedValue, FunctionCallError> {
+                let arg_count = 0;
                 $(
-                let $arg = <$arg>::try_from(args.next().unwrap()).unwrap();
+                    ignore!($arg);
+                    let arg_count = arg_count + 1;
                 )*
 
-                assert!(args.next().is_none());
+                let idx = 0;
+                let mut args = args.iter().copied();
+                $(
+                    let Some(arg) = args.next() else {
+                        return Err(FunctionCallError::IncorrectArgumentCount { expected: arg_count });
+                    };
+                    let $arg = match <$arg>::try_from(arg) {
+                        Ok(arg) => arg,
+                        Err(_) => return Err(FunctionCallError::IncorrectArgumentType { idx, expected: $arg::TYPE }),
+                    };
+                    let idx = idx + 1;
+                )*
 
-                self($($arg),*).into()
+                if args.next().is_some() {
+                    return Err(FunctionCallError::IncorrectArgumentCount { expected: arg_count });
+                }
+
+                Ok(self($($arg),*).into())
             }
         }
     };
@@ -747,7 +910,7 @@ for_all_tuples! {
 
 struct ExprFn<'ctx> {
     #[allow(clippy::type_complexity)]
-    func: Box<dyn Fn(&[TypedValue]) -> TypedValue + 'ctx>,
+    func: Box<dyn Fn(&[TypedValue]) -> Result<TypedValue, FunctionCallError> + 'ctx>,
 }
 
 impl<'ctx> ExprFn<'ctx> {
@@ -760,7 +923,7 @@ impl<'ctx> ExprFn<'ctx> {
         }
     }
 
-    fn call(&self, args: &[TypedValue]) -> TypedValue {
+    fn call(&self, args: &[TypedValue]) -> Result<TypedValue, FunctionCallError> {
         (self.func)(args)
     }
 }
@@ -780,5 +943,17 @@ mod test {
         assert_eq!(ctx.evaluate::<bool>("value / 5 == 6"), Ok(true));
         assert_eq!(ctx.evaluate::<u64>("func(20) / 5"), Ok(8));
         assert_eq!(ctx.evaluate::<u64>("func2(20, 20) / 5"), Ok(8));
+    }
+
+    #[test]
+    fn test_eval_error() {
+        let mut ctx = Context::new();
+
+        ctx.add_function("func2", |v1: u64, v2: u64| v1 + v2);
+
+        // TODO `evaluate` should return the error marked in the source
+        let _err = ctx
+            .evaluate::<u64>("func2(20, true)")
+            .expect_err("Expected expression to return an error");
     }
 }

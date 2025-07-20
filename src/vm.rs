@@ -5,7 +5,8 @@ use crate::{
     error::MarkInSource,
 };
 use somni_expr::{
-    DynFunction, ExprContext, ExpressionVisitor, OperatorError, Type, TypedValue, ValueType,
+    DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type,
+    TypedValue, ValueType,
     string_interner::{StringIndex, Strings},
 };
 use somni_parser::{
@@ -91,7 +92,7 @@ pub struct SomniFn<'p> {
     #[allow(clippy::type_complexity)]
     func: Box<dyn Fn(&EvalContext<'p>, MemoryAddress) -> TypedValue + 'p>,
     #[allow(clippy::type_complexity)]
-    expr_func: Box<dyn Fn(&[TypedValue]) -> TypedValue + 'p>,
+    expr_func: Box<dyn Fn(&[TypedValue]) -> Result<TypedValue, FunctionCallError> + 'p>,
 }
 
 impl<'p> SomniFn<'p> {
@@ -110,7 +111,7 @@ impl<'p> SomniFn<'p> {
         (self.func)(ctx, sp)
     }
 
-    fn call_from_expr(&self, args: &[TypedValue]) -> TypedValue {
+    fn call_from_expr(&self, args: &[TypedValue]) -> Result<TypedValue, FunctionCallError> {
         (self.expr_func)(args)
     }
 }
@@ -411,7 +412,25 @@ impl<'p> EvalContext<'p> {
         let Some(function) = self.load_function_by_name(func) else {
             if let Some(fn_name) = self.strings.find(func) {
                 if let Some(intrinsic) = self.intrinsics.get(&fn_name) {
-                    return EvalEvent::Complete(intrinsic.call_from_expr(args));
+                    return match intrinsic.call_from_expr(args) {
+                        Ok(result) => EvalEvent::Complete(result),
+                        Err(FunctionCallError::IncorrectArgumentCount { expected }) => self
+                            .runtime_error(format_args!(
+                                "{func} takes {expected} arguments, {} given",
+                                args.len()
+                            )),
+                        Err(FunctionCallError::IncorrectArgumentType { idx, expected }) => self
+                            .runtime_error(format_args!(
+                                "{func} expects argument {idx} to be {expected}, got {}",
+                                args[idx].type_of()
+                            )),
+                        Err(FunctionCallError::FunctionNotFound) => {
+                            self.runtime_error(format_args!("Function {func} is not found"))
+                        }
+                        Err(FunctionCallError::Other(error)) => {
+                            self.runtime_error(format_args!("Failed to call {func}: {error}"))
+                        }
+                    };
                 }
             }
 
@@ -769,7 +788,11 @@ impl<'s> ExprContext for EvalContext<'s> {
         Some(value)
     }
 
-    fn call_function(&mut self, function_name: &str, args: &[TypedValue]) -> TypedValue {
+    fn call_function(
+        &mut self,
+        function_name: &str,
+        args: &[TypedValue],
+    ) -> Result<TypedValue, FunctionCallError> {
         match self.call(function_name, args) {
             EvalEvent::UnknownFunctionCall(fn_name) => {
                 println!("unknown function call {:?}", self.string(fn_name));
@@ -787,7 +810,7 @@ impl<'s> ExprContext for EvalContext<'s> {
                     )
                 )
             }
-            EvalEvent::Complete(value) => value,
+            EvalEvent::Complete(value) => Ok(value),
         }
     }
 

@@ -12,7 +12,7 @@ use crate::{
 };
 
 use somni_expr::{
-    ExprContext, ExpressionVisitor, Type, TypedValue,
+    ExprContext, ExpressionVisitor, FunctionCallError, Type, TypedValue,
     string_interner::{StringIndex, Strings},
 };
 use somni_parser::lexer::Location;
@@ -328,8 +328,12 @@ impl ExprContext for Program {
         TypedValue::Int(addr as u64)
     }
 
-    fn call_function(&mut self, _function_name: &str, _args: &[TypedValue]) -> TypedValue {
-        todo!("maybe")
+    fn call_function(
+        &mut self,
+        _function_name: &str,
+        _args: &[TypedValue],
+    ) -> Result<TypedValue, FunctionCallError> {
+        Err(FunctionCallError::Other("Function calls are not supported"))
     }
 }
 
