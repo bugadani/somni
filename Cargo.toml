@@ -9,7 +9,10 @@ name = "benchmark"
 harness = false
 
 [workspace.dependencies]
-indexmap = "2.9.0"
+indexmap = "2.9"
+criterion = "0.6"
+ansi-parser = "0.9"
+pretty_assertions = "1.4"
 
 [dependencies]
 indexmap.workspace = true
@@ -17,9 +20,9 @@ somni-parser = { path = "somni-parser" }
 somni-expr = { path = "somni-expr" }
 
 [dev-dependencies]
-criterion = "0.6"
-ansi-parser = "0.9.0"
-pretty_assertions = "1.4.1"
+criterion.workspace = true
+ansi-parser.workspace = true
+pretty_assertions.workspace = true
 
 [profile.release]
 debug = true

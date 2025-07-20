@@ -1,6 +1,7 @@
+pub mod error;
 pub mod string_interner;
 
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use indexmap::IndexMap;
 use somni_parser::{
@@ -9,7 +10,10 @@ use somni_parser::{
     parser,
 };
 
-use crate::string_interner::{StringIndex, StringInterner};
+use crate::{
+    error::MarkInSource,
+    string_interner::{StringIndex, StringInterner},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TypedValue {
@@ -270,6 +274,30 @@ pub struct ExpressionVisitor<'a, C> {
 pub struct EvalError {
     pub message: Box<str>,
     pub location: Location,
+}
+
+impl Display for EvalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Evaluation error: {}", self.message)
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub struct ExpressionError<'s> {
+    error: EvalError,
+    source: &'s str,
+}
+
+impl Debug for ExpressionError<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let marked = MarkInSource(
+            self.source,
+            self.error.location,
+            "Eval error",
+            &self.error.message,
+        );
+        marked.fmt(f)
+    }
 }
 
 impl<'a, C> ExpressionVisitor<'a, C>
@@ -765,7 +793,10 @@ impl ExprContext for Context<'_> {
         function_name: &str,
         args: &[TypedValue],
     ) -> Result<TypedValue, FunctionCallError> {
-        self.functions[function_name].call(args)
+        match self.functions.get(function_name) {
+            Some(func) => func.call(args),
+            None => Err(FunctionCallError::FunctionNotFound),
+        }
     }
 }
 
@@ -778,7 +809,7 @@ impl<'ctx> Context<'ctx> {
         }
     }
 
-    pub fn evaluate_any(&mut self, expression: &str) -> Result<TypedValue, EvalError> {
+    fn evaluate_any_impl(&mut self, expression: &str) -> Result<TypedValue, EvalError> {
         // TODO: we can allow new globals to be defined in the expression, but that would require
         // storing a copy of the original globals, so that they can be reset?
         let tokens = match lexer::tokenize(expression).collect::<Result<Vec<_>, _>>() {
@@ -808,16 +839,33 @@ impl<'ctx> Context<'ctx> {
         visitor.visit_expression(&ast)
     }
 
-    pub fn evaluate<V: ValueType>(&mut self, expression: &str) -> Result<V, EvalError> {
+    pub fn evaluate_any<'s>(
+        &mut self,
+        expression: &'s str,
+    ) -> Result<TypedValue, ExpressionError<'s>> {
+        self.evaluate_any_impl(expression)
+            .map_err(|error| ExpressionError {
+                error,
+                source: expression,
+            })
+    }
+
+    pub fn evaluate<'s, V: ValueType>(
+        &mut self,
+        expression: &'s str,
+    ) -> Result<V, ExpressionError<'s>> {
         let result = self.evaluate_any(expression)?;
         let result_ty = result.type_of();
-        result.try_into().map_err(|_| EvalError {
-            message: format!(
-                "Expression evaluates to {result_ty}, which cannot be converted to {}",
-                V::TYPE
-            )
-            .into_boxed_str(),
-            location: Location::dummy(),
+        result.try_into().map_err(|_| ExpressionError {
+            error: EvalError {
+                message: format!(
+                    "Expression evaluates to {result_ty}, which cannot be converted to {}",
+                    V::TYPE
+                )
+                .into_boxed_str(),
+                location: Location::dummy(),
+            },
+            source: expression,
         })
     }
 
@@ -932,6 +980,21 @@ impl<'ctx> ExprFn<'ctx> {
 mod test {
     use super::*;
 
+    fn strip_ansi(s: impl AsRef<str>) -> String {
+        use ansi_parser::AnsiParser;
+        fn text_block(output: ansi_parser::Output<'_>) -> Option<&str> {
+            match output {
+                ansi_parser::Output::TextBlock(text) => Some(text),
+                _ => None,
+            }
+        }
+
+        s.as_ref()
+            .ansi_parse()
+            .filter_map(text_block)
+            .collect::<String>()
+    }
+
     #[test]
     fn test_evaluating_exprs() {
         let mut ctx = Context::new();
@@ -949,11 +1012,19 @@ mod test {
     fn test_eval_error() {
         let mut ctx = Context::new();
 
-        ctx.add_function("func2", |v1: u64, v2: u64| v1 + v2);
+        ctx.add_function("func", |v1: u64, v2: u64| v1 + v2);
 
-        // TODO `evaluate` should return the error marked in the source
-        let _err = ctx
-            .evaluate::<u64>("func2(20, true)")
+        let err = ctx
+            .evaluate::<u64>("func(20, true)")
             .expect_err("Expected expression to return an error");
+
+        pretty_assertions::assert_eq!(
+            r#"Eval error
+ ---> at line 1 column 10
+  |
+1 | func(20, true)
+  |          ^^^^ func expects argument 1 to be int, got bool"#,
+            strip_ansi(format!("{err:?}"))
+        );
     }
 }

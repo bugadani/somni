@@ -1,12 +1,10 @@
 use std::{collections::HashMap, ops::Range};
 
-use crate::{
-    codegen::{self, CodeAddress, Function, Instruction, MemoryAddress},
-    error::MarkInSource,
-};
+use crate::codegen::{self, CodeAddress, Function, Instruction, MemoryAddress};
 use somni_expr::{
     DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type,
     TypedValue, ValueType,
+    error::MarkInSource,
     string_interner::{StringIndex, Strings},
 };
 use somni_parser::{
