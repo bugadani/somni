@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use somni_parser::{
     ast::{self, Expression},
     lexer::{self, Location},
-    parser,
+    parser::{self, DefaultTypeSet, TypeSet32, TypeSet128},
 };
 
 use crate::{
@@ -15,12 +15,93 @@ use crate::{
     string_interner::{StringIndex, StringInterner},
 };
 
+pub trait TypeSet: somni_parser::parser::TypeSet + PartialEq
+where
+    Self::Integer: ValueType,
+    Self::Float: ValueType,
+{
+    type SignedInteger: ValueType;
+
+    fn negate(v: TypedValue<Self>) -> Option<TypedValue<Self>>;
+}
+
+impl TypeSet for DefaultTypeSet {
+    type SignedInteger = i64;
+
+    fn negate(v: TypedValue<Self>) -> Option<TypedValue<Self>> {
+        let v = match v {
+            // TODO handle overflow errors
+            TypedValue::SignedInt(i) => TypedValue::SignedInt(-i),
+            TypedValue::Int(i) => TypedValue::SignedInt(-(i as i64)),
+            TypedValue::Float(f) => TypedValue::Float(-f),
+            _ => return None,
+        };
+
+        Some(v)
+    }
+}
+
+impl TypeSet for TypeSet32 {
+    type SignedInteger = i32;
+
+    fn negate(v: TypedValue<Self>) -> Option<TypedValue<Self>> {
+        let v = match v {
+            TypedValue::SignedInt(i) => TypedValue::SignedInt(-i),
+            TypedValue::Int(i) => TypedValue::SignedInt(-(i as i32)),
+            TypedValue::Float(f) => TypedValue::Float(-f),
+            _ => return None,
+        };
+
+        Some(v)
+    }
+}
+
+impl TypeSet for TypeSet128 {
+    type SignedInteger = i128;
+
+    fn negate(v: TypedValue<Self>) -> Option<TypedValue<Self>> {
+        let v = match v {
+            TypedValue::SignedInt(i) => TypedValue::SignedInt(-i),
+            TypedValue::Int(i) => TypedValue::SignedInt(-(i as i128)),
+            TypedValue::Float(f) => TypedValue::Float(-f),
+            _ => return None,
+        };
+
+        Some(v)
+    }
+}
+
+pub trait Integer: ValueType {
+    fn from_usize(value: usize) -> Self;
+}
+
+impl Integer for u32 {
+    fn from_usize(value: usize) -> Self {
+        u32::try_from(value).unwrap()
+    }
+}
+impl Integer for u64 {
+    fn from_usize(value: usize) -> Self {
+        u64::try_from(value).unwrap()
+    }
+}
+impl Integer for u128 {
+    fn from_usize(value: usize) -> Self {
+        u128::try_from(value).unwrap()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum TypedValue {
+pub enum TypedValue<T = DefaultTypeSet>
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
     Void,
-    Int(u64),
-    SignedInt(i64),
-    Float(f64),
+    Int(T::Integer),
+    SignedInt(T::SignedInteger),
+    Float(T::Float),
     Bool(bool),
     String(StringIndex),
 }
@@ -47,9 +128,9 @@ impl Display for OperatorError {
 macro_rules! dispatch_binary_to_bool {
     ($method:ident) => {
         pub(crate) fn $method(
-            lhs: TypedValue,
-            rhs: TypedValue,
-        ) -> Result<TypedValue, OperatorError> {
+            lhs: TypedValue<T>,
+            rhs: TypedValue<T>,
+        ) -> Result<TypedValue<T>, OperatorError> {
             let result = match (lhs, rhs) {
                 (TypedValue::Bool(value), TypedValue::Bool(other)) => {
                     ValueType::$method(value, other)
@@ -76,25 +157,22 @@ macro_rules! dispatch_binary_to_bool {
 
 macro_rules! dispatch_binary_to_value_type {
     ($method:ident) => {
-        pub(crate) fn $method(
-            lhs: TypedValue,
-            rhs: TypedValue,
-        ) -> Result<TypedValue, OperatorError> {
+        pub(crate) fn $method(lhs: Self, rhs: Self) -> Result<Self, OperatorError> {
             match (lhs, rhs) {
-                (TypedValue::Bool(value), TypedValue::Bool(other)) => {
-                    Ok(TypedValue::from(ValueType::$method(value, other)?))
+                (Self::Bool(value), Self::Bool(other)) => {
+                    Ok(Self::from(ValueType::$method(value, other)?))
                 }
-                (TypedValue::Int(value), TypedValue::Int(other)) => {
-                    Ok(TypedValue::from(ValueType::$method(value, other)?))
+                (Self::Int(value), Self::Int(other)) => {
+                    Ok(Self::from(ValueType::$method(value, other)?))
                 }
-                (TypedValue::SignedInt(value), TypedValue::SignedInt(other)) => {
-                    Ok(TypedValue::from(ValueType::$method(value, other)?))
+                (Self::SignedInt(value), Self::SignedInt(other)) => {
+                    Ok(Self::from(ValueType::$method(value, other)?))
                 }
-                (TypedValue::Float(value), TypedValue::Float(other)) => {
-                    Ok(TypedValue::from(ValueType::$method(value, other)?))
+                (Self::Float(value), Self::Float(other)) => {
+                    Ok(Self::from(ValueType::$method(value, other)?))
                 }
-                (TypedValue::String(value), TypedValue::String(other)) => {
-                    Ok(TypedValue::from(ValueType::$method(value, other)?))
+                (Self::String(value), Self::String(other)) => {
+                    Ok(Self::from(ValueType::$method(value, other)?))
                 }
                 _ => return Err(OperatorError::TypeError),
             }
@@ -102,7 +180,12 @@ macro_rules! dispatch_binary_to_value_type {
     };
 }
 
-impl TypedValue {
+impl<T> TypedValue<T>
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
     pub fn type_of(&self) -> Type {
         match self {
             TypedValue::Void => Type::Void,
@@ -114,6 +197,38 @@ impl TypedValue {
         }
     }
 
+    pub fn write(&self, to: &mut [u8]) {
+        match self {
+            TypedValue::Void => ().write(to),
+            TypedValue::Int(value) => value.write(to),
+            TypedValue::SignedInt(value) => value.write(to),
+            TypedValue::Float(value) => value.write(to),
+            TypedValue::Bool(value) => value.write(to),
+            TypedValue::String(value) => value.write(to),
+        }
+    }
+
+    pub fn from_typed_bytes(ty: Type, value: &[u8]) -> TypedValue<T> {
+        match ty {
+            Type::Void => Self::Void,
+            Type::Int => Self::Int(<_>::from_bytes(value)),
+            Type::SignedInt => Self::SignedInt(<_>::from_bytes(value)),
+            Type::Float => Self::Float(<_>::from_bytes(value)),
+            Type::Bool => Self::Bool(<_>::from_bytes(value)),
+            Type::String => Self::String(<_>::from_bytes(value)),
+        }
+    }
+}
+
+impl<T> TypedValue<T>
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+    Self: From<T::Integer>,
+    Self: From<T::SignedInteger>,
+    Self: From<T::Float>,
+{
     dispatch_binary_to_bool!(equals);
     dispatch_binary_to_bool!(less_than);
     dispatch_binary_to_bool!(less_than_or_equal);
@@ -127,90 +242,67 @@ impl TypedValue {
     dispatch_binary_to_value_type!(subtract);
     dispatch_binary_to_value_type!(multiply);
     dispatch_binary_to_value_type!(divide);
+}
 
-    pub fn write(&self, to: &mut [u8]) {
-        match self {
-            TypedValue::Void => ().write(to),
-            TypedValue::Int(value) => value.write(to),
-            TypedValue::SignedInt(value) => value.write(to),
-            TypedValue::Float(value) => value.write(to),
-            TypedValue::Bool(value) => value.write(to),
-            TypedValue::String(value) => value.write(to),
+macro_rules! convert {
+    ($type:ty, $ts_kind:ident, $kind:ident) => {
+        impl<T> From<$type> for TypedValue<T>
+        where
+            T: TypeSet<$ts_kind = $type>,
+            T::Integer: ValueType,
+            T::Float: ValueType,
+        {
+            fn from(value: $type) -> Self {
+                TypedValue::$kind(value)
+            }
         }
-    }
+        impl<T> TryFrom<TypedValue<T>> for $type
+        where
+            T: TypeSet<$ts_kind = $type>,
+            T::Integer: ValueType,
+            T::Float: ValueType,
+        {
+            type Error = ();
 
-    pub fn from_typed_bytes(ty: Type, value: &[u8]) -> TypedValue {
-        match ty {
-            Type::Void => Self::Void,
-            Type::Int => Self::Int(<_>::from_bytes(value)),
-            Type::SignedInt => Self::SignedInt(<_>::from_bytes(value)),
-            Type::Float => Self::Float(<_>::from_bytes(value)),
-            Type::Bool => Self::Bool(<_>::from_bytes(value)),
-            Type::String => Self::String(<_>::from_bytes(value)),
+            fn try_from(value: TypedValue<T>) -> Result<Self, Self::Error> {
+                if let TypedValue::$kind(value) = value {
+                    Ok(value)
+                } else {
+                    Err(())
+                }
+            }
         }
-    }
+    };
 }
 
-impl From<u64> for TypedValue {
-    fn from(value: u64) -> Self {
-        TypedValue::Int(value)
-    }
-}
-impl TryFrom<TypedValue> for u64 {
-    type Error = ();
+convert!(u32, Integer, Int);
+convert!(u64, Integer, Int);
+convert!(u128, Integer, Int);
+convert!(i32, SignedInteger, SignedInt);
+convert!(i64, SignedInteger, SignedInt);
+convert!(i128, SignedInteger, SignedInt);
+convert!(f32, Float, Float);
+convert!(f64, Float, Float);
 
-    fn try_from(value: TypedValue) -> Result<Self, Self::Error> {
-        if let TypedValue::Int(value) = value {
-            Ok(value)
-        } else {
-            Err(())
-        }
-    }
-}
-
-impl From<i64> for TypedValue {
-    fn from(value: i64) -> Self {
-        TypedValue::SignedInt(value)
-    }
-}
-impl TryFrom<TypedValue> for i64 {
-    type Error = ();
-
-    fn try_from(value: TypedValue) -> Result<Self, Self::Error> {
-        if let TypedValue::SignedInt(value) = value {
-            Ok(value)
-        } else {
-            Err(())
-        }
-    }
-}
-
-impl From<f64> for TypedValue {
-    fn from(value: f64) -> Self {
-        TypedValue::Float(value)
-    }
-}
-impl TryFrom<TypedValue> for f64 {
-    type Error = ();
-
-    fn try_from(value: TypedValue) -> Result<Self, Self::Error> {
-        if let TypedValue::Float(value) = value {
-            Ok(value)
-        } else {
-            Err(())
-        }
-    }
-}
-
-impl From<bool> for TypedValue {
+impl<T> From<bool> for TypedValue<T>
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
     fn from(value: bool) -> Self {
         TypedValue::Bool(value)
     }
 }
-impl TryFrom<TypedValue> for bool {
+impl<T> TryFrom<TypedValue<T>> for bool
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
     type Error = ();
 
-    fn try_from(value: TypedValue) -> Result<Self, Self::Error> {
+    fn try_from(value: TypedValue<T>) -> Result<Self, Self::Error> {
         if let TypedValue::Bool(value) = value {
             Ok(value)
         } else {
@@ -219,15 +311,25 @@ impl TryFrom<TypedValue> for bool {
     }
 }
 
-impl From<StringIndex> for TypedValue {
+impl<T> From<StringIndex> for TypedValue<T>
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
     fn from(value: StringIndex) -> Self {
         TypedValue::String(value)
     }
 }
-impl TryFrom<TypedValue> for StringIndex {
+impl<T> TryFrom<TypedValue<T>> for StringIndex
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
     type Error = ();
 
-    fn try_from(value: TypedValue) -> Result<Self, Self::Error> {
+    fn try_from(value: TypedValue<T>) -> Result<Self, Self::Error> {
         if let TypedValue::String(str) = value {
             Ok(str)
         } else {
@@ -236,16 +338,26 @@ impl TryFrom<TypedValue> for StringIndex {
     }
 }
 
-impl From<()> for TypedValue {
+impl<T> From<()> for TypedValue<T>
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
     fn from(_: ()) -> Self {
         TypedValue::Void
     }
 }
 
-impl TryFrom<TypedValue> for () {
+impl<T> TryFrom<TypedValue<T>> for ()
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
     type Error = ();
 
-    fn try_from(value: TypedValue) -> Result<Self, Self::Error> {
+    fn try_from(value: TypedValue<T>) -> Result<Self, Self::Error> {
         if let TypedValue::Void = value {
             Ok(())
         } else {
@@ -254,20 +366,26 @@ impl TryFrom<TypedValue> for () {
     }
 }
 
-pub trait ExprContext {
+pub trait ExprContext<T = DefaultTypeSet>
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
     fn intern_string(&mut self, s: &str) -> StringIndex;
-    fn try_load_variable(&self, variable: &str) -> Option<TypedValue>;
-    fn address_of(&self, variable: &str) -> TypedValue;
+    fn try_load_variable(&self, variable: &str) -> Option<TypedValue<T>>;
+    fn address_of(&self, variable: &str) -> TypedValue<T>;
     fn call_function(
         &mut self,
         function_name: &str,
-        args: &[TypedValue],
-    ) -> Result<TypedValue, FunctionCallError>;
+        args: &[TypedValue<T>],
+    ) -> Result<TypedValue<T>, FunctionCallError>;
 }
 
-pub struct ExpressionVisitor<'a, C> {
+pub struct ExpressionVisitor<'a, C, T = DefaultTypeSet> {
     pub context: &'a mut C,
     pub source: &'a str,
+    pub _marker: std::marker::PhantomData<T>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -300,11 +418,17 @@ impl Debug for ExpressionError<'_> {
     }
 }
 
-impl<'a, C> ExpressionVisitor<'a, C>
+impl<'a, C, T> ExpressionVisitor<'a, C, T>
 where
-    C: ExprContext,
+    C: ExprContext<T>,
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+    TypedValue<T>: From<T::Integer>,
+    TypedValue<T>: From<T::SignedInteger>,
+    TypedValue<T>: From<T::Float>,
 {
-    fn visit_variable(&mut self, variable: &lexer::Token) -> Result<TypedValue, EvalError> {
+    fn visit_variable(&mut self, variable: &lexer::Token) -> Result<TypedValue<T>, EvalError> {
         let name = variable.source(self.source);
         self.context.try_load_variable(name).ok_or(EvalError {
             message: format!("Variable {name} was not found").into_boxed_str(),
@@ -312,20 +436,23 @@ where
         })
     }
 
-    pub fn visit_expression(&mut self, expression: &Expression) -> Result<TypedValue, EvalError> {
+    pub fn visit_expression(
+        &mut self,
+        expression: &Expression<T>,
+    ) -> Result<TypedValue<T>, EvalError> {
         let result = match expression {
             Expression::Variable { variable } => self.visit_variable(variable)?,
             Expression::Literal { value } => match &value.value {
-                ast::LiteralValue::Integer(value) => TypedValue::Int(*value),
-                ast::LiteralValue::Float(value) => TypedValue::Float(*value),
+                ast::LiteralValue::Integer(value) => TypedValue::<T>::Int(*value),
+                ast::LiteralValue::Float(value) => TypedValue::<T>::Float(*value),
                 ast::LiteralValue::String(value) => {
-                    TypedValue::String(self.context.intern_string(value))
+                    TypedValue::<T>::String(self.context.intern_string(value))
                 }
-                ast::LiteralValue::Boolean(value) => TypedValue::Bool(*value),
+                ast::LiteralValue::Boolean(value) => TypedValue::<T>::Bool(*value),
             },
             Expression::UnaryOperator { name, operand } => match name.source(self.source) {
                 "!" => match self.visit_expression(operand)? {
-                    TypedValue::Bool(b) => TypedValue::Bool(!b),
+                    TypedValue::Bool(b) => TypedValue::<T>::Bool(!b),
                     value => {
                         return Err(EvalError {
                             message: format!("Expected boolean, found {}", value.type_of())
@@ -334,18 +461,14 @@ where
                         });
                     }
                 },
-                "-" => match self.visit_expression(operand)? {
-                    // TODO handle overflow errors
-                    TypedValue::SignedInt(i) => TypedValue::SignedInt(-i),
-                    TypedValue::Int(i) => TypedValue::SignedInt(-(i as i64)),
-                    TypedValue::Float(f) => TypedValue::Float(-f),
-                    value => {
-                        return Err(EvalError {
-                            message: format!("Cannot negate {}", value.type_of()).into_boxed_str(),
-                            location: operand.location(),
-                        });
-                    }
-                },
+
+                "-" => {
+                    let value = self.visit_expression(operand)?;
+                    T::negate(value).ok_or_else(|| EvalError {
+                        message: format!("Cannot negate {}", value.type_of()).into_boxed_str(),
+                        location: operand.location(),
+                    })?
+                }
                 "&" => match operand.as_variable() {
                     Some(variable) => {
                         let name = variable.source(self.source);
@@ -380,8 +503,8 @@ where
                 if short_circuiting.contains(&operator) {
                     let lhs = self.visit_expression(&operands[0])?;
                     return match operator {
-                        "&&" if lhs == TypedValue::Bool(false) => Ok(TypedValue::Bool(false)),
-                        "||" if lhs == TypedValue::Bool(true) => Ok(TypedValue::Bool(true)),
+                        "&&" if lhs == TypedValue::<T>::Bool(false) => Ok(TypedValue::Bool(false)),
+                        "||" if lhs == TypedValue::<T>::Bool(true) => Ok(TypedValue::Bool(true)),
                         _ => self.visit_expression(&operands[1]),
                     };
                 }
@@ -389,21 +512,21 @@ where
                 let lhs = self.visit_expression(&operands[0])?;
                 let rhs = self.visit_expression(&operands[1])?;
                 let result = match name.source(self.source) {
-                    "+" => TypedValue::add(lhs, rhs),
-                    "-" => TypedValue::subtract(lhs, rhs),
-                    "*" => TypedValue::multiply(lhs, rhs),
-                    "/" => TypedValue::divide(lhs, rhs),
-                    "<" => TypedValue::less_than(lhs, rhs),
-                    ">" => TypedValue::less_than(rhs, lhs),
-                    "<=" => TypedValue::less_than_or_equal(lhs, rhs),
-                    ">=" => TypedValue::less_than_or_equal(rhs, lhs),
-                    "==" => TypedValue::equals(lhs, rhs),
-                    "!=" => TypedValue::not_equals(lhs, rhs),
-                    "|" => TypedValue::bitwise_or(lhs, rhs),
-                    "^" => TypedValue::bitwise_xor(lhs, rhs),
-                    "&" => TypedValue::bitwise_and(lhs, rhs),
-                    "<<" => TypedValue::shift_left(lhs, rhs),
-                    ">>" => TypedValue::shift_right(lhs, rhs),
+                    "+" => TypedValue::<T>::add(lhs, rhs),
+                    "-" => TypedValue::<T>::subtract(lhs, rhs),
+                    "*" => TypedValue::<T>::multiply(lhs, rhs),
+                    "/" => TypedValue::<T>::divide(lhs, rhs),
+                    "<" => TypedValue::<T>::less_than(lhs, rhs),
+                    ">" => TypedValue::<T>::less_than(rhs, lhs),
+                    "<=" => TypedValue::<T>::less_than_or_equal(lhs, rhs),
+                    ">=" => TypedValue::<T>::less_than_or_equal(rhs, lhs),
+                    "==" => TypedValue::<T>::equals(lhs, rhs),
+                    "!=" => TypedValue::<T>::not_equals(lhs, rhs),
+                    "|" => TypedValue::<T>::bitwise_or(lhs, rhs),
+                    "^" => TypedValue::<T>::bitwise_xor(lhs, rhs),
+                    "&" => TypedValue::<T>::bitwise_and(lhs, rhs),
+                    "<<" => TypedValue::<T>::shift_left(lhs, rhs),
+                    ">>" => TypedValue::<T>::shift_right(lhs, rhs),
 
                     other => {
                         return Err(EvalError {
@@ -474,7 +597,7 @@ where
         Ok(result)
     }
 }
-pub trait ValueType: Sized + Copy + TryFrom<TypedValue, Error = ()> + Into<TypedValue> {
+pub trait ValueType: Sized + Copy + PartialEq {
     const BYTES: usize;
     const TYPE: Type;
 
@@ -544,75 +667,86 @@ impl ValueType for () {
     }
 }
 
-impl ValueType for u64 {
-    const BYTES: usize = 8;
-    const TYPE: Type = Type::Int;
+macro_rules! value_type_int {
+    ($type:ty, $kind:ident) => {
+        impl ValueType for $type {
+            const BYTES: usize = std::mem::size_of::<$type>();
+            const TYPE: Type = Type::$kind;
 
-    fn write(&self, to: &mut [u8]) {
-        to.copy_from_slice(&self.to_le_bytes());
-    }
+            fn write(&self, to: &mut [u8]) {
+                to.copy_from_slice(&self.to_le_bytes());
+            }
 
-    fn from_bytes(bytes: &[u8]) -> Self {
-        u64::from_le_bytes(bytes.try_into().unwrap())
-    }
+            fn from_bytes(bytes: &[u8]) -> Self {
+                <$type>::from_le_bytes(bytes.try_into().unwrap())
+            }
 
-    fn less_than(a: Self, b: Self) -> Result<bool, OperatorError> {
-        Ok(a < b)
-    }
-    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
-        Ok(a == b)
-    }
-    fn add(a: Self, b: Self) -> Result<Self, OperatorError> {
-        a.checked_add(b).ok_or(OperatorError::RuntimeError)
-    }
-    fn subtract(a: Self, b: Self) -> Result<Self, OperatorError> {
-        a.checked_sub(b).ok_or(OperatorError::RuntimeError)
-    }
-    fn multiply(a: Self, b: Self) -> Result<Self, OperatorError> {
-        a.checked_mul(b).ok_or(OperatorError::RuntimeError)
-    }
-    fn divide(a: Self, b: Self) -> Result<Self, OperatorError> {
-        if b == 0 {
-            Err(OperatorError::RuntimeError)
-        } else {
-            Ok(a / b)
+            fn less_than(a: Self, b: Self) -> Result<bool, OperatorError> {
+                Ok(a < b)
+            }
+            fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+                Ok(a == b)
+            }
+            fn add(a: Self, b: Self) -> Result<Self, OperatorError> {
+                a.checked_add(b).ok_or(OperatorError::RuntimeError)
+            }
+            fn subtract(a: Self, b: Self) -> Result<Self, OperatorError> {
+                a.checked_sub(b).ok_or(OperatorError::RuntimeError)
+            }
+            fn multiply(a: Self, b: Self) -> Result<Self, OperatorError> {
+                a.checked_mul(b).ok_or(OperatorError::RuntimeError)
+            }
+            fn divide(a: Self, b: Self) -> Result<Self, OperatorError> {
+                if b == 0 {
+                    Err(OperatorError::RuntimeError)
+                } else {
+                    Ok(a / b)
+                }
+            }
+            fn bitwise_or(a: Self, b: Self) -> Result<Self, OperatorError> {
+                Ok(a | b)
+            }
+            fn bitwise_xor(a: Self, b: Self) -> Result<Self, OperatorError> {
+                Ok(a ^ b)
+            }
+            fn bitwise_and(a: Self, b: Self) -> Result<Self, OperatorError> {
+                Ok(a & b)
+            }
+            fn shift_left(a: Self, b: Self) -> Result<Self, OperatorError> {
+                if b < std::mem::size_of::<$type>() as Self * 8 {
+                    Ok(a << b)
+                } else {
+                    Err(OperatorError::RuntimeError)
+                }
+            }
+            fn shift_right(a: Self, b: Self) -> Result<Self, OperatorError> {
+                if b < std::mem::size_of::<$type>() as Self * 8 {
+                    Ok(a >> b)
+                } else {
+                    Err(OperatorError::RuntimeError)
+                }
+            }
         }
-    }
-    fn bitwise_or(a: Self, b: Self) -> Result<Self, OperatorError> {
-        Ok(a | b)
-    }
-    fn bitwise_xor(a: Self, b: Self) -> Result<Self, OperatorError> {
-        Ok(a ^ b)
-    }
-    fn bitwise_and(a: Self, b: Self) -> Result<Self, OperatorError> {
-        Ok(a & b)
-    }
-    fn shift_left(a: Self, b: Self) -> Result<Self, OperatorError> {
-        if b < 64 {
-            Ok(a << b)
-        } else {
-            Err(OperatorError::RuntimeError)
-        }
-    }
-    fn shift_right(a: Self, b: Self) -> Result<Self, OperatorError> {
-        if b < 64 {
-            Ok(a >> b)
-        } else {
-            Err(OperatorError::RuntimeError)
-        }
-    }
+    };
 }
 
-impl ValueType for i64 {
-    const BYTES: usize = 8;
-    const TYPE: Type = Type::SignedInt;
+value_type_int!(u32, Int);
+value_type_int!(u64, Int);
+value_type_int!(u128, Int);
+value_type_int!(i32, SignedInt);
+value_type_int!(i64, SignedInt);
+value_type_int!(i128, SignedInt);
+
+impl ValueType for f32 {
+    const BYTES: usize = 4;
+    const TYPE: Type = Type::Float;
 
     fn write(&self, to: &mut [u8]) {
         to.copy_from_slice(&self.to_le_bytes());
     }
 
     fn from_bytes(bytes: &[u8]) -> Self {
-        i64::from_le_bytes(bytes.try_into().unwrap())
+        f32::from_le_bytes(bytes.try_into().unwrap())
     }
 
     fn less_than(a: Self, b: Self) -> Result<bool, OperatorError> {
@@ -622,43 +756,16 @@ impl ValueType for i64 {
         Ok(a == b)
     }
     fn add(a: Self, b: Self) -> Result<Self, OperatorError> {
-        a.checked_add(b).ok_or(OperatorError::RuntimeError)
+        Ok(a + b)
     }
     fn subtract(a: Self, b: Self) -> Result<Self, OperatorError> {
-        a.checked_sub(b).ok_or(OperatorError::RuntimeError)
+        Ok(a - b)
     }
     fn multiply(a: Self, b: Self) -> Result<Self, OperatorError> {
-        a.checked_mul(b).ok_or(OperatorError::RuntimeError)
+        Ok(a * b)
     }
     fn divide(a: Self, b: Self) -> Result<Self, OperatorError> {
-        if b == 0 {
-            Err(OperatorError::RuntimeError)
-        } else {
-            Ok(a / b)
-        }
-    }
-    fn bitwise_or(a: Self, b: Self) -> Result<Self, OperatorError> {
-        Ok(a | b)
-    }
-    fn bitwise_xor(a: Self, b: Self) -> Result<Self, OperatorError> {
-        Ok(a ^ b)
-    }
-    fn bitwise_and(a: Self, b: Self) -> Result<Self, OperatorError> {
-        Ok(a & b)
-    }
-    fn shift_left(a: Self, b: Self) -> Result<Self, OperatorError> {
-        if b < 64 {
-            Ok(a << b)
-        } else {
-            Err(OperatorError::RuntimeError)
-        }
-    }
-    fn shift_right(a: Self, b: Self) -> Result<Self, OperatorError> {
-        if b < 64 {
-            Ok(a >> b)
-        } else {
-            Err(OperatorError::RuntimeError)
-        }
+        Ok(a / b)
     }
 }
 
@@ -768,31 +875,42 @@ impl Display for Type {
 }
 
 #[derive(Default)]
-pub struct Context<'ctx> {
-    variables: IndexMap<String, TypedValue>,
-    functions: IndexMap<String, ExprFn<'ctx>>,
+pub struct Context<'ctx, T = DefaultTypeSet>
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
+    variables: IndexMap<String, TypedValue<T>>,
+    functions: IndexMap<String, ExprFn<'ctx, T>>,
     strings: StringInterner,
+    marker: std::marker::PhantomData<T>,
 }
 
-impl ExprContext for Context<'_> {
+impl<T> ExprContext<T> for Context<'_, T>
+where
+    T: TypeSet,
+    T::Integer: ValueType + Integer,
+    T::Float: ValueType,
+{
     fn intern_string(&mut self, s: &str) -> StringIndex {
         self.strings.intern(s)
     }
 
-    fn try_load_variable(&self, variable: &str) -> Option<TypedValue> {
+    fn try_load_variable(&self, variable: &str) -> Option<TypedValue<T>> {
         self.variables.get(variable).copied()
     }
 
-    fn address_of(&self, variable: &str) -> TypedValue {
+    fn address_of(&self, variable: &str) -> TypedValue<T> {
         let index = self.variables.get_index_of(variable).unwrap();
-        TypedValue::Int(index as u64)
+        TypedValue::Int(<T::Integer as Integer>::from_usize(index))
     }
 
     fn call_function(
         &mut self,
         function_name: &str,
-        args: &[TypedValue],
-    ) -> Result<TypedValue, FunctionCallError> {
+        args: &[TypedValue<T>],
+    ) -> Result<TypedValue<T>, FunctionCallError> {
         match self.functions.get(function_name) {
             Some(func) => func.call(args),
             None => Err(FunctionCallError::FunctionNotFound),
@@ -800,16 +918,31 @@ impl ExprContext for Context<'_> {
     }
 }
 
-impl<'ctx> Context<'ctx> {
+impl<'ctx> Context<'ctx, DefaultTypeSet> {
     pub fn new() -> Self {
+        Self::new_with_types()
+    }
+}
+
+impl<'ctx, T> Context<'ctx, T>
+where
+    T: TypeSet,
+    T::Integer: Integer,
+    T::Float: ValueType,
+    TypedValue<T>: From<T::Integer>,
+    TypedValue<T>: From<T::SignedInteger>,
+    TypedValue<T>: From<T::Float>,
+{
+    pub fn new_with_types() -> Self {
         Self {
             variables: IndexMap::new(),
             functions: IndexMap::new(),
             strings: StringInterner::new(),
+            marker: std::marker::PhantomData,
         }
     }
 
-    fn evaluate_any_impl(&mut self, expression: &str) -> Result<TypedValue, EvalError> {
+    fn evaluate_any_impl(&mut self, expression: &str) -> Result<TypedValue<T>, EvalError> {
         // TODO: we can allow new globals to be defined in the expression, but that would require
         // storing a copy of the original globals, so that they can be reset?
         let tokens = match lexer::tokenize(expression).collect::<Result<Vec<_>, _>>() {
@@ -831,9 +964,10 @@ impl<'ctx> Context<'ctx> {
             }
         };
 
-        let mut visitor = ExpressionVisitor {
+        let mut visitor = ExpressionVisitor::<Self, T> {
             context: self,
             source: expression,
+            _marker: std::marker::PhantomData,
         };
 
         visitor.visit_expression(&ast)
@@ -842,7 +976,7 @@ impl<'ctx> Context<'ctx> {
     pub fn evaluate_any<'s>(
         &mut self,
         expression: &'s str,
-    ) -> Result<TypedValue, ExpressionError<'s>> {
+    ) -> Result<TypedValue<T>, ExpressionError<'s>> {
         self.evaluate_any_impl(expression)
             .map_err(|error| ExpressionError {
                 error,
@@ -853,7 +987,10 @@ impl<'ctx> Context<'ctx> {
     pub fn evaluate<'s, V: ValueType>(
         &mut self,
         expression: &'s str,
-    ) -> Result<V, ExpressionError<'s>> {
+    ) -> Result<V, ExpressionError<'s>>
+    where
+        V: TryFrom<TypedValue<T>>,
+    {
         let result = self.evaluate_any(expression)?;
         let result_ty = result.type_of();
         result.try_into().map_err(|_| ExpressionError {
@@ -869,21 +1006,29 @@ impl<'ctx> Context<'ctx> {
         })
     }
 
-    pub fn add_variable(&mut self, name: &str, value: TypedValue) {
-        self.variables.insert(name.to_string(), value);
+    pub fn add_variable<V>(&mut self, name: &str, value: V)
+    where
+        V: Into<TypedValue<T>>,
+    {
+        self.variables.insert(name.to_string(), value.into());
     }
 
     pub fn add_function<F, A>(&mut self, name: &str, func: F)
     where
-        F: DynFunction<A> + 'ctx,
+        F: DynFunction<A, T> + 'ctx,
     {
         let func = ExprFn::new(func);
         self.functions.insert(name.to_string(), func);
     }
 }
 
-pub trait DynFunction<A> {
-    fn call(&self, args: &[TypedValue]) -> Result<TypedValue, FunctionCallError>;
+pub trait DynFunction<A, T>
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
+    fn call(&self, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError>;
 }
 
 #[macro_export]
@@ -919,14 +1064,17 @@ macro_rules! ignore {
 
 for_all_tuples! {
     ($($arg:ident),*) => {
-        impl<$($arg,)* R, F> DynFunction<($($arg,)*)> for F
+        impl<$($arg,)* R, F, T> DynFunction<($($arg,)*), T> for F
         where
-            $($arg: ValueType,)*
+            $($arg: ValueType + TryFrom<TypedValue<T>>,)*
             F: Fn($($arg,)*) -> R,
-            R: ValueType,
+            R: ValueType + Into<TypedValue<T>>,
+            T: TypeSet,
+            T::Integer: ValueType,
+            T::Float: ValueType,
         {
             #[allow(non_snake_case, unused)]
-            fn call(&self, args: &[TypedValue]) -> Result<TypedValue, FunctionCallError> {
+            fn call(&self, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> {
                 let arg_count = 0;
                 $(
                     ignore!($arg);
@@ -956,22 +1104,32 @@ for_all_tuples! {
     };
 }
 
-struct ExprFn<'ctx> {
+struct ExprFn<'ctx, T>
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
     #[allow(clippy::type_complexity)]
-    func: Box<dyn Fn(&[TypedValue]) -> Result<TypedValue, FunctionCallError> + 'ctx>,
+    func: Box<dyn Fn(&[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> + 'ctx>,
 }
 
-impl<'ctx> ExprFn<'ctx> {
+impl<'ctx, T> ExprFn<'ctx, T>
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
     fn new<A, F>(func: F) -> Self
     where
-        F: DynFunction<A> + 'ctx,
+        F: DynFunction<A, T> + 'ctx,
     {
         Self {
             func: Box::new(move |args| func.call(args)),
         }
     }
 
-    fn call(&self, args: &[TypedValue]) -> Result<TypedValue, FunctionCallError> {
+    fn call(&self, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> {
         (self.func)(args)
     }
 }
@@ -1006,6 +1164,32 @@ mod test {
         assert_eq!(ctx.evaluate::<bool>("value / 5 == 6"), Ok(true));
         assert_eq!(ctx.evaluate::<u64>("func(20) / 5"), Ok(8));
         assert_eq!(ctx.evaluate::<u64>("func2(20, 20) / 5"), Ok(8));
+    }
+
+    #[test]
+    fn test_evaluating_exprs_with_u32() {
+        let mut ctx = Context::<TypeSet32>::new_with_types();
+
+        ctx.add_variable("value", TypedValue::Int(30));
+        ctx.add_function("func", |v: u32| 2 * v);
+        ctx.add_function("func2", |v1: u32, v2: u32| v1 + v2);
+
+        assert_eq!(ctx.evaluate::<bool>("value / 5 == 6"), Ok(true));
+        assert_eq!(ctx.evaluate::<u32>("func(20) / 5"), Ok(8));
+        assert_eq!(ctx.evaluate::<u32>("func2(20, 20) / 5"), Ok(8));
+    }
+
+    #[test]
+    fn test_evaluating_exprs_with_u128() {
+        let mut ctx = Context::<TypeSet128>::new_with_types();
+
+        ctx.add_variable("value", TypedValue::Int(30));
+        ctx.add_function("func", |v: u128| 2 * v);
+        ctx.add_function("func2", |v1: u128, v2: u128| v1 + v2);
+
+        assert_eq!(ctx.evaluate::<bool>("value / 5 == 6"), Ok(true));
+        assert_eq!(ctx.evaluate::<u128>("func(20) / 5"), Ok(8));
+        assert_eq!(ctx.evaluate::<u128>("func2(20, 20) / 5"), Ok(8));
     }
 
     #[test]

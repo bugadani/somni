@@ -200,7 +200,10 @@ where
         arguments: Box<[Self]>,
     },
 }
-impl Expression {
+impl<T> Expression<T>
+where
+    T: TypeSet,
+{
     pub fn location(&self) -> Location {
         match self {
             Expression::Variable { variable } => variable.location,

@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, hash_map::Entry},
+    marker::PhantomData,
     ops::{Add, AddAssign, Sub},
 };
 
@@ -378,6 +379,7 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
             let mut visitor = ExpressionVisitor {
                 context: &mut this.program,
                 source,
+                _marker: PhantomData,
             };
             if let Ok(value) = visitor.visit_expression(&global.initializer) {
                 this.program.globals[name].initial_value = Some(value);

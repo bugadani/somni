@@ -61,9 +61,19 @@ pub trait IntParser: Sized {
     fn parse(str: &str, radix: u32) -> Result<Self, ParseIntError>;
 }
 
+impl IntParser for u32 {
+    fn parse(str: &str, radix: u32) -> Result<Self, ParseIntError> {
+        u32::from_str_radix(str, radix)
+    }
+}
 impl IntParser for u64 {
     fn parse(str: &str, radix: u32) -> Result<Self, ParseIntError> {
         u64::from_str_radix(str, radix)
+    }
+}
+impl IntParser for u128 {
+    fn parse(str: &str, radix: u32) -> Result<Self, ParseIntError> {
+        u128::from_str_radix(str, radix)
     }
 }
 
@@ -71,6 +81,11 @@ pub trait FloatParser: Sized {
     fn parse(str: &str) -> Result<Self, ParseFloatError>;
 }
 
+impl FloatParser for f32 {
+    fn parse(str: &str) -> Result<Self, ParseFloatError> {
+        str.parse::<f32>()
+    }
+}
 impl FloatParser for f64 {
     fn parse(str: &str) -> Result<Self, ParseFloatError> {
         str.parse::<f64>()
@@ -78,15 +93,29 @@ impl FloatParser for f64 {
 }
 
 pub trait TypeSet: Clone + Debug + Copy {
-    type Integer: IntParser + Clone + Copy + Debug;
-    type Float: FloatParser + Clone + Copy + Debug;
+    type Integer: IntParser + Clone + Copy + PartialEq + Debug;
+    type Float: FloatParser + Clone + Copy + PartialEq + Debug;
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DefaultTypeSet;
 
 impl TypeSet for DefaultTypeSet {
     type Integer = u64;
+    type Float = f64;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TypeSet32;
+impl TypeSet for TypeSet32 {
+    type Integer = u32;
+    type Float = f32;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TypeSet128;
+impl TypeSet for TypeSet128 {
+    type Integer = u128;
     type Float = f64;
 }
 

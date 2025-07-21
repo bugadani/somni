@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Range};
+use std::{collections::HashMap, marker::PhantomData, ops::Range};
 
 use crate::codegen::{self, CodeAddress, Function, Instruction, MemoryAddress};
 use somni_expr::{
@@ -9,7 +9,7 @@ use somni_expr::{
 };
 use somni_parser::{
     lexer::{self, Location},
-    parser,
+    parser::{self, DefaultTypeSet},
 };
 
 #[derive(Clone, Debug)]
@@ -59,7 +59,7 @@ somni_expr::for_all_tuples! {
     };
 }
 
-pub trait NativeFunction<A>: DynFunction<A> + Clone {
+pub trait NativeFunction<A>: DynFunction<A, DefaultTypeSet> + Clone {
     fn call_from_vm(&self, ctx: &EvalContext<'_>, sp: MemoryAddress) -> TypedValue;
 }
 
@@ -67,10 +67,10 @@ somni_expr::for_all_tuples! {
     ($($arg:ident),*) => {
         impl<$($arg,)* R, F> NativeFunction<($($arg,)*)> for F
         where
-            $($arg: ValueType,)*
+            $($arg: ValueType + TryFrom<TypedValue, Error = ()>,)*
             F: Fn($($arg,)*) -> R,
             F: Clone,
-            R: ValueType,
+            R: ValueType + Into<TypedValue>,
         {
             #[allow(non_snake_case)]
             fn call_from_vm(&self, ctx: &EvalContext<'_>, sp: MemoryAddress) -> TypedValue {
@@ -495,6 +495,7 @@ impl<'p> EvalContext<'p> {
         let mut visitor = ExpressionVisitor {
             context: self,
             source: expression,
+            _marker: PhantomData,
         };
         // TODO: handle errors
         visitor.visit_expression(&ast).unwrap()
