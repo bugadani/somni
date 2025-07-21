@@ -1,4 +1,7 @@
-use crate::lexer::{Location, Token};
+use crate::{
+    lexer::{Location, Token},
+    parser::{DefaultTypeSet, TypeSet},
+};
 
 #[derive(Debug)]
 pub struct Program {
@@ -174,24 +177,27 @@ pub struct Else {
 }
 
 #[derive(Debug, Clone)]
-pub enum Expression {
+pub enum Expression<T = DefaultTypeSet>
+where
+    T: TypeSet,
+{
     Variable {
         variable: Token,
     },
     Literal {
-        value: Literal,
+        value: Literal<T>,
     },
     UnaryOperator {
         name: Token,
-        operand: Box<Expression>,
+        operand: Box<Self>,
     },
     BinaryOperator {
         name: Token,
-        operands: Box<[Expression; 2]>,
+        operands: Box<[Self; 2]>,
     },
     FunctionCall {
         name: Token,
-        arguments: Box<[Expression]>,
+        arguments: Box<[Self]>,
     },
 }
 impl Expression {
@@ -239,15 +245,21 @@ impl Expression {
 }
 
 #[derive(Debug, Clone)]
-pub struct Literal {
-    pub value: LiteralValue,
+pub struct Literal<T = DefaultTypeSet>
+where
+    T: TypeSet,
+{
+    pub value: LiteralValue<T>,
     pub location: Location,
 }
 
 #[derive(Debug, Clone)]
-pub enum LiteralValue {
-    Integer(u64),
-    Float(f64),
+pub enum LiteralValue<T = DefaultTypeSet>
+where
+    T: TypeSet,
+{
+    Integer(T::Integer),
+    Float(T::Float),
     String(String),
     Boolean(bool),
 }

@@ -43,7 +43,10 @@
 //! literal -> NUMBER | STRING | "true" | "false" ;
 //! ```
 
-use std::num::ParseIntError;
+use std::{
+    fmt::Debug,
+    num::{ParseFloatError, ParseIntError},
+};
 
 use crate::{
     ast::{
@@ -53,6 +56,39 @@ use crate::{
     },
     lexer::{Location, Token, TokenKind},
 };
+
+pub trait IntParser: Sized {
+    fn parse(str: &str, radix: u32) -> Result<Self, ParseIntError>;
+}
+
+impl IntParser for u64 {
+    fn parse(str: &str, radix: u32) -> Result<Self, ParseIntError> {
+        u64::from_str_radix(str, radix)
+    }
+}
+
+pub trait FloatParser: Sized {
+    fn parse(str: &str) -> Result<Self, ParseFloatError>;
+}
+
+impl FloatParser for f64 {
+    fn parse(str: &str) -> Result<Self, ParseFloatError> {
+        str.parse::<f64>()
+    }
+}
+
+pub trait TypeSet: Clone + Debug + Copy {
+    type Integer: IntParser + Clone + Copy + Debug;
+    type Float: FloatParser + Clone + Copy + Debug;
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DefaultTypeSet;
+
+impl TypeSet for DefaultTypeSet {
+    type Integer = u64;
+    type Float = f64;
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParserError {
@@ -384,7 +420,10 @@ impl Statement {
     }
 }
 
-impl Literal {
+impl<T> Literal<T>
+where
+    T: TypeSet,
+{
     fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         let token = stream.peek()?;
 
@@ -398,12 +437,9 @@ impl Literal {
                 .map_err(|_| stream.error("Invalid integer literal"))?,
             TokenKind::HexInteger => Self::parse_integer_literal(&token_source[2..], 16)
                 .map_err(|_| stream.error("Invalid hexadecimal integer literal"))?,
-            TokenKind::Float => {
-                let value = token_source
-                    .parse::<f64>()
-                    .map_err(|_| stream.error("Invalid float literal"))?;
-                LiteralValue::Float(value)
-            }
+            TokenKind::Float => <T::Float as FloatParser>::parse(token_source)
+                .map(LiteralValue::Float)
+                .map_err(|_| stream.error("Invalid float literal"))?,
             TokenKind::String => match unescape(&token_source[1..token_source.len() - 1]) {
                 Ok(string) => LiteralValue::String(string),
                 Err(offset) => {
@@ -431,8 +467,8 @@ impl Literal {
     fn parse_integer_literal(
         token_source: &str,
         radix: u32,
-    ) -> Result<LiteralValue, ParseIntError> {
-        u64::from_str_radix(token_source, radix).map(LiteralValue::Integer)
+    ) -> Result<LiteralValue<T>, ParseIntError> {
+        <T::Integer as IntParser>::parse(token_source, radix).map(LiteralValue::Integer)
     }
 }
 
@@ -465,7 +501,10 @@ enum Associativity {
     None,
 }
 
-impl Expression {
+impl<T> Expression<T>
+where
+    T: TypeSet,
+{
     fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         // We define the binary operators from the lowest precedence to the highest.
         // Each recursive call to `parse_binary` will handle one level of precedence, and pass
@@ -536,7 +575,7 @@ impl Expression {
     fn parse_primary<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         let token = stream.peek()?;
 
-        if let Ok(literal) = Literal::parse(stream) {
+        if let Ok(literal) = Literal::<T>::parse(stream) {
             return Ok(Self::Literal { value: literal });
         }
 
@@ -713,13 +752,16 @@ pub fn parse<'s>(source: &'s str, tokens: &'s [Token]) -> Result<Program, Parser
     Program::parse(&mut stream)
 }
 
-pub fn parse_expression<'s>(
+pub fn parse_expression<'s, T>(
     source: &'s str,
     tokens: &'s [Token],
-) -> Result<Expression, ParserError> {
+) -> Result<Expression<T>, ParserError>
+where
+    T: TypeSet,
+{
     let mut stream = TokenStream::new(source, tokens);
 
-    Expression::parse(&mut stream)
+    Expression::<T>::parse(&mut stream)
 }
 
 #[cfg(test)]
