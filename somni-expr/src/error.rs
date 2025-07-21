@@ -1,3 +1,5 @@
+//! Errors.
+
 use std::fmt::Display;
 
 use somni_parser::{
@@ -7,7 +9,9 @@ use somni_parser::{
 
 use crate::EvalError;
 
+/// Represents an error that has a location in the source code.
 pub trait ErrorWithLocation: Display {
+    /// Returns the location of the error in the source code.
     fn location(&self) -> Location;
 }
 
@@ -28,6 +32,7 @@ impl ErrorWithLocation for EvalError {
     }
 }
 
+/// Marks the source code with the error location and message.
 pub struct MarkInSource<'s>(pub &'s str, pub Location, pub &'s str, pub &'s str);
 impl std::fmt::Display for MarkInSource<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -37,7 +42,7 @@ impl std::fmt::Display for MarkInSource<'_> {
     }
 }
 
-pub fn mark_in_source(
+fn mark_in_source(
     f: &mut std::fmt::Formatter<'_>,
     source: &str,
     start_loc: (usize, usize),
@@ -91,7 +96,7 @@ pub fn mark_in_source(
     ))
 }
 
-pub fn location(source: &str, offset: usize) -> (usize, usize) {
+fn location(source: &str, offset: usize) -> (usize, usize) {
     let before_offset = &source[..offset];
     let mut line = 1;
     let mut col = 1;

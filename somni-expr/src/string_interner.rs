@@ -1,14 +1,19 @@
+//! A simple string interner.
+
 use std::collections::HashMap;
 
+/// The ID of a string in the interner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct StringIndex(pub usize);
 
 impl StringIndex {
+    /// Creates a dummy `StringIndex` with value 0.
     pub const fn dummy() -> Self {
         Self(0)
     }
 }
 
+/// A collection of interned strings.
 #[derive(Default, Clone, Debug)]
 pub struct Strings {
     strings: String,
@@ -16,10 +21,12 @@ pub struct Strings {
 }
 
 impl Strings {
+    /// Creates a new `Strings` instance.
     pub fn new() -> Self {
         Strings::default()
     }
 
+    /// Interns a string and returns its index.
     pub fn intern(&mut self, value: &str) -> StringIndex {
         let start = self.strings.len();
         let length = value.len();
@@ -30,11 +37,13 @@ impl Strings {
         StringIndex(index)
     }
 
+    /// Returns the string at the given index.
     pub fn lookup(&self, idx: StringIndex) -> &str {
         let (start, length) = self.positions[idx.0];
         &self.strings[start..start + length]
     }
 
+    /// Returns the index of a particular string, if it exists.
     pub fn find(&self, name: &str) -> Option<StringIndex> {
         for (index, (start, length)) in self.positions.iter().enumerate() {
             if &self.strings[*start..*start + *length] == name {
@@ -46,6 +55,7 @@ impl Strings {
     }
 }
 
+/// A string interner that allows for more efficient string storage and retrieval.
 #[derive(Default, Clone, Debug)]
 pub struct StringInterner {
     strings: Strings,

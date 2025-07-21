@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, HashMap},
     marker::PhantomData,
     ops::{Add, AddAssign, Sub},
 };
@@ -13,10 +13,10 @@ use crate::{
 };
 
 use somni_expr::{
-    ExprContext, ExpressionVisitor, FunctionCallError, Type, TypedValue,
     string_interner::{StringIndex, Strings},
+    ExprContext, ExpressionVisitor, FunctionCallError, Type, TypedValue,
 };
-use somni_parser::lexer::Location;
+use somni_parser::{lexer::Location, parser::DefaultTypeSet};
 
 // This is just to keep the size of Instruction small enough. Re-evaluate this later.
 #[derive(Clone, Copy, Debug)]
@@ -365,7 +365,7 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
                 initial_value: None,
             },
         );
-        global_addr += ty.size_of();
+        global_addr += ty.size_of::<DefaultTypeSet>();
     }
 
     loop {
@@ -626,7 +626,10 @@ impl<'s> FunctionCompiler<'s, '_> {
                     .address_of_variable(*src)
                     .expect("Variable not found in stack allocator");
 
-                self.push_instruction(location, Instruction::Copy(dst, src, ty.size_of() as u32));
+                self.push_instruction(
+                    location,
+                    Instruction::Copy(dst, src, ty.size_of::<DefaultTypeSet>() as u32),
+                );
             }
             ir::Ir::DerefAssign(dst, src) => {
                 let ty = self
@@ -810,7 +813,9 @@ impl<'s> FunctionCompiler<'s, '_> {
         let ty = self
             .type_of_variable(VariableIndex::Local(var.index))
             .expect("At this point, the variable type should be known");
-        let address = self.stack_allocator.allocate_variable(var, ty.size_of());
+        let address = self
+            .stack_allocator
+            .allocate_variable(var, ty.size_of::<DefaultTypeSet>());
 
         if let Some(value) = value {
             self.push_instruction(

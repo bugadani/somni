@@ -9,7 +9,7 @@
 //! extern_fn -> 'extern' 'fn' identifier '(' function_argument ( ',' function_argument )* ','? ')' return_decl? ;
 //! global -> 'var' identifier ':' type '=' static_initializer ';' ;
 //!
-//! static_initializer -> literal ; // TODO: const eval expressions
+//! static_initializer -> expression ; // The language does not currently support function calls.
 //!
 //! function -> 'fn' identifier '(' function_argument ( ',' function_argument )* ','? ')' return_decl? body ;
 //! function_argument -> identifier ':' '&'? type ;
@@ -40,8 +40,11 @@
 //! unary -> ('!' | '-' | '&' | '*' )* primary | call ;
 //! primary -> ( literal | identifier ( '(' call_arguments ')' )? ) | '(' expression ')' ;
 //! call_arguments -> expression ( ',' expression )* ','? ;
-//! literal -> NUMBER | STRING | "true" | "false" ;
+//! literal -> NUMBER | STRING | 'true' | 'false' ;
 //! ```
+//!
+//! `NUMBER`: Non-negative integers (binary, decimal, hexadecimal) and floats.
+//! `STRING`: Double-quoted strings with escape sequences.
 
 use std::{
     fmt::Debug,
@@ -55,9 +58,21 @@ use crate::{
         ReturnDecl, ReturnWithValue, Statement, TypeHint, VariableDefinition,
     },
     lexer::{Location, Token, TokenKind},
+    parser::private::Sealed,
 };
 
-pub trait IntParser: Sized {
+mod private {
+    pub trait Sealed {}
+
+    impl Sealed for u32 {}
+    impl Sealed for u64 {}
+    impl Sealed for u128 {}
+    impl Sealed for f32 {}
+    impl Sealed for f64 {}
+}
+
+/// Parse literals into Somni integers.
+pub trait IntParser: Sized + Sealed {
     fn parse(str: &str, radix: u32) -> Result<Self, ParseIntError>;
 }
 
@@ -77,7 +92,8 @@ impl IntParser for u128 {
     }
 }
 
-pub trait FloatParser: Sized {
+/// Parse literals into Somni floats.
+pub trait FloatParser: Sized + Sealed {
     fn parse(str: &str) -> Result<Self, ParseFloatError>;
 }
 
@@ -92,28 +108,35 @@ impl FloatParser for f64 {
     }
 }
 
+/// Defines the numeric types used in the parser.
 pub trait TypeSet: Clone + Debug + Copy {
     type Integer: IntParser + Clone + Copy + PartialEq + Debug;
     type Float: FloatParser + Clone + Copy + PartialEq + Debug;
 }
 
+/// Use 64-bit integers and 64-bit floats (default).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DefaultTypeSet;
+impl Sealed for DefaultTypeSet {}
 
 impl TypeSet for DefaultTypeSet {
     type Integer = u64;
     type Float = f64;
 }
 
+/// Use 32-bit integers and floats.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TypeSet32;
+impl Sealed for TypeSet32 {}
 impl TypeSet for TypeSet32 {
     type Integer = u32;
     type Float = f32;
 }
 
+/// Use 128-bit integers and 64-bit floats.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TypeSet128;
+impl Sealed for TypeSet128 {}
 impl TypeSet for TypeSet128 {
     type Integer = u128;
     type Float = f64;

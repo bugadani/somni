@@ -1,4 +1,81 @@
+//! # Somni expression evaluation Library
+//!
+//! This library provides tools for evaluating expressions.
+//!
+//! ## Overview
+//!
+//! The expression language includes:
+//!
+//! - Literals: integers, floats, booleans. No strings (yet).
+//! - Variables
+//! - A basic set of operators
+//! - Function calls
+//!
+//! The expression language does not include:
+//!
+//! - Control flow (if, loops, etc.)
+//! - Complex data structures (arrays, objects, etc.)
+//! - Defining functions and variables (these are provided by the context)
+//!
+//! ## Operators
+//!
+//! The following binary operators are supported, in order of precedence:
+//!
+//! - `||`: logical OR, short-circuiting
+//! - `&&`: logical AND, short-circuiting
+//! - `<`, `<=`, `>`, `>=`, `==`, `!=`: comparison operators
+//! - `|`: bitwise OR
+//! - `^`: bitwise XOR
+//! - `&`: bitwise AND
+//! - `<<`, `>>`: bitwise shift
+//! - `+`, `-`: addition and subtraction
+//! - `*`, `/`: multiplication and division
+//!
+//! Unary operators include:
+//! - `!`: logical NOT
+//! - `-`: negation
+//!
+//! For the full specification of the grammar, see the [`parser`] module's documentation.
+//!
+//! ## Numeric types
+//!
+//! The Somni language supports three numeric types:
+//!
+//! - Integers
+//! - Signed integers
+//! - Floats
+//!
+//! By default, the library uses the [`DefaultTypeSet`], which uses `u64`, `i64`, and `f64` for
+//! these types. You can use other type sets like [`TypeSet32`] or [`TypeSet128`] to use
+//! 32-bit or 128-bit integers and floats. You need to specify the type set when creating
+//! the context.
+//!
+//! ## Usage
+//!
+//! To evaluate an expression, you need to create a [`Context`] first. You can assign
+//! variables and define functions in this context, and then you can use this context
+//! to evaluate expressions.
+//!
+//! ```rust
+//! use somni_expr::Context;
+//!
+//! let mut context = Context::new();
+//!
+//! // Define a variable
+//! context.add_variable::<u64>("x", 42);
+//! context.add_function("add_one", |x: u64| { x + 1 });
+//! context.add_function("floor", |x: f64| { x.floor() as u64 });
+//!
+//! // Evaluate an expression - we expect it to evaluate
+//! // to a number, which is u64 in the default type set.
+//! let result = context.evaluate::<u64>("add_one(x + floor(1.2))");
+//!
+//! assert_eq!(result, Ok(44));
+//! ```
+#![warn(missing_docs)]
+
 pub mod error;
+#[doc(hidden)]
 pub mod string_interner;
 
 use std::fmt::{Debug, Display};
@@ -7,7 +84,7 @@ use indexmap::IndexMap;
 use somni_parser::{
     ast::{self, Expression},
     lexer::{self, Location},
-    parser::{self, DefaultTypeSet, TypeSet32, TypeSet128},
+    parser,
 };
 
 use crate::{
@@ -15,13 +92,27 @@ use crate::{
     string_interner::{StringIndex, StringInterner},
 };
 
+pub use somni_parser::parser::{DefaultTypeSet, TypeSet128, TypeSet32};
+
+mod private {
+    pub trait Sealed {}
+    impl Sealed for u32 {}
+    impl Sealed for u64 {}
+    impl Sealed for u128 {}
+}
+
+use private::Sealed;
+
+/// Defines numeric types in expressions.
 pub trait TypeSet: somni_parser::parser::TypeSet + PartialEq
 where
     Self::Integer: ValueType,
     Self::Float: ValueType,
 {
+    /// The type of signed integers in this type set.
     type SignedInteger: ValueType;
 
+    /// Negates a value of this type set, returning `None` if the value cannot be negated.
     fn negate(v: TypedValue<Self>) -> Option<TypedValue<Self>>;
 }
 
@@ -71,7 +162,8 @@ impl TypeSet for TypeSet128 {
     }
 }
 
-pub trait Integer: ValueType {
+#[doc(hidden)]
+pub trait Integer: ValueType + Sealed {
     fn from_usize(value: usize) -> Self;
 }
 
@@ -91,6 +183,7 @@ impl Integer for u128 {
     }
 }
 
+/// Represents any value in the expression language.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TypedValue<T = DefaultTypeSet>
 where
@@ -98,25 +191,32 @@ where
     T::Integer: ValueType,
     T::Float: ValueType,
 {
+    /// Represents no value.
     Void,
+    /// Represents an unsigned integer.
     Int(T::Integer),
+    /// Represents a signed integer.
     SignedInt(T::SignedInteger),
+    /// Represents a floating-point.
     Float(T::Float),
+    /// Represents a boolean.
     Bool(bool),
+    /// Represents an interned string.
     String(StringIndex),
 }
 
+/// Represents an error that can occur during operator evaluation.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum OperatorError {
-    NotSupported,
+    /// A type error occurred.
     TypeError,
+    /// A runtime error occurred.
     RuntimeError,
 }
 
 impl Display for OperatorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let message = match self {
-            OperatorError::NotSupported => "Operation not supported",
             OperatorError::TypeError => "Type error",
             OperatorError::RuntimeError => "Runtime error",
         };
@@ -186,6 +286,7 @@ where
     T::Integer: ValueType,
     T::Float: ValueType,
 {
+    /// Returns the Somni type of this value.
     pub fn type_of(&self) -> Type {
         match self {
             TypedValue::Void => Type::Void,
@@ -197,6 +298,7 @@ where
         }
     }
 
+    /// Writes the raw bytes of this value to the provided buffer.
     pub fn write(&self, to: &mut [u8]) {
         match self {
             TypedValue::Void => ().write(to),
@@ -208,6 +310,7 @@ where
         }
     }
 
+    /// Creates a `TypedValue` from the provided type and bytes.
     pub fn from_typed_bytes(ty: Type, value: &[u8]) -> TypedValue<T> {
         match ty {
             Type::Void => Self::Void,
@@ -366,15 +469,23 @@ where
     }
 }
 
+/// An expression context that provides the necessary environment for evaluating expressions.
 pub trait ExprContext<T = DefaultTypeSet>
 where
     T: TypeSet,
     T::Integer: ValueType,
     T::Float: ValueType,
 {
+    /// Implements string interning.
     fn intern_string(&mut self, s: &str) -> StringIndex;
+
+    /// Attempts to load a variable from the context.
     fn try_load_variable(&self, variable: &str) -> Option<TypedValue<T>>;
+
+    /// Returns the address of a variable in the context.
     fn address_of(&self, variable: &str) -> TypedValue<T>;
+
+    /// Calls a function in the context.
     fn call_function(
         &mut self,
         function_name: &str,
@@ -382,15 +493,22 @@ where
     ) -> Result<TypedValue<T>, FunctionCallError>;
 }
 
+/// A visitor that can process an abstract syntax tree.
 pub struct ExpressionVisitor<'a, C, T = DefaultTypeSet> {
+    /// The context in which the expression is evaluated.
     pub context: &'a mut C,
+    /// The source code from which the expression was parsed.
     pub source: &'a str,
+    /// The types of the variables in the context.
     pub _marker: std::marker::PhantomData<T>,
 }
 
+/// An error that occurs during evaluation of an expression.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EvalError {
+    /// The error message.
     pub message: Box<str>,
+    /// The location in the source code where the error occurred.
     pub location: Location,
 }
 
@@ -400,10 +518,37 @@ impl Display for EvalError {
     }
 }
 
+/// An error that occurs during evaluation.
+///
+/// Printing this error will show the error message and the location in the source code.
+///
+/// ```rust
+/// use somni_expr::{Context, TypeSet32};
+/// let mut ctx = Context::<TypeSet32>::new_with_types();
+///
+/// let error = ctx.evaluate::<u32>("true + 1").unwrap_err();
+///
+/// println!("{error:?}");
+///
+/// // Output:
+/// //
+/// // Evaluation error
+/// // ---> at line 1 column 1
+/// //   |
+/// // 1 | true + 1
+/// //   | ^^^^^^^^ Failed to evaluate expression: Type error
+/// ```
 #[derive(Clone, PartialEq)]
 pub struct ExpressionError<'s> {
     error: EvalError,
     source: &'s str,
+}
+
+impl ExpressionError<'_> {
+    /// Returns the inner [`EvalError`].
+    pub fn into_inner(self) -> EvalError {
+        self.error
+    }
 }
 
 impl Debug for ExpressionError<'_> {
@@ -411,7 +556,7 @@ impl Debug for ExpressionError<'_> {
         let marked = MarkInSource(
             self.source,
             self.error.location,
-            "Eval error",
+            "Evaluation error",
             &self.error.message,
         );
         marked.fmt(f)
@@ -436,6 +581,7 @@ where
         })
     }
 
+    /// Visits an expression and evaluates it, returning the result as a `TypedValue`.
     pub fn visit_expression(
         &mut self,
         expression: &Expression<T>,
@@ -597,6 +743,8 @@ where
         Ok(result)
     }
 }
+
+#[doc(hidden)]
 pub trait ValueType: Sized + Copy + PartialEq {
     const BYTES: usize;
     const TYPE: Type;
@@ -616,37 +764,37 @@ pub trait ValueType: Sized + Copy + PartialEq {
         Ok(!equals)
     }
     fn bitwise_or(_a: Self, _b: Self) -> Result<Self, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
     fn bitwise_xor(_a: Self, _b: Self) -> Result<Self, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
     fn bitwise_and(_a: Self, _b: Self) -> Result<Self, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
     fn shift_left(_a: Self, _b: Self) -> Result<Self, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
     fn shift_right(_a: Self, _b: Self) -> Result<Self, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
     fn add(_a: Self, _b: Self) -> Result<Self, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
     fn subtract(_a: Self, _b: Self) -> Result<Self, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
     fn multiply(_a: Self, _b: Self) -> Result<Self, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
     fn divide(_a: Self, _b: Self) -> Result<Self, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
     fn not(_a: Self) -> Result<Self, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
     fn negate(_a: Self) -> Result<Self, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
 }
 
@@ -659,11 +807,11 @@ impl ValueType for () {
     fn from_bytes(_: &[u8]) -> Self {}
 
     fn less_than(_: Self, _: Self) -> Result<bool, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
 
     fn equals(_: Self, _: Self) -> Result<bool, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
 }
 
@@ -814,7 +962,7 @@ impl ValueType for bool {
     }
 
     fn less_than(_: Self, _: Self) -> Result<bool, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
     fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
         Ok(a == b)
@@ -832,29 +980,42 @@ impl ValueType for StringIndex {
         StringIndex(u64::from_le_bytes(bytes.try_into().unwrap()) as usize)
     }
     fn less_than(_: Self, _: Self) -> Result<bool, OperatorError> {
-        Err(OperatorError::NotSupported)
+        unimplemented!("Operation not supported")
     }
     fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
         Ok(a == b)
     }
 }
 
+/// A type in the Somni language.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Type {
+    /// Represents no value, used for e.g. functions that do not return a value.
     Void,
+    /// Represents an unsigned integer.
     Int,
+    /// Represents a signed integer.
     SignedInt,
+    /// Represents a floating point number.
     Float,
+    /// Represents a boolean value.
     Bool,
+    /// Represents a string value.
     String,
 }
 impl Type {
-    pub fn size_of(&self) -> usize {
+    /// Returns the size of the type in bytes.
+    pub fn size_of<T>(&self) -> usize
+    where
+        T: TypeSet,
+        T::Integer: ValueType,
+        T::Float: ValueType,
+    {
         match self {
             Type::Void => <() as ValueType>::BYTES,
-            Type::Int => <u64 as ValueType>::BYTES,
-            Type::SignedInt => <i64 as ValueType>::BYTES,
-            Type::Float => <f64 as ValueType>::BYTES,
+            Type::Int => <T::Integer as ValueType>::BYTES,
+            Type::SignedInt => <T::SignedInteger as ValueType>::BYTES,
+            Type::Float => <T::Float as ValueType>::BYTES,
             Type::Bool => <bool as ValueType>::BYTES,
             Type::String => <StringIndex as ValueType>::BYTES,
         }
@@ -874,6 +1035,7 @@ impl Display for Type {
     }
 }
 
+/// The expression context, which holds variables, functions, and other state needed for evaluation.
 #[derive(Default)]
 pub struct Context<'ctx, T = DefaultTypeSet>
 where
@@ -919,6 +1081,7 @@ where
 }
 
 impl<'ctx> Context<'ctx, DefaultTypeSet> {
+    /// Creates a new context with [default types][DefaultTypeSet].
     pub fn new() -> Self {
         Self::new_with_types()
     }
@@ -933,6 +1096,12 @@ where
     TypedValue<T>: From<T::SignedInteger>,
     TypedValue<T>: From<T::Float>,
 {
+    /// Creates a new context. The type set must be specified when using this function.
+    ///
+    /// ```rust
+    /// use somni_expr::{Context, TypeSet32};
+    /// let mut ctx = Context::<TypeSet32>::new_with_types();
+    /// ```
     pub fn new_with_types() -> Self {
         Self {
             variables: IndexMap::new(),
@@ -973,6 +1142,7 @@ where
         visitor.visit_expression(&ast)
     }
 
+    /// Evaluates an expression and returns the result as a [`TypedValue<T>`].
     pub fn evaluate_any<'s>(
         &mut self,
         expression: &'s str,
@@ -984,6 +1154,10 @@ where
             })
     }
 
+    /// Evaluates an expression and returns the result as a specific value type.
+    ///
+    /// This function will attempt to convert the result of the expression to the specified type `V`.
+    /// If the conversion fails, it will return an `ExpressionError`.
     pub fn evaluate<'s, V: ValueType>(
         &mut self,
         expression: &'s str,
@@ -1006,6 +1180,7 @@ where
         })
     }
 
+    /// Defines a new variable in the context.
     pub fn add_variable<V>(&mut self, name: &str, value: V)
     where
         V: Into<TypedValue<T>>,
@@ -1013,6 +1188,7 @@ where
         self.variables.insert(name.to_string(), value.into());
     }
 
+    /// Adds a new function to the context.
     pub fn add_function<F, A>(&mut self, name: &str, func: F)
     where
         F: DynFunction<A, T> + 'ctx,
@@ -1022,6 +1198,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub trait DynFunction<A, T>
 where
     T: TypeSet,
@@ -1051,10 +1228,26 @@ macro_rules! for_all_tuples {
     };
 }
 
+/// An error that occurs when calling a function.
 pub enum FunctionCallError {
+    /// The function was not found in the context.
     FunctionNotFound,
-    IncorrectArgumentCount { expected: usize },
-    IncorrectArgumentType { idx: usize, expected: Type },
+
+    /// The number of arguments passed to the function does not match the expected count.
+    IncorrectArgumentCount {
+        /// The expected number of arguments.
+        expected: usize,
+    },
+
+    /// The type of an argument does not match the expected type.
+    IncorrectArgumentType {
+        /// The 0-based index of the argument that has the incorrect type.
+        idx: usize,
+        /// The expected type of the argument.
+        expected: Type,
+    },
+
+    /// An error occurred while calling the function.
     Other(&'static str),
 }
 
@@ -1203,12 +1396,13 @@ mod test {
             .expect_err("Expected expression to return an error");
 
         pretty_assertions::assert_eq!(
-            r#"Eval error
+            strip_ansi(format!("\n{err:?}")),
+            r#"
+Evaluation error
  ---> at line 1 column 10
   |
 1 | func(20, true)
   |          ^^^^ func expects argument 1 to be int, got bool"#,
-            strip_ansi(format!("{err:?}"))
         );
     }
 }

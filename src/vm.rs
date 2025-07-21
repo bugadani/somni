@@ -2,10 +2,10 @@ use std::{collections::HashMap, marker::PhantomData, ops::Range};
 
 use crate::codegen::{self, CodeAddress, Function, Instruction, MemoryAddress};
 use somni_expr::{
-    DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type,
-    TypedValue, ValueType,
     error::MarkInSource,
     string_interner::{StringIndex, Strings},
+    DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type,
+    TypedValue, ValueType,
 };
 use somni_parser::{
     lexer::{self, Location},
@@ -175,7 +175,7 @@ impl Memory {
     }
 
     fn load_typed(&self, local: MemoryAddress, return_type: Type) -> Result<TypedValue, String> {
-        let data = self.load(local, return_type.size_of())?;
+        let data = self.load(local, return_type.size_of::<DefaultTypeSet>())?;
 
         Ok(TypedValue::from_typed_bytes(return_type, data))
     }
@@ -387,7 +387,7 @@ impl<'p> EvalContext<'p> {
             self.program
                 .globals
                 .values()
-                .map(|v| v.ty().size_of())
+                .map(|v| v.ty().size_of::<DefaultTypeSet>())
                 .sum::<usize>()
                 + 16, // SP + PC
         );
@@ -395,7 +395,7 @@ impl<'p> EvalContext<'p> {
         for (_, def) in self.program.globals.iter() {
             self.store_typed(MemoryAddress::Global(address), def.value())
                 .unwrap();
-            address += def.ty().size_of();
+            address += def.ty().size_of::<DefaultTypeSet>();
         }
     }
 
@@ -542,7 +542,7 @@ impl<'p> EvalContext<'p> {
                     return Err(EvalEvent::UnknownFunctionCall(function_name));
                 };
 
-                let first_arg = sp + ty.size_of();
+                let first_arg = sp + ty.size_of::<DefaultTypeSet>();
                 let retval = intrinsic.call_from_vm(self, first_arg);
                 self.store_typed(sp, retval)?;
             }
@@ -607,14 +607,14 @@ impl<'p> EvalContext<'p> {
                 let address = self.load::<u64>(lhs)?;
                 let address = MemoryAddress::Global(address as usize);
 
-                self.copy(address, dst, ty.size_of())?;
+                self.copy(address, dst, ty.size_of::<DefaultTypeSet>())?;
             }
             Instruction::Copy(dst, from, amount) => self.copy(from, dst, amount as usize)?,
             Instruction::DerefCopy(ty, addr, from) => {
                 let dst = self.load::<u64>(addr)?;
                 let dst = MemoryAddress::Global(dst as usize);
 
-                self.copy(from, dst, ty.size_of())?;
+                self.copy(from, dst, ty.size_of::<DefaultTypeSet>())?;
             }
             Instruction::LoadValue(addr, value) => self.store_typed(addr, value)?,
         }
@@ -637,7 +637,10 @@ impl<'p> EvalContext<'p> {
     }
 
     fn store_typed(&mut self, addr: MemoryAddress, value: TypedValue) -> Result<(), EvalEvent> {
-        match self.memory.as_mut(addr..addr + value.type_of().size_of()) {
+        match self
+            .memory
+            .as_mut(addr..addr + value.type_of().size_of::<DefaultTypeSet>())
+        {
             Ok(memory) => {
                 value.write(memory);
                 Ok(())
@@ -668,7 +671,7 @@ impl<'p> EvalContext<'p> {
 
     pub fn unknown_call_args<A: Arguments>(&self) -> Option<A> {
         if let EvalState::WaitingForFunctionResult(_name, ty, sp) = self.state {
-            let first_arg = sp + ty.size_of();
+            let first_arg = sp + ty.size_of::<DefaultTypeSet>();
             Some(A::read(self, first_arg))
         } else {
             None
