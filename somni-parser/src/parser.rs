@@ -604,18 +604,26 @@ where
     fn parse_primary<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
         let token = stream.peek()?;
 
-        if let Ok(literal) = Literal::<T>::parse(stream) {
-            return Ok(Self::Literal { value: literal });
-        }
-
         match token.kind {
-            TokenKind::Identifier => Self::parse_call(stream),
+            TokenKind::Identifier => {
+                // true, false?
+                if let Ok(literal) = Literal::<T>::parse(stream) {
+                    return Ok(Self::Literal { value: literal });
+                }
+
+                Self::parse_call(stream)
+            }
             TokenKind::Symbol if stream.source(token.location) == "(" => {
                 stream.take_match(token.kind, &[]).unwrap();
                 let expr = Self::parse(stream)?;
                 stream.expect_match(TokenKind::Symbol, &[")"])?;
                 Ok(expr)
             }
+            TokenKind::HexInteger
+            | TokenKind::DecimalInteger
+            | TokenKind::BinaryInteger
+            | TokenKind::Float
+            | TokenKind::String => Literal::<T>::parse(stream).map(|value| Self::Literal { value }),
             _ => Err(stream.error("Expected variable, literal, or '('")),
         }
     }
@@ -802,5 +810,21 @@ mod tests {
         assert_eq!(unescape(r#"Hello\nWorld\t!"#).unwrap(), "Hello\nWorld\t!");
         assert_eq!(unescape(r#"Hello\\World"#).unwrap(), "Hello\\World");
         assert_eq!(unescape(r#"Hello\zWorld"#), Err(6)); // Invalid escape sequence
+    }
+
+    #[test]
+    fn test_out_of_range_literal() {
+        let source = "0x100000000";
+        let tokens = vec![Token {
+            kind: TokenKind::HexInteger,
+            location: Location {
+                start: 0,
+                end: source.len(),
+            },
+        }];
+
+        let result =
+            parse_expression::<TypeSet32>(source, &tokens).expect_err("Parsing should fail");
+        assert_eq!("Invalid hexadecimal integer literal", result.error);
     }
 }
