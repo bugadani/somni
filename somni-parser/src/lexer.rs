@@ -94,7 +94,7 @@ impl CharProvider<'_> {
     }
 
     fn peek_n(&self, n: usize) -> Option<&str> {
-        let start = self.chars.offset();
+        let start = self.offset();
         self.chars
             .clone()
             .nth(n)
@@ -106,7 +106,7 @@ impl CharProvider<'_> {
     }
 }
 
-pub fn tokenize(source: &str) -> impl Iterator<Item = Result<Token, LexerError>> {
+pub fn tokenize(source: &str) -> impl Iterator<Item = Result<Token, LexerError>> + '_ {
     let mut chars = CharProvider {
         chars: source.char_indices(),
     };
