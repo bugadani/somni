@@ -27,7 +27,7 @@ fn main() {
             envs.extend(bless.then(|| ("BLESS", "1")));
             envs.extend(filter.as_deref().map(|f| ("TEST_FILTER", f)));
 
-            let mut args = vec!["test", "--all-features"];
+            let mut args = vec!["test", "--all-features", "--all"];
             if filter.is_some() {
                 args.push("--");
                 args.push("--test-threads=1");
