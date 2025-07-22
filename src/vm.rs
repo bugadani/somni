@@ -4,8 +4,9 @@ use crate::codegen::{self, CodeAddress, Function, Instruction, MemoryAddress};
 use somni_expr::{
     error::MarkInSource,
     string_interner::{StringIndex, Strings},
+    value::ValueType,
     DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type,
-    TypedValue, ValueType,
+    TypedValue,
 };
 use somni_parser::{
     lexer::{self, Location},
