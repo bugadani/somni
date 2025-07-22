@@ -4,8 +4,8 @@ use crate::codegen::{self, CodeAddress, Function, Instruction, MemoryAddress};
 use somni_expr::{
     error::MarkInSource,
     string_interner::{StringIndex, Strings},
-    value::ValueType,
-    DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type,
+    value::{MemoryRepr, ValueType},
+    DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type, TypeSet,
     TypedValue,
 };
 use somni_parser::{
@@ -44,7 +44,7 @@ somni_expr::for_all_tuples! {
     ($($arg:ident),*) => {
         impl<$($arg),*> Arguments for ($($arg,)*)
         where
-            $($arg: ValueType,)*
+            $($arg: ValueType + MemoryRepr,)*
         {
             #[allow(non_snake_case)]
             fn read(ctx: &EvalContext<'_>, sp: MemoryAddress) -> Self {
@@ -68,7 +68,7 @@ somni_expr::for_all_tuples! {
     ($($arg:ident),*) => {
         impl<$($arg,)* R, F> NativeFunction<($($arg,)*)> for F
         where
-            $($arg: ValueType + TryFrom<TypedValue, Error = ()>,)*
+            $($arg: ValueType + MemoryRepr + TryFrom<TypedValue, Error = ()>,)*
             F: Fn($($arg,)*) -> R,
             F: Clone,
             R: ValueType + Into<TypedValue>,
@@ -633,7 +633,7 @@ impl<'p> EvalContext<'p> {
         Ok(())
     }
 
-    fn store<V: ValueType>(&mut self, addr: MemoryAddress, value: V) -> Result<(), EvalEvent> {
+    fn store<V: MemoryRepr>(&mut self, addr: MemoryAddress, value: V) -> Result<(), EvalEvent> {
         match self.memory.as_mut(addr..addr + V::BYTES) {
             Ok(memory) => {
                 value.write(memory);
@@ -660,7 +660,7 @@ impl<'p> EvalContext<'p> {
         }
     }
 
-    fn load<V: ValueType>(&self, addr: MemoryAddress) -> Result<V, EvalEvent> {
+    fn load<V: MemoryRepr>(&self, addr: MemoryAddress) -> Result<V, EvalEvent> {
         let bytes = self.memory.load(addr, V::BYTES).map_err(|e| {
             self.runtime_error(format_args!("Failed to load value from address: {e}"))
         })?;
@@ -836,6 +836,50 @@ impl<'s> ExprContext for EvalContext<'s> {
             .get_index_of(&name_idx)
             .unwrap_or_else(|| panic!("Variable '{name}' not found in program"));
         TypedValue::from(addr as u64)
+    }
+}
+
+trait TypedValueExt<T>
+where
+    T: TypeSet,
+    T::Integer: ValueType + MemoryRepr,
+    T::SignedInteger: ValueType + MemoryRepr,
+    T::Float: ValueType + MemoryRepr,
+{
+    /// Writes the raw bytes of this value to the provided buffer.
+    fn write(&self, to: &mut [u8]);
+
+    /// Creates a `TypedValue` from the provided type and bytes.
+    fn from_typed_bytes(ty: Type, value: &[u8]) -> TypedValue<T>;
+}
+
+impl<T> TypedValueExt<T> for TypedValue<T>
+where
+    T: TypeSet,
+    T::Integer: ValueType + MemoryRepr,
+    T::SignedInteger: ValueType + MemoryRepr,
+    T::Float: ValueType + MemoryRepr,
+{
+    fn write(&self, to: &mut [u8]) {
+        match self {
+            TypedValue::Void => ().write(to),
+            TypedValue::Int(value) => value.write(to),
+            TypedValue::SignedInt(value) => value.write(to),
+            TypedValue::Float(value) => value.write(to),
+            TypedValue::Bool(value) => value.write(to),
+            TypedValue::String(value) => value.write(to),
+        }
+    }
+
+    fn from_typed_bytes(ty: Type, value: &[u8]) -> TypedValue<T> {
+        match ty {
+            Type::Void => Self::Void,
+            Type::Int => Self::Int(<_>::from_bytes(value)),
+            Type::SignedInt => Self::SignedInt(<_>::from_bytes(value)),
+            Type::Float => Self::Float(<_>::from_bytes(value)),
+            Type::Bool => Self::Bool(<_>::from_bytes(value)),
+            Type::String => Self::String(<_>::from_bytes(value)),
+        }
     }
 }
 

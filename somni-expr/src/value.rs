@@ -11,7 +11,7 @@ pub trait MemoryRepr: Sized + Copy + PartialEq {
 }
 
 #[doc(hidden)]
-pub trait ValueType: MemoryRepr + Sized + Copy + PartialEq {
+pub trait ValueType: Sized + Copy + PartialEq {
     const TYPE: Type;
 
     fn equals(_a: Self, _b: Self) -> Result<bool, OperatorError> {
@@ -311,30 +311,6 @@ where
             TypedValue::Float(_) => Type::Float,
             TypedValue::Bool(_) => Type::Bool,
             TypedValue::String(_) => Type::String,
-        }
-    }
-
-    /// Writes the raw bytes of this value to the provided buffer.
-    pub fn write(&self, to: &mut [u8]) {
-        match self {
-            TypedValue::Void => ().write(to),
-            TypedValue::Int(value) => value.write(to),
-            TypedValue::SignedInt(value) => value.write(to),
-            TypedValue::Float(value) => value.write(to),
-            TypedValue::Bool(value) => value.write(to),
-            TypedValue::String(value) => value.write(to),
-        }
-    }
-
-    /// Creates a `TypedValue` from the provided type and bytes.
-    pub fn from_typed_bytes(ty: Type, value: &[u8]) -> TypedValue<T> {
-        match ty {
-            Type::Void => Self::Void,
-            Type::Int => Self::Int(<_>::from_bytes(value)),
-            Type::SignedInt => Self::SignedInt(<_>::from_bytes(value)),
-            Type::Float => Self::Float(<_>::from_bytes(value)),
-            Type::Bool => Self::Bool(<_>::from_bytes(value)),
-            Type::String => Self::String(<_>::from_bytes(value)),
         }
     }
 }

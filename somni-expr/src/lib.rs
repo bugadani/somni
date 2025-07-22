@@ -582,8 +582,9 @@ impl Type {
     pub fn size_of<T>(&self) -> usize
     where
         T: TypeSet,
-        T::Integer: ValueType,
-        T::Float: ValueType,
+        T::Integer: ValueType + MemoryRepr,
+        T::SignedInteger: ValueType + MemoryRepr,
+        T::Float: ValueType + MemoryRepr,
     {
         match self {
             Type::Void => <() as MemoryRepr>::BYTES,
