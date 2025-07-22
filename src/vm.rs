@@ -90,7 +90,9 @@ pub struct SomniFn<'p> {
     #[allow(clippy::type_complexity)]
     func: Box<dyn Fn(&EvalContext<'p>, MemoryAddress) -> TypedValue + 'p>,
     #[allow(clippy::type_complexity)]
-    expr_func: Box<dyn Fn(&[TypedValue]) -> Result<TypedValue, FunctionCallError> + 'p>,
+    expr_func: Box<
+        dyn Fn(&mut dyn ExprContext, &[TypedValue]) -> Result<TypedValue, FunctionCallError> + 'p,
+    >,
 }
 
 impl<'p> SomniFn<'p> {
@@ -101,7 +103,7 @@ impl<'p> SomniFn<'p> {
         let expr_func = func.clone();
         Self {
             func: Box::new(move |ctx, sp| func.call_from_vm(ctx, sp)),
-            expr_func: Box::new(move |args| expr_func.call(args)),
+            expr_func: Box::new(move |ctx, args| expr_func.call(ctx, args)),
         }
     }
 
@@ -109,8 +111,12 @@ impl<'p> SomniFn<'p> {
         (self.func)(ctx, sp)
     }
 
-    fn call_from_expr(&self, args: &[TypedValue]) -> Result<TypedValue, FunctionCallError> {
-        (self.expr_func)(args)
+    fn call_from_expr(
+        &self,
+        ctx: &mut dyn ExprContext,
+        args: &[TypedValue],
+    ) -> Result<TypedValue, FunctionCallError> {
+        (self.expr_func)(ctx, args)
     }
 }
 
@@ -409,8 +415,10 @@ impl<'p> EvalContext<'p> {
     pub fn call(&mut self, func: &str, args: &[TypedValue]) -> EvalEvent {
         let Some(function) = self.load_function_by_name(func) else {
             if let Some(fn_name) = self.strings.find(func) {
-                if let Some(intrinsic) = self.intrinsics.get(&fn_name) {
-                    return match intrinsic.call_from_expr(args) {
+                if let Some((name, intrinsic)) = self.intrinsics.remove_entry(&fn_name) {
+                    let retval = intrinsic.call_from_expr(self, args);
+                    self.intrinsics.insert(name, intrinsic);
+                    return match retval {
                         Ok(result) => EvalEvent::Complete(result),
                         Err(FunctionCallError::IncorrectArgumentCount { expected }) => self
                             .runtime_error(format_args!(

@@ -78,7 +78,10 @@ pub mod error;
 #[doc(hidden)]
 pub mod string_interner;
 
-use std::fmt::{Debug, Display};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+};
 
 use indexmap::IndexMap;
 use somni_parser::{
@@ -1047,7 +1050,7 @@ where
     T::Float: ValueType,
 {
     variables: IndexMap<String, TypedValue<T>>,
-    functions: IndexMap<String, ExprFn<'ctx, T>>,
+    functions: HashMap<String, ExprFn<'ctx, T>>,
     strings: StringInterner,
     marker: std::marker::PhantomData<T>,
 }
@@ -1076,8 +1079,13 @@ where
         function_name: &str,
         args: &[TypedValue<T>],
     ) -> Result<TypedValue<T>, FunctionCallError> {
-        match self.functions.get(function_name) {
-            Some(func) => func.call(args),
+        match self.functions.remove_entry(function_name) {
+            Some((name, func)) => {
+                let retval = func.call(self, args);
+                self.functions.insert(name, func);
+
+                retval
+            }
             None => Err(FunctionCallError::FunctionNotFound),
         }
     }
@@ -1108,7 +1116,7 @@ where
     pub fn new_with_types() -> Self {
         Self {
             variables: IndexMap::new(),
-            functions: IndexMap::new(),
+            functions: HashMap::new(),
             strings: StringInterner::new(),
             marker: std::marker::PhantomData,
         }
@@ -1208,7 +1216,11 @@ where
     T::Integer: ValueType,
     T::Float: ValueType,
 {
-    fn call(&self, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError>;
+    fn call(
+        &self,
+        ctx: &mut dyn ExprContext<T>,
+        args: &[TypedValue<T>],
+    ) -> Result<TypedValue<T>, FunctionCallError>;
 }
 
 #[macro_export]
@@ -1270,7 +1282,11 @@ for_all_tuples! {
             T::Float: ValueType,
         {
             #[allow(non_snake_case, unused)]
-            fn call(&self, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> {
+            fn call(&self, _ctx: &mut dyn ExprContext<T>, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> {
+
+                // TODO: while it's great that we can now allow access to the context, it's a bit of a pain to use.
+                // The ideal API would load strings in this function, and store the string when returning from the user's function.
+
                 let arg_count = 0;
                 $(
                     ignore!($arg);
@@ -1307,7 +1323,13 @@ where
     T::Float: ValueType,
 {
     #[allow(clippy::type_complexity)]
-    func: Box<dyn Fn(&[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> + 'ctx>,
+    func: Box<
+        dyn Fn(
+                &mut dyn ExprContext<T>,
+                &[TypedValue<T>],
+            ) -> Result<TypedValue<T>, FunctionCallError>
+            + 'ctx,
+    >,
 }
 
 impl<'ctx, T> ExprFn<'ctx, T>
@@ -1321,12 +1343,16 @@ where
         F: DynFunction<A, T> + 'ctx,
     {
         Self {
-            func: Box::new(move |args| func.call(args)),
+            func: Box::new(move |ctx, args| func.call(ctx, args)),
         }
     }
 
-    fn call(&self, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> {
-        (self.func)(args)
+    fn call(
+        &self,
+        ctx: &mut dyn ExprContext<T>,
+        args: &[TypedValue<T>],
+    ) -> Result<TypedValue<T>, FunctionCallError> {
+        (self.func)(ctx, args)
     }
 }
 
@@ -1353,11 +1379,16 @@ mod test {
     fn test_evaluating_exprs() {
         let mut ctx = Context::new();
 
+        // TODO: this is a pain point that needs to be resolved
+        let five = ctx.strings.intern("five");
+
         ctx.add_variable("value", TypedValue::Int(30));
         ctx.add_function("func", |v: u64| 2 * v);
         ctx.add_function("func2", |v1: u64, v2: u64| v1 + v2);
+        ctx.add_function("five", move || five);
 
         assert_eq!(ctx.evaluate::<bool>("value / 5 == 6"), Ok(true));
+        assert_eq!(ctx.evaluate::<bool>("five() == \"five\""), Ok(true));
         assert_eq!(ctx.evaluate::<u64>("func(20) / 5"), Ok(8));
         assert_eq!(ctx.evaluate::<u64>("func2(20, 20) / 5"), Ok(8));
         assert_eq!(ctx.evaluate::<bool>("true & false"), Ok(false));
