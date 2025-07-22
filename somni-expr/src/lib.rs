@@ -101,7 +101,7 @@ use crate::{
     error::MarkInSource,
     function::ExprFn,
     string_interner::{StringIndex, StringInterner},
-    value::ValueType,
+    value::{MemoryRepr, ValueType},
 };
 
 pub use somni_parser::parser::{DefaultTypeSet, TypeSet128, TypeSet32};
@@ -586,12 +586,12 @@ impl Type {
         T::Float: ValueType,
     {
         match self {
-            Type::Void => <() as ValueType>::BYTES,
-            Type::Int => <T::Integer as ValueType>::BYTES,
-            Type::SignedInt => <T::SignedInteger as ValueType>::BYTES,
-            Type::Float => <T::Float as ValueType>::BYTES,
-            Type::Bool => <bool as ValueType>::BYTES,
-            Type::String => <StringIndex as ValueType>::BYTES,
+            Type::Void => <() as MemoryRepr>::BYTES,
+            Type::Int => <T::Integer as MemoryRepr>::BYTES,
+            Type::SignedInt => <T::SignedInteger as MemoryRepr>::BYTES,
+            Type::Float => <T::Float as MemoryRepr>::BYTES,
+            Type::Bool => <bool as MemoryRepr>::BYTES,
+            Type::String => <StringIndex as MemoryRepr>::BYTES,
         }
     }
 }

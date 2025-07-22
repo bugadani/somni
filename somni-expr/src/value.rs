@@ -3,12 +3,16 @@ use somni_parser::parser::DefaultTypeSet;
 use crate::{string_interner::StringIndex, OperatorError, Type, TypeSet};
 
 #[doc(hidden)]
-pub trait ValueType: Sized + Copy + PartialEq {
+pub trait MemoryRepr: Sized + Copy + PartialEq {
     const BYTES: usize;
-    const TYPE: Type;
 
     fn write(&self, to: &mut [u8]);
     fn from_bytes(bytes: &[u8]) -> Self;
+}
+
+#[doc(hidden)]
+pub trait ValueType: MemoryRepr + Sized + Copy + PartialEq {
+    const TYPE: Type;
 
     fn equals(_a: Self, _b: Self) -> Result<bool, OperatorError> {
         unimplemented!("Operation not supported")
@@ -60,20 +64,22 @@ pub trait ValueType: Sized + Copy + PartialEq {
     }
 }
 
-impl ValueType for () {
+impl MemoryRepr for () {
     const BYTES: usize = 0;
-    const TYPE: Type = Type::Void;
 
     fn write(&self, _to: &mut [u8]) {}
 
     fn from_bytes(_: &[u8]) -> Self {}
 }
 
+impl ValueType for () {
+    const TYPE: Type = Type::Void;
+}
+
 macro_rules! value_type_int {
     ($type:ty, $kind:ident) => {
-        impl ValueType for $type {
+        impl MemoryRepr for $type {
             const BYTES: usize = std::mem::size_of::<$type>();
-            const TYPE: Type = Type::$kind;
 
             fn write(&self, to: &mut [u8]) {
                 to.copy_from_slice(&self.to_le_bytes());
@@ -82,6 +88,10 @@ macro_rules! value_type_int {
             fn from_bytes(bytes: &[u8]) -> Self {
                 <$type>::from_le_bytes(bytes.try_into().unwrap())
             }
+        }
+
+        impl ValueType for $type {
+            const TYPE: Type = Type::$kind;
 
             fn less_than(a: Self, b: Self) -> Result<bool, OperatorError> {
                 Ok(a < b)
@@ -142,9 +152,8 @@ value_type_int!(i32, SignedInt);
 value_type_int!(i64, SignedInt);
 value_type_int!(i128, SignedInt);
 
-impl ValueType for f32 {
+impl MemoryRepr for f32 {
     const BYTES: usize = 4;
-    const TYPE: Type = Type::Float;
 
     fn write(&self, to: &mut [u8]) {
         to.copy_from_slice(&self.to_le_bytes());
@@ -153,6 +162,9 @@ impl ValueType for f32 {
     fn from_bytes(bytes: &[u8]) -> Self {
         f32::from_le_bytes(bytes.try_into().unwrap())
     }
+}
+impl ValueType for f32 {
+    const TYPE: Type = Type::Float;
 
     fn less_than(a: Self, b: Self) -> Result<bool, OperatorError> {
         Ok(a < b)
@@ -174,9 +186,8 @@ impl ValueType for f32 {
     }
 }
 
-impl ValueType for f64 {
+impl MemoryRepr for f64 {
     const BYTES: usize = 8;
-    const TYPE: Type = Type::Float;
 
     fn write(&self, to: &mut [u8]) {
         to.copy_from_slice(&self.to_le_bytes());
@@ -185,6 +196,9 @@ impl ValueType for f64 {
     fn from_bytes(bytes: &[u8]) -> Self {
         f64::from_le_bytes(bytes.try_into().unwrap())
     }
+}
+impl ValueType for f64 {
+    const TYPE: Type = Type::Float;
 
     fn less_than(a: Self, b: Self) -> Result<bool, OperatorError> {
         Ok(a < b)
@@ -206,9 +220,8 @@ impl ValueType for f64 {
     }
 }
 
-impl ValueType for bool {
+impl MemoryRepr for bool {
     const BYTES: usize = 1;
-    const TYPE: Type = Type::Bool;
 
     fn write(&self, to: &mut [u8]) {
         to.copy_from_slice(&[*self as u8]);
@@ -217,12 +230,16 @@ impl ValueType for bool {
     fn from_bytes(bytes: &[u8]) -> Self {
         bytes[0] != 0
     }
+}
+
+impl ValueType for bool {
+    const TYPE: Type = Type::Bool;
 
     fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
         Ok(a == b)
     }
 
-    fn bitwise_and(a: Self, b: Self) -> Result<Self, OperatorError> {
+    fn bitwise_and(a: Self, b: Self) -> Result<bool, OperatorError> {
         Ok(a & b)
     }
 
@@ -239,9 +256,8 @@ impl ValueType for bool {
     }
 }
 
-impl ValueType for StringIndex {
+impl MemoryRepr for StringIndex {
     const BYTES: usize = 8;
-    const TYPE: Type = Type::String;
 
     fn write(&self, to: &mut [u8]) {
         to.copy_from_slice(&self.0.to_le_bytes());
@@ -249,6 +265,10 @@ impl ValueType for StringIndex {
     fn from_bytes(bytes: &[u8]) -> Self {
         StringIndex(u64::from_le_bytes(bytes.try_into().unwrap()) as usize)
     }
+}
+impl ValueType for StringIndex {
+    const TYPE: Type = Type::String;
+
     fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
         Ok(a == b)
     }
