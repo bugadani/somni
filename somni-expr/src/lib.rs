@@ -225,55 +225,41 @@ impl Display for OperatorError {
     }
 }
 
-macro_rules! dispatch_binary_to_bool {
+macro_rules! dispatch_binary {
     ($method:ident) => {
-        pub(crate) fn $method(
-            lhs: TypedValue<T>,
-            rhs: TypedValue<T>,
-        ) -> Result<TypedValue<T>, OperatorError> {
+        pub(crate) fn $method(lhs: Self, rhs: Self) -> Result<Self, OperatorError> {
             let result = match (lhs, rhs) {
-                (TypedValue::Bool(value), TypedValue::Bool(other)) => {
-                    ValueType::$method(value, other)
+                (Self::Bool(value), Self::Bool(other)) => {
+                    Self::from(ValueType::$method(value, other)?)
                 }
-                (TypedValue::Int(value), TypedValue::Int(other)) => {
-                    ValueType::$method(value, other)
+                (Self::Int(value), Self::Int(other)) => {
+                    Self::from(ValueType::$method(value, other)?)
                 }
-                (TypedValue::SignedInt(value), TypedValue::SignedInt(other)) => {
-                    ValueType::$method(value, other)
+                (Self::SignedInt(value), Self::SignedInt(other)) => {
+                    Self::from(ValueType::$method(value, other)?)
                 }
-                (TypedValue::Float(value), TypedValue::Float(other)) => {
-                    ValueType::$method(value, other)
+                (Self::Float(value), Self::Float(other)) => {
+                    Self::from(ValueType::$method(value, other)?)
                 }
-                (TypedValue::String(value), TypedValue::String(other)) => {
-                    ValueType::$method(value, other)
+                (Self::String(value), Self::String(other)) => {
+                    Self::from(ValueType::$method(value, other)?)
                 }
                 _ => return Err(OperatorError::TypeError),
             };
-
-            result.map(TypedValue::Bool)
+            Ok(result)
         }
     };
 }
 
-macro_rules! dispatch_binary_to_value_type {
+macro_rules! dispatch_unary {
     ($method:ident) => {
-        pub(crate) fn $method(lhs: Self, rhs: Self) -> Result<Self, OperatorError> {
-            match (lhs, rhs) {
-                (Self::Bool(value), Self::Bool(other)) => {
-                    Ok(Self::from(ValueType::$method(value, other)?))
-                }
-                (Self::Int(value), Self::Int(other)) => {
-                    Ok(Self::from(ValueType::$method(value, other)?))
-                }
-                (Self::SignedInt(value), Self::SignedInt(other)) => {
-                    Ok(Self::from(ValueType::$method(value, other)?))
-                }
-                (Self::Float(value), Self::Float(other)) => {
-                    Ok(Self::from(ValueType::$method(value, other)?))
-                }
-                (Self::String(value), Self::String(other)) => {
-                    Ok(Self::from(ValueType::$method(value, other)?))
-                }
+        pub(crate) fn $method(operand: Self) -> Result<Self, OperatorError> {
+            match operand {
+                Self::Bool(value) => Ok(Self::from(ValueType::$method(value)?)),
+                Self::Int(value) => Ok(Self::from(ValueType::$method(value)?)),
+                Self::SignedInt(value) => Ok(Self::from(ValueType::$method(value)?)),
+                Self::Float(value) => Ok(Self::from(ValueType::$method(value)?)),
+                Self::String(value) => Ok(Self::from(ValueType::$method(value)?)),
                 _ => return Err(OperatorError::TypeError),
             }
         }
@@ -332,19 +318,20 @@ where
     Self: From<T::SignedInteger>,
     Self: From<T::Float>,
 {
-    dispatch_binary_to_bool!(equals);
-    dispatch_binary_to_bool!(less_than);
-    dispatch_binary_to_bool!(less_than_or_equal);
-    dispatch_binary_to_bool!(not_equals);
-    dispatch_binary_to_value_type!(bitwise_or);
-    dispatch_binary_to_value_type!(bitwise_xor);
-    dispatch_binary_to_value_type!(bitwise_and);
-    dispatch_binary_to_value_type!(shift_left);
-    dispatch_binary_to_value_type!(shift_right);
-    dispatch_binary_to_value_type!(add);
-    dispatch_binary_to_value_type!(subtract);
-    dispatch_binary_to_value_type!(multiply);
-    dispatch_binary_to_value_type!(divide);
+    dispatch_binary!(equals);
+    dispatch_binary!(less_than);
+    dispatch_binary!(less_than_or_equal);
+    dispatch_binary!(not_equals);
+    dispatch_binary!(bitwise_or);
+    dispatch_binary!(bitwise_xor);
+    dispatch_binary!(bitwise_and);
+    dispatch_binary!(shift_left);
+    dispatch_binary!(shift_right);
+    dispatch_binary!(add);
+    dispatch_binary!(subtract);
+    dispatch_binary!(multiply);
+    dispatch_binary!(divide);
+    dispatch_unary!(not);
 }
 
 macro_rules! convert {
@@ -597,16 +584,20 @@ where
                 ast::LiteralValue::Boolean(value) => TypedValue::<T>::Bool(*value),
             },
             Expression::UnaryOperator { name, operand } => match name.source(self.source) {
-                "!" => match self.visit_expression(operand)? {
-                    TypedValue::Bool(b) => TypedValue::<T>::Bool(!b),
-                    value => {
-                        return Err(EvalError {
-                            message: format!("Expected boolean, found {}", value.type_of())
-                                .into_boxed_str(),
-                            location: operand.location(),
-                        });
+                "!" => {
+                    let operand = self.visit_expression(operand)?;
+
+                    match TypedValue::<T>::not(operand) {
+                        Ok(r) => r,
+                        Err(error) => {
+                            return Err(EvalError {
+                                message: format!("Failed to evaluate expression: {error}")
+                                    .into_boxed_str(),
+                                location: expression.location(),
+                            });
+                        }
                     }
-                },
+                }
 
                 "-" => {
                     let value = self.visit_expression(operand)?;
@@ -752,8 +743,12 @@ pub trait ValueType: Sized + Copy + PartialEq {
     fn write(&self, to: &mut [u8]);
     fn from_bytes(bytes: &[u8]) -> Self;
 
-    fn equals(a: Self, b: Self) -> Result<bool, OperatorError>;
-    fn less_than(a: Self, b: Self) -> Result<bool, OperatorError>;
+    fn equals(_a: Self, _b: Self) -> Result<bool, OperatorError> {
+        unimplemented!("Operation not supported")
+    }
+    fn less_than(_a: Self, _b: Self) -> Result<bool, OperatorError> {
+        unimplemented!("Operation not supported")
+    }
 
     fn less_than_or_equal(a: Self, b: Self) -> Result<bool, OperatorError> {
         let less = Self::less_than(a, b)?;
@@ -805,14 +800,6 @@ impl ValueType for () {
     fn write(&self, _to: &mut [u8]) {}
 
     fn from_bytes(_: &[u8]) -> Self {}
-
-    fn less_than(_: Self, _: Self) -> Result<bool, OperatorError> {
-        unimplemented!("Operation not supported")
-    }
-
-    fn equals(_: Self, _: Self) -> Result<bool, OperatorError> {
-        unimplemented!("Operation not supported")
-    }
 }
 
 macro_rules! value_type_int {
@@ -873,6 +860,9 @@ macro_rules! value_type_int {
                 } else {
                     Err(OperatorError::RuntimeError)
                 }
+            }
+            fn not(a: Self) -> Result<Self, OperatorError> {
+                Ok(!a)
             }
         }
     };
@@ -961,11 +951,24 @@ impl ValueType for bool {
         bytes[0] != 0
     }
 
-    fn less_than(_: Self, _: Self) -> Result<bool, OperatorError> {
-        unimplemented!("Operation not supported")
-    }
     fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
         Ok(a == b)
+    }
+
+    fn bitwise_and(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a & b)
+    }
+
+    fn bitwise_or(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a | b)
+    }
+
+    fn bitwise_xor(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a ^ b)
+    }
+
+    fn not(a: Self) -> Result<Self, OperatorError> {
+        Ok(!a)
     }
 }
 
@@ -1357,6 +1360,11 @@ mod test {
         assert_eq!(ctx.evaluate::<bool>("value / 5 == 6"), Ok(true));
         assert_eq!(ctx.evaluate::<u64>("func(20) / 5"), Ok(8));
         assert_eq!(ctx.evaluate::<u64>("func2(20, 20) / 5"), Ok(8));
+        assert_eq!(ctx.evaluate::<bool>("true & false"), Ok(false));
+        assert_eq!(ctx.evaluate::<bool>("!true"), Ok(false));
+        assert_eq!(ctx.evaluate::<bool>("false | false"), Ok(false));
+        assert_eq!(ctx.evaluate::<bool>("true ^ true"), Ok(false));
+        assert_eq!(ctx.evaluate::<u64>("!0x1111"), Ok(0xFFFF_FFFF_FFFF_EEEE));
     }
 
     #[test]
