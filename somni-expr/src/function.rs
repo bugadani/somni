@@ -1,4 +1,9 @@
-use crate::{for_all_tuples, value::ValueType, ExprContext, Type, TypeSet, TypedValue};
+use crate::{
+    for_all_tuples,
+    value::ValueType,
+    value::{Load, Store},
+    ExprContext, Type, TypeSet, TypedValue,
+};
 
 /// An error that occurs when calling a function.
 pub enum FunctionCallError {
@@ -45,15 +50,15 @@ for_all_tuples! {
     ($($arg:ident),*) => {
         impl<$($arg,)* R, F, T> DynFunction<($($arg,)*), T> for F
         where
-            $($arg: ValueType + TryFrom<TypedValue<T>>,)*
+            $($arg: ValueType + Load<T>,)*
             F: Fn($($arg,)*) -> R,
-            R: ValueType + Into<TypedValue<T>>,
+            R: ValueType + Store<T>,
             T: TypeSet,
             T::Integer: ValueType,
             T::Float: ValueType,
         {
             #[allow(non_snake_case, unused)]
-            fn call(&self, _ctx: &mut dyn ExprContext<T>, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> {
+            fn call(&self, ctx: &mut dyn ExprContext<T>, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> {
 
                 // TODO: while it's great that we can now allow access to the context, it's a bit of a pain to use.
                 // The ideal API would load strings in this function, and store the string when returning from the user's function.
@@ -70,9 +75,9 @@ for_all_tuples! {
                     let Some(arg) = args.next() else {
                         return Err(FunctionCallError::IncorrectArgumentCount { expected: arg_count });
                     };
-                    let $arg = match <$arg>::try_from(arg) {
-                        Ok(arg) => arg,
-                        Err(_) => return Err(FunctionCallError::IncorrectArgumentType { idx, expected: $arg::TYPE }),
+                    let $arg = match <$arg>::load(ctx, arg) {
+                        Some(arg) => arg,
+                        None => return Err(FunctionCallError::IncorrectArgumentType { idx, expected: $arg::TYPE }),
                     };
                     let idx = idx + 1;
                 )*
@@ -81,7 +86,7 @@ for_all_tuples! {
                     return Err(FunctionCallError::IncorrectArgumentCount { expected: arg_count });
                 }
 
-                Ok(self($($arg),*).into())
+                Ok(self($($arg),*).store(ctx))
             }
         }
     };

@@ -4,7 +4,7 @@ use crate::codegen::{self, CodeAddress, Function, Instruction, MemoryAddress};
 use somni_expr::{
     error::MarkInSource,
     string_interner::{StringIndex, Strings},
-    value::{MemoryRepr, ValueType},
+    value::{Load, MemoryRepr, Store, ValueType},
     DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type, TypeSet,
     TypedValue,
 };
@@ -61,27 +61,27 @@ somni_expr::for_all_tuples! {
 }
 
 pub trait NativeFunction<A>: DynFunction<A, DefaultTypeSet> + Clone {
-    fn call_from_vm(&self, ctx: &EvalContext<'_>, sp: MemoryAddress) -> TypedValue;
+    fn call_from_vm(&self, ctx: &mut EvalContext<'_>, sp: MemoryAddress) -> TypedValue;
 }
 
 somni_expr::for_all_tuples! {
     ($($arg:ident),*) => {
         impl<$($arg,)* R, F> NativeFunction<($($arg,)*)> for F
         where
-            $($arg: ValueType + MemoryRepr + TryFrom<TypedValue, Error = ()>,)*
+            $($arg: MemoryRepr + Load,)*
             F: Fn($($arg,)*) -> R,
             F: Clone,
-            R: ValueType + Into<TypedValue>,
+            R: ValueType + Store,
         {
             #[allow(non_snake_case)]
-            fn call_from_vm(&self, ctx: &EvalContext<'_>, sp: MemoryAddress) -> TypedValue {
+            fn call_from_vm(&self, ctx: &mut EvalContext<'_>, sp: MemoryAddress) -> TypedValue {
                 let offset = 0;
                 $(
                 let $arg = ctx.load::<$arg>(sp + offset).unwrap();
                 let offset = offset + <$arg>::BYTES;
                 )*
 
-                self($($arg),*).into()
+                self($($arg),*).store(ctx)
             }
         }
     };
@@ -89,7 +89,7 @@ somni_expr::for_all_tuples! {
 
 pub struct SomniFn<'p> {
     #[allow(clippy::type_complexity)]
-    func: Box<dyn Fn(&EvalContext<'p>, MemoryAddress) -> TypedValue + 'p>,
+    func: Box<dyn Fn(&mut EvalContext<'p>, MemoryAddress) -> TypedValue + 'p>,
     #[allow(clippy::type_complexity)]
     expr_func: Box<
         dyn Fn(&mut dyn ExprContext, &[TypedValue]) -> Result<TypedValue, FunctionCallError> + 'p,
@@ -108,7 +108,7 @@ impl<'p> SomniFn<'p> {
         }
     }
 
-    fn call_from_vm(&self, ctx: &EvalContext<'p>, sp: MemoryAddress) -> TypedValue {
+    fn call_from_vm(&self, ctx: &mut EvalContext<'p>, sp: MemoryAddress) -> TypedValue {
         (self.func)(ctx, sp)
     }
 
@@ -545,7 +545,7 @@ impl<'p> EvalContext<'p> {
                 return Ok(()); // Skip the step() call below, as we already stepped (into function)
             }
             Instruction::CallNamed(function_name, ty, sp) => {
-                let Some(intrinsic) = self.intrinsics.get(&function_name) else {
+                let Some((name, intrinsic)) = self.intrinsics.remove_entry(&function_name) else {
                     self.state = EvalState::WaitingForFunctionResult(function_name, ty, sp);
                     self.program_counter += 1;
                     return Err(EvalEvent::UnknownFunctionCall(function_name));
@@ -553,6 +553,7 @@ impl<'p> EvalContext<'p> {
 
                 let first_arg = sp + ty.size_of::<DefaultTypeSet>();
                 let retval = intrinsic.call_from_vm(self, first_arg);
+                self.intrinsics.insert(name, intrinsic);
                 self.store_typed(sp, retval)?;
             }
             Instruction::Return => {
@@ -835,7 +836,7 @@ impl<'s> ExprContext for EvalContext<'s> {
             .globals
             .get_index_of(&name_idx)
             .unwrap_or_else(|| panic!("Variable '{name}' not found in program"));
-        TypedValue::from(addr as u64)
+        TypedValue::Int(addr as u64)
     }
 }
 

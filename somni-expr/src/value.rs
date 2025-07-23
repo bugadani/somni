@@ -1,6 +1,6 @@
 use somni_parser::parser::DefaultTypeSet;
 
-use crate::{string_interner::StringIndex, OperatorError, Type, TypeSet};
+use crate::{string_interner::StringIndex, ExprContext, OperatorError, Type, TypeSet};
 
 #[doc(hidden)]
 pub trait MemoryRepr: Sized + Copy + PartialEq {
@@ -315,61 +315,75 @@ where
     }
 }
 
+pub trait Load<T = DefaultTypeSet>: ValueType
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
+    fn load(_ctx: &mut dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self>;
+}
+
+pub trait Store<T = DefaultTypeSet>: ValueType
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
+    fn store(self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T>;
+}
+
 macro_rules! convert {
     ($type:ty, $ts_kind:ident, $kind:ident) => {
-        impl<T> From<$type> for TypedValue<T>
+        impl<T> Load<T> for $type
         where
             T: TypeSet<$ts_kind = $type>,
             T::Integer: ValueType,
             T::Float: ValueType,
         {
-            fn from(value: $type) -> Self {
-                TypedValue::$kind(value)
+            fn load(_ctx: &mut dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
+                if let TypedValue::$kind(value) = typed {
+                    Some(value)
+                } else {
+                    None
+                }
             }
         }
-        impl<T> TryFrom<TypedValue<T>> for $type
+        impl<T> Store<T> for $type
         where
             T: TypeSet<$ts_kind = $type>,
             T::Integer: ValueType,
             T::Float: ValueType,
         {
-            type Error = ();
-
-            fn try_from(value: TypedValue<T>) -> Result<Self, Self::Error> {
-                if let TypedValue::$kind(value) = value {
-                    Ok(value)
-                } else {
-                    Err(())
-                }
+            fn store(self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
+                TypedValue::$kind(self)
             }
         }
     };
 
     ($type:ty, $kind:ident) => {
-        impl<T> From<$type> for TypedValue<T>
+        impl<T> Load<T> for $type
         where
             T: TypeSet,
             T::Integer: ValueType,
             T::Float: ValueType,
         {
-            fn from(value: $type) -> Self {
-                TypedValue::$kind(value)
+            fn load(_ctx: &mut dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
+                if let TypedValue::$kind(value) = typed {
+                    Some(value)
+                } else {
+                    None
+                }
             }
         }
-        impl<T> TryFrom<TypedValue<T>> for $type
+        impl<T> Store<T> for $type
         where
             T: TypeSet,
             T::Integer: ValueType,
             T::Float: ValueType,
         {
-            type Error = ();
-
-            fn try_from(value: TypedValue<T>) -> Result<Self, Self::Error> {
-                if let TypedValue::$kind(value) = value {
-                    Ok(value)
-                } else {
-                    Err(())
-                }
+            fn store(self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
+                TypedValue::$kind(self)
             }
         }
     };
@@ -387,30 +401,27 @@ convert!(f64, Float, Float);
 convert!(bool, Bool);
 convert!(StringIndex, String);
 
-impl<T> From<()> for TypedValue<T>
+impl<T> Load<T> for ()
 where
     T: TypeSet,
     T::Integer: ValueType,
     T::Float: ValueType,
 {
-    fn from(_: ()) -> Self {
-        TypedValue::Void
+    fn load(_ctx: &mut dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
+        if let TypedValue::Void = typed {
+            Some(())
+        } else {
+            None
+        }
     }
 }
-
-impl<T> TryFrom<TypedValue<T>> for ()
+impl<T> Store<T> for ()
 where
     T: TypeSet,
     T::Integer: ValueType,
     T::Float: ValueType,
 {
-    type Error = ();
-
-    fn try_from(value: TypedValue<T>) -> Result<Self, Self::Error> {
-        if let TypedValue::Void = value {
-            Ok(())
-        } else {
-            Err(())
-        }
+    fn store(self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
+        TypedValue::Void
     }
 }

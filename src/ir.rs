@@ -2,8 +2,8 @@ use std::fmt::{Debug, Display, Write as _};
 
 use indexmap::IndexMap;
 use somni_expr::{
-    TypedValue,
     string_interner::{StringIndex, StringInterner, Strings},
+    TypedValue,
 };
 
 use crate::{
@@ -30,12 +30,12 @@ pub enum Value {
 impl Value {
     pub(crate) fn into_typed_value(self) -> TypedValue {
         match self {
-            ir::Value::Void => TypedValue::from(()),
-            ir::Value::Int(value) => TypedValue::from(value),
-            ir::Value::SignedInt(value) => TypedValue::from(value),
-            ir::Value::Float(value) => TypedValue::from(value),
-            ir::Value::Bool(value) => TypedValue::from(value),
-            ir::Value::String(value) => TypedValue::from(value),
+            ir::Value::Void => TypedValue::Void,
+            ir::Value::Int(value) => TypedValue::Int(value),
+            ir::Value::SignedInt(value) => TypedValue::SignedInt(value),
+            ir::Value::Float(value) => TypedValue::Float(value),
+            ir::Value::Bool(value) => TypedValue::Bool(value),
+            ir::Value::String(value) => TypedValue::String(value),
         }
     }
 }

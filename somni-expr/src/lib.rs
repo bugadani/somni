@@ -101,7 +101,7 @@ use crate::{
     error::MarkInSource,
     function::ExprFn,
     string_interner::{StringIndex, StringInterner},
-    value::{MemoryRepr, ValueType},
+    value::{Load, MemoryRepr, Store, ValueType},
 };
 
 pub use somni_parser::parser::{DefaultTypeSet, TypeSet128, TypeSet32};
@@ -217,22 +217,26 @@ impl Display for OperatorError {
 
 macro_rules! dispatch_binary {
     ($method:ident) => {
-        pub(crate) fn $method(lhs: Self, rhs: Self) -> Result<Self, OperatorError> {
+        pub(crate) fn $method(
+            ctx: &mut dyn ExprContext<T>,
+            lhs: Self,
+            rhs: Self,
+        ) -> Result<Self, OperatorError> {
             let result = match (lhs, rhs) {
                 (Self::Bool(value), Self::Bool(other)) => {
-                    Self::from(ValueType::$method(value, other)?)
+                    ValueType::$method(value, other)?.store(ctx)
                 }
                 (Self::Int(value), Self::Int(other)) => {
-                    Self::from(ValueType::$method(value, other)?)
+                    ValueType::$method(value, other)?.store(ctx)
                 }
                 (Self::SignedInt(value), Self::SignedInt(other)) => {
-                    Self::from(ValueType::$method(value, other)?)
+                    ValueType::$method(value, other)?.store(ctx)
                 }
                 (Self::Float(value), Self::Float(other)) => {
-                    Self::from(ValueType::$method(value, other)?)
+                    ValueType::$method(value, other)?.store(ctx)
                 }
                 (Self::String(value), Self::String(other)) => {
-                    Self::from(ValueType::$method(value, other)?)
+                    ValueType::$method(value, other)?.store(ctx)
                 }
                 _ => return Err(OperatorError::TypeError),
             };
@@ -244,13 +248,16 @@ macro_rules! dispatch_binary {
 
 macro_rules! dispatch_unary {
     ($method:ident) => {
-        pub(crate) fn $method(operand: Self) -> Result<Self, OperatorError> {
+        pub(crate) fn $method(
+            ctx: &mut dyn ExprContext<T>,
+            operand: Self,
+        ) -> Result<Self, OperatorError> {
             match operand {
-                Self::Bool(value) => Ok(Self::from(ValueType::$method(value)?)),
-                Self::Int(value) => Ok(Self::from(ValueType::$method(value)?)),
-                Self::SignedInt(value) => Ok(Self::from(ValueType::$method(value)?)),
-                Self::Float(value) => Ok(Self::from(ValueType::$method(value)?)),
-                Self::String(value) => Ok(Self::from(ValueType::$method(value)?)),
+                Self::Bool(value) => Ok(ValueType::$method(value)?.store(ctx)),
+                Self::Int(value) => Ok(ValueType::$method(value)?.store(ctx)),
+                Self::SignedInt(value) => Ok(ValueType::$method(value)?.store(ctx)),
+                Self::Float(value) => Ok(ValueType::$method(value)?.store(ctx)),
+                Self::String(value) => Ok(ValueType::$method(value)?.store(ctx)),
                 _ => return Err(OperatorError::TypeError),
             }
         }
@@ -260,11 +267,9 @@ macro_rules! dispatch_unary {
 impl<T> TypedValue<T>
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
-    Self: From<T::Integer>,
-    Self: From<T::SignedInteger>,
-    Self: From<T::Float>,
+    T::Integer: Load<T> + Store<T>,
+    T::Float: Load<T> + Store<T>,
+    T::SignedInteger: Load<T> + Store<T>,
 {
     dispatch_binary!(equals);
     dispatch_binary!(less_than);
@@ -286,8 +291,9 @@ where
 pub trait ExprContext<T = DefaultTypeSet>
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
+    T::Integer: Load<T> + Store<T>,
+    T::Float: Load<T> + Store<T>,
+    T::SignedInteger: Load<T> + Store<T>,
 {
     /// Implements string interning.
     fn intern_string(&mut self, s: &str) -> StringIndex;
@@ -380,11 +386,9 @@ impl<'a, C, T> ExpressionVisitor<'a, C, T>
 where
     C: ExprContext<T>,
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
-    TypedValue<T>: From<T::Integer>,
-    TypedValue<T>: From<T::SignedInteger>,
-    TypedValue<T>: From<T::Float>,
+    T::Integer: Load<T> + Store<T>,
+    T::Float: Load<T> + Store<T>,
+    T::SignedInteger: Load<T> + Store<T>,
 {
     fn visit_variable(&mut self, variable: &lexer::Token) -> Result<TypedValue<T>, EvalError> {
         let name = variable.source(self.source);
@@ -413,7 +417,7 @@ where
                 "!" => {
                     let operand = self.visit_expression(operand)?;
 
-                    match TypedValue::<T>::not(operand) {
+                    match TypedValue::<T>::not(self.context, operand) {
                         Ok(r) => r,
                         Err(error) => {
                             return Err(EvalError {
@@ -475,21 +479,21 @@ where
                 let lhs = self.visit_expression(&operands[0])?;
                 let rhs = self.visit_expression(&operands[1])?;
                 let result = match name.source(self.source) {
-                    "+" => TypedValue::<T>::add(lhs, rhs),
-                    "-" => TypedValue::<T>::subtract(lhs, rhs),
-                    "*" => TypedValue::<T>::multiply(lhs, rhs),
-                    "/" => TypedValue::<T>::divide(lhs, rhs),
-                    "<" => TypedValue::<T>::less_than(lhs, rhs),
-                    ">" => TypedValue::<T>::less_than(rhs, lhs),
-                    "<=" => TypedValue::<T>::less_than_or_equal(lhs, rhs),
-                    ">=" => TypedValue::<T>::less_than_or_equal(rhs, lhs),
-                    "==" => TypedValue::<T>::equals(lhs, rhs),
-                    "!=" => TypedValue::<T>::not_equals(lhs, rhs),
-                    "|" => TypedValue::<T>::bitwise_or(lhs, rhs),
-                    "^" => TypedValue::<T>::bitwise_xor(lhs, rhs),
-                    "&" => TypedValue::<T>::bitwise_and(lhs, rhs),
-                    "<<" => TypedValue::<T>::shift_left(lhs, rhs),
-                    ">>" => TypedValue::<T>::shift_right(lhs, rhs),
+                    "+" => TypedValue::<T>::add(self.context, lhs, rhs),
+                    "-" => TypedValue::<T>::subtract(self.context, lhs, rhs),
+                    "*" => TypedValue::<T>::multiply(self.context, lhs, rhs),
+                    "/" => TypedValue::<T>::divide(self.context, lhs, rhs),
+                    "<" => TypedValue::<T>::less_than(self.context, lhs, rhs),
+                    ">" => TypedValue::<T>::less_than(self.context, rhs, lhs),
+                    "<=" => TypedValue::<T>::less_than_or_equal(self.context, lhs, rhs),
+                    ">=" => TypedValue::<T>::less_than_or_equal(self.context, rhs, lhs),
+                    "==" => TypedValue::<T>::equals(self.context, lhs, rhs),
+                    "!=" => TypedValue::<T>::not_equals(self.context, lhs, rhs),
+                    "|" => TypedValue::<T>::bitwise_or(self.context, lhs, rhs),
+                    "^" => TypedValue::<T>::bitwise_xor(self.context, lhs, rhs),
+                    "&" => TypedValue::<T>::bitwise_and(self.context, lhs, rhs),
+                    "<<" => TypedValue::<T>::shift_left(self.context, lhs, rhs),
+                    ">>" => TypedValue::<T>::shift_right(self.context, lhs, rhs),
 
                     other => {
                         return Err(EvalError {
@@ -512,7 +516,7 @@ where
             }
             Expression::FunctionCall { name, arguments } => {
                 let function_name = name.source(self.source);
-                let mut args = Vec::new();
+                let mut args = Vec::with_capacity(arguments.len());
                 for arg in arguments {
                     args.push(self.visit_expression(arg)?);
                 }
@@ -615,8 +619,9 @@ impl Display for Type {
 pub struct Context<'ctx, T = DefaultTypeSet>
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
+    T::Integer: Load<T> + Store<T>,
+    T::Float: Load<T> + Store<T>,
+    T::SignedInteger: Load<T> + Store<T>,
 {
     variables: IndexMap<String, TypedValue<T>>,
     functions: HashMap<String, ExprFn<'ctx, T>>,
@@ -627,8 +632,9 @@ where
 impl<T> ExprContext<T> for Context<'_, T>
 where
     T: TypeSet,
-    T::Integer: ValueType + Integer,
-    T::Float: ValueType,
+    T::Integer: Load<T> + Store<T> + Integer,
+    T::Float: Load<T> + Store<T>,
+    T::SignedInteger: Load<T> + Store<T>,
 {
     fn intern_string(&mut self, s: &str) -> StringIndex {
         self.strings.intern(s)
@@ -670,11 +676,9 @@ impl<'ctx> Context<'ctx, DefaultTypeSet> {
 impl<'ctx, T> Context<'ctx, T>
 where
     T: TypeSet,
-    T::Integer: Integer,
-    T::Float: ValueType,
-    TypedValue<T>: From<T::Integer>,
-    TypedValue<T>: From<T::SignedInteger>,
-    TypedValue<T>: From<T::Float>,
+    T::Integer: Load<T> + Store<T> + Integer,
+    T::Float: Load<T> + Store<T>,
+    T::SignedInteger: Load<T> + Store<T>,
 {
     /// Creates a new context. The type set must be specified when using this function.
     ///
@@ -743,11 +747,11 @@ where
         expression: &'s str,
     ) -> Result<V, ExpressionError<'s>>
     where
-        V: TryFrom<TypedValue<T>>,
+        V: Load<T>,
     {
         let result = self.evaluate_any(expression)?;
         let result_ty = result.type_of();
-        result.try_into().map_err(|_| ExpressionError {
+        V::load(self, result).ok_or_else(|| ExpressionError {
             error: EvalError {
                 message: format!(
                     "Expression evaluates to {result_ty}, which cannot be converted to {}",
@@ -763,9 +767,10 @@ where
     /// Defines a new variable in the context.
     pub fn add_variable<V>(&mut self, name: &str, value: V)
     where
-        V: Into<TypedValue<T>>,
+        V: Store<T>,
     {
-        self.variables.insert(name.to_string(), value.into());
+        let stored = value.store(self);
+        self.variables.insert(name.to_string(), stored);
     }
 
     /// Adds a new function to the context.
@@ -824,7 +829,7 @@ mod test {
         // TODO: this is a pain point that needs to be resolved
         let five = ctx.strings.intern("five");
 
-        ctx.add_variable("value", TypedValue::Int(30));
+        ctx.add_variable::<u64>("value", 30);
         ctx.add_function("func", |v: u64| 2 * v);
         ctx.add_function("func2", |v1: u64, v2: u64| v1 + v2);
         ctx.add_function("five", move || five);
@@ -844,7 +849,7 @@ mod test {
     fn test_evaluating_exprs_with_u32() {
         let mut ctx = Context::<TypeSet32>::new_with_types();
 
-        ctx.add_variable("value", TypedValue::Int(30));
+        ctx.add_variable::<u32>("value", 30);
         ctx.add_function("func", |v: u32| 2 * v);
         ctx.add_function("func2", |v1: u32, v2: u32| v1 + v2);
 
@@ -857,7 +862,7 @@ mod test {
     fn test_evaluating_exprs_with_u128() {
         let mut ctx = Context::<TypeSet128>::new_with_types();
 
-        ctx.add_variable("value", TypedValue::Int(30));
+        ctx.add_variable::<u128>("value", 30);
         ctx.add_function("func", |v: u128| 2 * v);
         ctx.add_function("func2", |v1: u128, v2: u128| v1 + v2);
 
