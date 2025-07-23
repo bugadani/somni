@@ -291,9 +291,8 @@ where
 pub trait ExprContext<T = DefaultTypeSet>
 where
     T: TypeSet,
-    T::Integer: Load<T> + Store<T>,
-    T::Float: Load<T> + Store<T>,
-    T::SignedInteger: Load<T> + Store<T>,
+    T::Integer: ValueType,
+    T::Float: ValueType,
 {
     /// Implements string interning.
     fn intern_string(&mut self, s: &str) -> StringIndex;
@@ -826,13 +825,11 @@ mod test {
     fn test_evaluating_exprs() {
         let mut ctx = Context::new();
 
-        // TODO: this is a pain point that needs to be resolved
-        let five = ctx.strings.intern("five");
-
         ctx.add_variable::<u64>("value", 30);
         ctx.add_function("func", |v: u64| 2 * v);
         ctx.add_function("func2", |v1: u64, v2: u64| v1 + v2);
-        ctx.add_function("five", move || five);
+        ctx.add_function("five", || "five");
+        //TODO: ctx.add_function("is_five", |num: &str| num == "five");
 
         assert_eq!(ctx.evaluate::<bool>("value / 5 == 6"), Ok(true));
         assert_eq!(ctx.evaluate::<bool>("five() == \"five\""), Ok(true));

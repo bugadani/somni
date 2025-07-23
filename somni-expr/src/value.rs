@@ -273,6 +273,13 @@ impl ValueType for StringIndex {
         Ok(a == b)
     }
 }
+impl ValueType for &str {
+    const TYPE: Type = Type::String;
+
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a == b)
+    }
+}
 
 /// Represents any value in the expression language.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -423,5 +430,17 @@ where
 {
     fn store(self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
         TypedValue::Void
+    }
+}
+
+impl<T> Store<T> for &str
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
+    fn store(self, ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
+        let idx = ctx.intern_string(self);
+        TypedValue::String(idx)
     }
 }
