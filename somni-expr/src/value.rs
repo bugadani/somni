@@ -328,7 +328,7 @@ where
     T::Integer: ValueType,
     T::Float: ValueType,
 {
-    fn load(_ctx: &mut dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self>;
+    fn load(_ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self>;
 }
 
 pub trait Store<T = DefaultTypeSet>: ValueType
@@ -341,14 +341,14 @@ where
 }
 
 macro_rules! convert {
-    ($type:ty, $ts_kind:ident, $kind:ident) => {
+    ($type:ty, $kind:ident $(, $ts_kind:ident)?) => {
         impl<T> Load<T> for $type
         where
-            T: TypeSet<$ts_kind = $type>,
+            T: TypeSet$(<$ts_kind = $type>)?,
             T::Integer: ValueType,
             T::Float: ValueType,
         {
-            fn load(_ctx: &mut dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
+            fn load(_ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
                 if let TypedValue::$kind(value) = typed {
                     Some(value)
                 } else {
@@ -358,34 +358,7 @@ macro_rules! convert {
         }
         impl<T> Store<T> for $type
         where
-            T: TypeSet<$ts_kind = $type>,
-            T::Integer: ValueType,
-            T::Float: ValueType,
-        {
-            fn store(self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
-                TypedValue::$kind(self)
-            }
-        }
-    };
-
-    ($type:ty, $kind:ident) => {
-        impl<T> Load<T> for $type
-        where
-            T: TypeSet,
-            T::Integer: ValueType,
-            T::Float: ValueType,
-        {
-            fn load(_ctx: &mut dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
-                if let TypedValue::$kind(value) = typed {
-                    Some(value)
-                } else {
-                    None
-                }
-            }
-        }
-        impl<T> Store<T> for $type
-        where
-            T: TypeSet,
+            T: TypeSet$(<$ts_kind = $type>)?,
             T::Integer: ValueType,
             T::Float: ValueType,
         {
@@ -396,12 +369,12 @@ macro_rules! convert {
     };
 }
 
-convert!(u32, Integer, Int);
-convert!(u64, Integer, Int);
-convert!(u128, Integer, Int);
-convert!(i32, SignedInteger, SignedInt);
-convert!(i64, SignedInteger, SignedInt);
-convert!(i128, SignedInteger, SignedInt);
+convert!(u32, Int, Integer);
+convert!(u64, Int, Integer);
+convert!(u128, Int, Integer);
+convert!(i32, SignedInt, SignedInteger);
+convert!(i64, SignedInt, SignedInteger);
+convert!(i128, SignedInt, SignedInteger);
 convert!(f32, Float, Float);
 convert!(f64, Float, Float);
 
@@ -414,7 +387,7 @@ where
     T::Integer: ValueType,
     T::Float: ValueType,
 {
-    fn load(_ctx: &mut dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
+    fn load(_ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
         if let TypedValue::Void = typed {
             Some(())
         } else {
