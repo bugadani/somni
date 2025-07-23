@@ -315,6 +315,10 @@ impl ExprContext for Program {
         self.debug_info.strings.find(s).unwrap()
     }
 
+    fn load_interned_string(&self, idx: StringIndex) -> &str {
+        self.debug_info.strings.lookup(idx)
+    }
+
     fn try_load_variable(&self, variable: &str) -> Option<TypedValue> {
         let idx = self.debug_info.strings.find(variable)?;
         self.globals[&idx].initial_value

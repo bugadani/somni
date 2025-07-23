@@ -70,6 +70,7 @@ somni_expr::for_all_tuples! {
         where
             $($arg: MemoryRepr + Load,)*
             F: Fn($($arg,)*) -> R,
+            F: for<'t> Fn($($arg::Output<'t>,)*) -> R,
             F: Clone,
             R: ValueType + Store,
         {
@@ -779,6 +780,10 @@ impl<'s> ExprContext for EvalContext<'s> {
         } else {
             self.strings.intern(s)
         }
+    }
+
+    fn load_interned_string(&self, idx: StringIndex) -> &str {
+        self.strings.lookup(idx)
     }
 
     fn try_load_variable(&self, name: &str) -> Option<TypedValue> {

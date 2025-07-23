@@ -51,7 +51,11 @@ for_all_tuples! {
         impl<$($arg,)* R, F, T> DynFunction<($($arg,)*), T> for F
         where
             $($arg: ValueType + Load<T>,)*
+            // This double bound on F ensures that we can work with reference types (&str), too:
+            // The first one ensures type-inference matches the Load implementation we want
+            // The second one ensures we don't run into "... is not generic enough" errors.
             F: Fn($($arg,)*) -> R,
+            F: for<'t> Fn($($arg::Output<'t>,)*) -> R,
             R: ValueType + Store<T>,
             T: TypeSet,
             T::Integer: ValueType,
@@ -59,10 +63,6 @@ for_all_tuples! {
         {
             #[allow(non_snake_case, unused)]
             fn call(&self, ctx: &mut dyn ExprContext<T>, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> {
-
-                // TODO: while it's great that we can now allow access to the context, it's a bit of a pain to use.
-                // The ideal API would load strings in this function, and store the string when returning from the user's function.
-
                 let arg_count = 0;
                 $(
                     ignore!($arg);
@@ -70,7 +70,7 @@ for_all_tuples! {
                 )*
 
                 let idx = 0;
-                let mut args = args.iter().copied();
+                let mut args = args.iter().cloned();
                 $(
                     let Some(arg) = args.next() else {
                         return Err(FunctionCallError::IncorrectArgumentCount { expected: arg_count });

@@ -11,7 +11,7 @@ pub trait MemoryRepr: Sized + Copy + PartialEq {
 }
 
 #[doc(hidden)]
-pub trait ValueType: Sized + Copy + PartialEq {
+pub trait ValueType: Sized + Clone + PartialEq {
     const TYPE: Type;
 
     fn equals(_a: Self, _b: Self) -> Result<bool, OperatorError> {
@@ -22,7 +22,7 @@ pub trait ValueType: Sized + Copy + PartialEq {
     }
 
     fn less_than_or_equal(a: Self, b: Self) -> Result<bool, OperatorError> {
-        let less = Self::less_than(a, b)?;
+        let less = Self::less_than(a.clone(), b.clone())?;
         Ok(less || Self::equals(a, b)?)
     }
     fn not_equals(a: Self, b: Self) -> Result<bool, OperatorError> {
@@ -280,6 +280,13 @@ impl ValueType for &str {
         Ok(a == b)
     }
 }
+impl ValueType for String {
+    const TYPE: Type = Type::String;
+
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a == b)
+    }
+}
 
 /// Represents any value in the expression language.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -328,7 +335,11 @@ where
     T::Integer: ValueType,
     T::Float: ValueType,
 {
-    fn load(_ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self>;
+    type Output<'s>
+    where
+        T: 's;
+
+    fn load(_ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self::Output<'_>>;
 }
 
 pub trait Store<T = DefaultTypeSet>: ValueType
@@ -348,6 +359,7 @@ macro_rules! convert {
             T::Integer: ValueType,
             T::Float: ValueType,
         {
+            type Output<'s> = Self where T: 's;
             fn load(_ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
                 if let TypedValue::$kind(value) = typed {
                     Some(value)
@@ -387,6 +399,10 @@ where
     T::Integer: ValueType,
     T::Float: ValueType,
 {
+    type Output<'s>
+        = Self
+    where
+        T: 's;
     fn load(_ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
         if let TypedValue::Void = typed {
             Some(())
@@ -415,5 +431,37 @@ where
     fn store(self, ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
         let idx = ctx.intern_string(self);
         TypedValue::String(idx)
+    }
+}
+
+impl<T> Store<T> for String
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
+    fn store(self, ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
+        let idx = ctx.intern_string(&self);
+        TypedValue::String(idx)
+    }
+}
+
+impl<T> Load<T> for &str
+where
+    T: TypeSet,
+    T::Integer: ValueType,
+    T::Float: ValueType,
+{
+    type Output<'s>
+        = &'s str
+    where
+        T: 's;
+
+    fn load(ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self::Output<'_>> {
+        if let TypedValue::String(index) = typed {
+            Some(ctx.load_interned_string(index))
+        } else {
+            None
+        }
     }
 }

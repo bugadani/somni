@@ -6,7 +6,7 @@
 //!
 //! The expression language includes:
 //!
-//! - Literals: integers, floats, booleans. No strings (yet).
+//! - Literals: integers, floats, booleans, strings.
 //! - Variables
 //! - A basic set of operators
 //! - Function calls
@@ -297,6 +297,9 @@ where
     /// Implements string interning.
     fn intern_string(&mut self, s: &str) -> StringIndex;
 
+    /// Loads an interned string.
+    fn load_interned_string(&self, idx: StringIndex) -> &str;
+
     /// Attempts to load a variable from the context.
     fn try_load_variable(&self, variable: &str) -> Option<TypedValue<T>>;
 
@@ -430,8 +433,9 @@ where
 
                 "-" => {
                     let value = self.visit_expression(operand)?;
+                    let ty = value.type_of();
                     T::negate(value).ok_or_else(|| EvalError {
-                        message: format!("Cannot negate {}", value.type_of()).into_boxed_str(),
+                        message: format!("Cannot negate {}", ty).into_boxed_str(),
                         location: operand.location(),
                     })?
                 }
@@ -639,8 +643,12 @@ where
         self.strings.intern(s)
     }
 
+    fn load_interned_string(&self, idx: StringIndex) -> &str {
+        self.strings.lookup(idx)
+    }
+
     fn try_load_variable(&self, variable: &str) -> Option<TypedValue<T>> {
-        self.variables.get(variable).copied()
+        self.variables.get(variable).cloned()
     }
 
     fn address_of(&self, variable: &str) -> TypedValue<T> {
@@ -742,9 +750,9 @@ where
     /// This function will attempt to convert the result of the expression to the specified type `V`.
     /// If the conversion fails, it will return an `ExpressionError`.
     pub fn evaluate<'s, V: ValueType>(
-        &mut self,
+        &'s mut self,
         expression: &'s str,
-    ) -> Result<V, ExpressionError<'s>>
+    ) -> Result<V::Output<'s>, ExpressionError<'s>>
     where
         V: Load<T>,
     {
@@ -829,10 +837,15 @@ mod test {
         ctx.add_function("func", |v: u64| 2 * v);
         ctx.add_function("func2", |v1: u64, v2: u64| v1 + v2);
         ctx.add_function("five", || "five");
-        //TODO: ctx.add_function("is_five", |num: &str| num == "five");
+        ctx.add_function("is_five", |num: &str| num == "five");
+        ctx.add_function("concatenate", |a: &str, b: &str| format!("{a}{b}"));
 
         assert_eq!(ctx.evaluate::<bool>("value / 5 == 6"), Ok(true));
         assert_eq!(ctx.evaluate::<bool>("five() == \"five\""), Ok(true));
+        assert_eq!(
+            ctx.evaluate::<bool>("is_five(five()) != is_five(\"six\")"),
+            Ok(true)
+        );
         assert_eq!(ctx.evaluate::<u64>("func(20) / 5"), Ok(8));
         assert_eq!(ctx.evaluate::<u64>("func2(20, 20) / 5"), Ok(8));
         assert_eq!(ctx.evaluate::<bool>("true & false"), Ok(false));
@@ -840,6 +853,10 @@ mod test {
         assert_eq!(ctx.evaluate::<bool>("false | false"), Ok(false));
         assert_eq!(ctx.evaluate::<bool>("true ^ true"), Ok(false));
         assert_eq!(ctx.evaluate::<u64>("!0x1111"), Ok(0xFFFF_FFFF_FFFF_EEEE));
+        assert_eq!(
+            ctx.evaluate::<&str>("concatenate(five(), \"six\")"),
+            Ok("fivesix")
+        );
     }
 
     #[test]
