@@ -3,6 +3,12 @@ name = "somni"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.82.0"
+description = "Somni scripting language and VM"
+keywords = ["expression", "script", "language", "evaluator", "eval"]
+categories = ["compilers"]
+repository = "https://github.com/bugadani/somni"
+license = "MIT OR Apache-2.0"
+
 
 [[bench]]
 name = "benchmark"
@@ -16,8 +22,8 @@ pretty_assertions = "1.4"
 
 [dependencies]
 indexmap.workspace = true
-somni-parser = { path = "somni-parser" }
-somni-expr = { path = "somni-expr" }
+somni-parser = { version = "0.1.0", path = "somni-parser" }
+somni-expr = { version = "0.1.0",path = "somni-expr" }
 
 [dev-dependencies]
 criterion.workspace = true
