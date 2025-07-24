@@ -9,8 +9,8 @@ use somni_expr::{
     TypedValue,
 };
 use somni_parser::{
-    lexer::{self, Location},
     parser::{self, DefaultTypeSet},
+    Location,
 };
 
 #[derive(Clone, Debug)]
@@ -515,11 +515,8 @@ impl<'p> EvalContext<'p> {
 
         // TODO: we can allow new globals to be defined in the expression, but that would require
         // storing a copy of the original globals, so that they can be reset?
-        let tokens = lexer::tokenize(expression)
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
 
-        let ast = parser::parse_expression(expression, &tokens).unwrap_or_else(|e| {
+        let ast = parser::parse_expression(expression).unwrap_or_else(|e| {
             panic!(
                 "{}",
                 MarkInSource(

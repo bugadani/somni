@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use somni_expr::error::{ErrorWithLocation, MarkInSource};
-use somni_parser::lexer::Location;
+use somni_parser::Location;
 
 #[derive(Clone)]
 pub struct CompileError<'s> {

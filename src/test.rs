@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{codegen, error::CompileError, ir, transform_ir::transform_ir, vm::EvalContext};
 use somni_expr::TypedValue;
-use somni_parser::{lexer::tokenize, parser::parse};
+use somni_parser::parser::parse;
 
 fn walk(dir: &Path, on_file: &impl Fn(&Path)) {
     for entry in std::fs::read_dir(dir).unwrap().flatten() {
@@ -82,8 +82,7 @@ pub fn run_compile_test(file: impl AsRef<Path>, compile_test: bool) -> Option<co
 
     // First, parse the program.
     let source = std::fs::read_to_string(ctx.file).unwrap();
-    let tokens = tokenize(&source).collect::<Result<Vec<_>, _>>().unwrap();
-    let ast = match parse(&source, &tokens) {
+    let ast = match parse(&source) {
         Ok(ast) => ast,
         Err(err) => return ctx.handle_error("Failed to parse", CompileError::new(&source, err)),
     };

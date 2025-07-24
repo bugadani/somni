@@ -8,7 +8,7 @@ use crate::{
     ir::{self, BlockIndex, VariableIndex},
     variable_tracker::{LocalVariableIndex, ScopeData},
 };
-use somni_parser::lexer::Location;
+use somni_parser::Location;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ConstraintKind {

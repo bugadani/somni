@@ -14,7 +14,8 @@ use crate::{
 
 use somni_parser::{
     ast::{self, FunctionArgument},
-    lexer::{Location, Token},
+    lexer::Token,
+    Location,
 };
 
 #[derive(Clone, Copy, PartialEq, Debug)]

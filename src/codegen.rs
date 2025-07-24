@@ -16,7 +16,7 @@ use somni_expr::{
     string_interner::{StringIndex, Strings},
     ExprContext, ExpressionVisitor, FunctionCallError, Type, TypedValue,
 };
-use somni_parser::{lexer::Location, parser::DefaultTypeSet};
+use somni_parser::{parser::DefaultTypeSet, Location};
 
 // This is just to keep the size of Instruction small enough. Re-evaluate this later.
 #[derive(Clone, Copy, Debug)]

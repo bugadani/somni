@@ -8,7 +8,7 @@ use somni::{
     transform_ir::transform_ir,
     vm::{EvalContext, EvalEvent},
 };
-use somni_parser::{lexer, parser};
+use somni_parser::parser;
 
 pub fn vm(c: &mut Criterion) {
     let source_code = r#"
@@ -23,11 +23,7 @@ fn main() {
     fib(20);
 }"#;
 
-    let tokens = lexer::tokenize(source_code)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| CompileError::new(source_code, e))
-        .unwrap();
-    let ast = match parser::parse(&source_code, &tokens) {
+    let ast = match parser::parse(source_code) {
         Ok(ast) => ast,
         Err(e) => {
             println!("Error parsing `{source_code}`");

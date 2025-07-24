@@ -93,8 +93,7 @@ use std::{
 use indexmap::IndexMap;
 use somni_parser::{
     ast::{self, Expression},
-    lexer::{self, Location},
-    parser,
+    lexer, parser, Location,
 };
 
 use crate::{
@@ -719,16 +718,7 @@ where
     fn evaluate_any_impl(&mut self, expression: &str) -> Result<TypedValue<T>, EvalError> {
         // TODO: we can allow new globals to be defined in the expression, but that would require
         // storing a copy of the original globals, so that they can be reset?
-        let tokens = match lexer::tokenize(expression).collect::<Result<Vec<_>, _>>() {
-            Ok(tokens) => tokens,
-            Err(e) => {
-                return Err(EvalError {
-                    message: format!("Syntax error: {e}").into_boxed_str(),
-                    location: e.location,
-                });
-            }
-        };
-        let ast = match parser::parse_expression(expression, &tokens) {
+        let ast = match parser::parse_expression(expression) {
             Ok(ast) => ast,
             Err(e) => {
                 return Err(EvalError {

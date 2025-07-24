@@ -1,6 +1,7 @@
 use crate::{
-    lexer::{Location, Token},
+    lexer::Token,
     parser::{DefaultTypeSet, TypeSet},
+    Location,
 };
 
 #[derive(Debug)]

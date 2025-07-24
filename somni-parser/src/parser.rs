@@ -47,7 +47,7 @@
 //! `STRING`: Double-quoted strings with escape sequences.
 
 use std::{
-    fmt::Debug,
+    fmt::{Debug, Display},
     num::{ParseFloatError, ParseIntError},
 };
 
@@ -57,8 +57,9 @@ use crate::{
         FunctionArgument, GlobalVariable, If, Item, Literal, LiteralValue, Loop, Program,
         ReturnDecl, ReturnWithValue, Statement, TypeHint, VariableDefinition,
     },
-    lexer::{Location, Token, TokenKind},
+    lexer::{Token, TokenKind, Tokenizer},
     parser::private::Sealed,
+    Error, Location,
 };
 
 mod private {
@@ -142,22 +143,8 @@ impl TypeSet for TypeSet128 {
     type Float = f64;
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ParserError {
-    pub location: Location,
-    pub error: String,
-}
-
-impl std::fmt::Display for ParserError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Parse error: {}", self.error)
-    }
-}
-
 impl Program {
-    fn parse<'s>(
-        stream: &mut TokenStream<'s, impl Iterator<Item = Token> + Clone>,
-    ) -> Result<Self, ParserError> {
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let mut items = Vec::new();
 
         while !stream.end()? {
@@ -169,9 +156,7 @@ impl Program {
 }
 
 impl Item {
-    fn parse<'s>(
-        stream: &mut TokenStream<'s, impl Iterator<Item = Token> + Clone>,
-    ) -> Result<Self, ParserError> {
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         if let Some(global_var) = GlobalVariable::try_parse(stream)? {
             return Ok(Item::GlobalVariable(global_var));
         }
@@ -187,9 +172,7 @@ impl Item {
 }
 
 impl GlobalVariable {
-    fn try_parse<'s>(
-        stream: &mut TokenStream<'s, impl Iterator<Item = Token> + Clone>,
-    ) -> Result<Option<Self>, ParserError> {
+    fn try_parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Option<Self>, Error> {
         let Some(decl_token) = stream.take_match(TokenKind::Identifier, &["var"])? else {
             return Ok(None);
         };
@@ -214,9 +197,7 @@ impl GlobalVariable {
 }
 
 impl ExternalFunction {
-    fn try_parse<'s>(
-        stream: &mut TokenStream<'s, impl Iterator<Item = Token> + Clone>,
-    ) -> Result<Option<Self>, ParserError> {
+    fn try_parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Option<Self>, Error> {
         let Some(extern_fn_token) = stream.take_match(TokenKind::Identifier, &["extern"])? else {
             return Ok(None);
         };
@@ -273,9 +254,7 @@ impl ExternalFunction {
 }
 
 impl Function {
-    fn try_parse<'s>(
-        stream: &mut TokenStream<'s, impl Iterator<Item = Token> + Clone>,
-    ) -> Result<Option<Self>, ParserError> {
+    fn try_parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Option<Self>, Error> {
         let Some(fn_token) = stream.take_match(TokenKind::Identifier, &["fn"])? else {
             return Ok(None);
         };
@@ -328,9 +307,7 @@ impl Function {
 }
 
 impl Body {
-    fn parse<'s>(
-        stream: &mut TokenStream<'s, impl Iterator<Item = Token> + Clone>,
-    ) -> Result<Self, ParserError> {
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let opening_brace = stream.expect_match(TokenKind::Symbol, &["{"])?;
 
         let mut body = Vec::new();
@@ -349,9 +326,7 @@ impl Body {
 }
 
 impl TypeHint {
-    fn parse<'s>(
-        stream: &mut TokenStream<'s, impl Iterator<Item = Token> + Clone>,
-    ) -> Result<Self, ParserError> {
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let type_name = stream.expect_match(TokenKind::Identifier, &[])?;
 
         Ok(TypeHint { type_name })
@@ -359,17 +334,13 @@ impl TypeHint {
 }
 
 impl Statement {
-    fn matches(
-        stream: &mut TokenStream<'_, impl Iterator<Item = Token> + Clone>,
-    ) -> Result<bool, ParserError> {
+    fn matches(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<bool, Error> {
         stream
             .peek_match(TokenKind::Symbol, &["}"])
             .map(|t| t.is_none())
     }
 
-    fn parse<'s>(
-        stream: &mut TokenStream<'s, impl Iterator<Item = Token> + Clone>,
-    ) -> Result<Self, ParserError> {
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         if let Some(return_token) = stream.take_match(TokenKind::Identifier, &["return"])? {
             if let Some(semicolon) = stream.take_match(TokenKind::Symbol, &[";"])? {
                 return Ok(Statement::EmptyReturn(EmptyReturn {
@@ -496,9 +467,7 @@ impl<T> Literal<T>
 where
     T: TypeSet,
 {
-    fn parse<'s>(
-        stream: &mut TokenStream<'s, impl Iterator<Item = Token> + Clone>,
-    ) -> Result<Self, ParserError> {
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let token = stream.peek_expect()?;
 
         let token_source = stream.source(token.location);
@@ -517,8 +486,9 @@ where
             TokenKind::String => match unescape(&token_source[1..token_source.len() - 1]) {
                 Ok(string) => LiteralValue::String(string),
                 Err(offset) => {
-                    return Err(ParserError {
-                        error: "Invalid escape sequence in string literal".to_string(),
+                    return Err(Error {
+                        error: String::from("Invalid escape sequence in string literal")
+                            .into_boxed_str(),
                         location: Location {
                             start: token.location.start + offset,
                             end: token.location.start + offset + 1,
@@ -579,9 +549,7 @@ impl<T> Expression<T>
 where
     T: TypeSet,
 {
-    fn parse<'s>(
-        stream: &mut TokenStream<'s, impl Iterator<Item = Token> + Clone>,
-    ) -> Result<Self, ParserError> {
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         // We define the binary operators from the lowest precedence to the highest.
         // Each recursive call to `parse_binary` will handle one level of precedence, and pass
         // the rest to the inner calls of `parse_binary`.
@@ -601,10 +569,10 @@ where
         Self::parse_binary(stream, operators)
     }
 
-    fn parse_binary<'s>(
-        stream: &mut TokenStream<'s, impl Iterator<Item = Token> + Clone>,
+    fn parse_binary(
+        stream: &mut TokenStream<'_, impl Tokenizer>,
         binary_operators: &[(Associativity, &[&str])],
-    ) -> Result<Self, ParserError> {
+    ) -> Result<Self, Error> {
         let Some(((associativity, current), higher)) = binary_operators.split_first() else {
             unreachable!("At least one operator set is expected");
         };
@@ -635,9 +603,7 @@ where
         Ok(expr)
     }
 
-    fn parse_unary<'s>(
-        stream: &mut TokenStream<'s, impl Iterator<Item = Token> + Clone>,
-    ) -> Result<Self, ParserError> {
+    fn parse_unary(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         const UNARY_OPERATORS: &[&str] = &["!", "-", "&", "*"];
         if let Some(operator) = stream.take_match(TokenKind::Symbol, UNARY_OPERATORS)? {
             let operand = Self::parse_unary(stream)?;
@@ -650,9 +616,7 @@ where
         }
     }
 
-    fn parse_primary<'s>(
-        stream: &mut TokenStream<'s, impl Iterator<Item = Token> + Clone>,
-    ) -> Result<Self, ParserError> {
+    fn parse_primary(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let token = stream.peek_expect()?;
 
         match token.kind {
@@ -679,9 +643,7 @@ where
         }
     }
 
-    fn parse_call<'s>(
-        stream: &mut TokenStream<'s, impl Iterator<Item = Token> + Clone>,
-    ) -> Result<Self, ParserError> {
+    fn parse_call(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let token = stream.expect_match(TokenKind::Identifier, &[]).unwrap();
 
         if stream.take_match(TokenKind::Symbol, &["("])?.is_none() {
@@ -706,23 +668,27 @@ where
     }
 }
 
-struct TokenStream<'s, I: Iterator<Item = Token> + Clone> {
+struct TokenStream<'s, I>
+where
+    I: Tokenizer,
+{
     source: &'s str,
     tokens: I,
 }
 
-impl<'s, I: Iterator<Item = Token> + Clone> TokenStream<'s, I> {
+impl<'s, I> TokenStream<'s, I>
+where
+    I: Tokenizer,
+{
     fn new(source: &'s str, tokens: I) -> Self {
         TokenStream { source, tokens }
     }
 
     /// Fast-forwards the token iterator past comments.
-    fn skip_comments(&mut self) -> Result<(), ParserError> {
+    fn skip_comments(&mut self) -> Result<(), Error> {
         let mut peekable = self.tokens.clone();
         while let Some(token) = peekable.next() {
-            if token.kind == TokenKind::Comment {
-                // Copying a few bytes (once we can pass the lexer iterator)
-                // is probably faster than an iteration of lexing.
+            if token?.kind == TokenKind::Comment {
                 self.tokens = peekable.clone();
             } else {
                 break;
@@ -732,25 +698,29 @@ impl<'s, I: Iterator<Item = Token> + Clone> TokenStream<'s, I> {
         Ok(())
     }
 
-    fn end(&mut self) -> Result<bool, ParserError> {
+    fn end(&mut self) -> Result<bool, Error> {
         self.skip_comments()?;
 
         Ok(self.tokens.clone().next().is_none())
     }
 
-    fn peek(&mut self) -> Result<Option<Token>, ParserError> {
+    fn peek(&mut self) -> Result<Option<Token>, Error> {
         self.skip_comments()?;
 
-        Ok(self.tokens.clone().next())
+        match self.tokens.clone().next() {
+            Some(Ok(token)) => Ok(Some(token)),
+            Some(Err(error)) => Err(error),
+            None => Ok(None),
+        }
     }
 
-    fn peek_expect(&mut self) -> Result<Token, ParserError> {
-        self.peek()?.ok_or_else(|| ParserError {
+    fn peek_expect(&mut self) -> Result<Token, Error> {
+        self.peek()?.ok_or_else(|| Error {
             location: Location {
                 start: self.source.len(),
                 end: self.source.len(),
             },
-            error: "Unexpected end of input".to_string(),
+            error: String::from("Unexpected end of input").into_boxed_str(),
         })
     }
 
@@ -758,7 +728,7 @@ impl<'s, I: Iterator<Item = Token> + Clone> TokenStream<'s, I> {
         &mut self,
         token_kind: TokenKind,
         source: &[&str],
-    ) -> Result<Option<Token>, ParserError> {
+    ) -> Result<Option<Token>, Error> {
         let Some(token) = self.peek()? else {
             return Ok(None);
         };
@@ -778,7 +748,7 @@ impl<'s, I: Iterator<Item = Token> + Clone> TokenStream<'s, I> {
         &mut self,
         token_kind: TokenKind,
         source: &[&str],
-    ) -> Result<Option<Token>, ParserError> {
+    ) -> Result<Option<Token>, Error> {
         self.peek_match(token_kind, source).map(|token| {
             if let Some(token) = token {
                 self.tokens.next();
@@ -794,11 +764,7 @@ impl<'s, I: Iterator<Item = Token> + Clone> TokenStream<'s, I> {
     ///
     /// If `source` is empty, it only checks the token kind.
     /// If `source` is not empty, it checks if the token's source matches any of the provided strings.
-    fn expect_match(
-        &mut self,
-        token_kind: TokenKind,
-        source: &[&str],
-    ) -> Result<Token, ParserError> {
+    fn expect_match(&mut self, token_kind: TokenKind, source: &[&str]) -> Result<Token, Error> {
         if let Some(token) = self.take_match(token_kind, source)? {
             Ok(token)
         } else {
@@ -813,25 +779,24 @@ impl<'s, I: Iterator<Item = Token> + Clone> TokenStream<'s, I> {
                 "reached end of input".to_string()
             };
             match source {
-                [] => Err(self.error(format!("Expected {token_kind:?}, {found}"))),
-                [s] => Err(self.error(format!("Expected '{s}', {found}"))),
-                _ => Err(self.error(format!("Expected one of {source:?}, {found}"))),
+                [] => Err(self.error(format_args!("Expected {token_kind:?}, {found}"))),
+                [s] => Err(self.error(format_args!("Expected '{s}', {found}"))),
+                _ => Err(self.error(format_args!("Expected one of {source:?}, {found}"))),
             }
         }
     }
 
-    fn error(&self, message: impl ToString) -> ParserError {
-        ParserError {
-            error: message.to_string(),
-            location: self
-                .tokens
-                .clone()
-                .next()
-                .map(|t| t.location)
-                .unwrap_or(Location {
+    fn error(&self, message: impl Display) -> Error {
+        Error {
+            error: format!("Parse error: {message}").into_boxed_str(),
+            location: if let Some(Ok(token)) = self.tokens.clone().next() {
+                token.location
+            } else {
+                Location {
                     start: self.source.len(),
                     end: self.source.len(),
-                }),
+                }
+            },
         }
     }
 
@@ -840,20 +805,19 @@ impl<'s, I: Iterator<Item = Token> + Clone> TokenStream<'s, I> {
     }
 }
 
-pub fn parse<'s>(source: &'s str, tokens: &'s [Token]) -> Result<Program, ParserError> {
-    let mut stream = TokenStream::new(source, tokens.iter().copied());
+pub fn parse(source: &str) -> Result<Program, Error> {
+    let tokens = crate::lexer::tokenize(source);
+    let mut stream = TokenStream::new(source, tokens);
 
     Program::parse(&mut stream)
 }
 
-pub fn parse_expression<'s, T>(
-    source: &'s str,
-    tokens: &'s [Token],
-) -> Result<Expression<T>, ParserError>
+pub fn parse_expression<T>(source: &str) -> Result<Expression<T>, Error>
 where
     T: TypeSet,
 {
-    let mut stream = TokenStream::new(source, tokens.iter().copied());
+    let tokens = crate::lexer::tokenize(source);
+    let mut stream = TokenStream::new(source, tokens);
 
     Expression::<T>::parse(&mut stream)
 }
@@ -872,16 +836,8 @@ mod tests {
     #[test]
     fn test_out_of_range_literal() {
         let source = "0x100000000";
-        let tokens = vec![Token {
-            kind: TokenKind::HexInteger,
-            location: Location {
-                start: 0,
-                end: source.len(),
-            },
-        }];
 
-        let result =
-            parse_expression::<TypeSet32>(source, &tokens).expect_err("Parsing should fail");
-        assert_eq!("Invalid hexadecimal integer literal", result.error);
+        let result = parse_expression::<TypeSet32>(source).expect_err("Parsing should fail");
+        assert_eq!("Invalid hexadecimal integer literal", result.error.as_ref());
     }
 }
