@@ -9,7 +9,7 @@ name = "benchmark"
 harness = false
 
 [workspace.dependencies]
-indexmap = "2.9"
+indexmap = "2"
 criterion = "0.6"
 ansi-parser = "0.9"
 pretty_assertions = "1.4"
