@@ -691,26 +691,25 @@ impl<'s> TokenStream<'s> {
         }
     }
 
-    fn end(&self) -> bool {
-        // Skip comments
+    /// Returns the position of the next non-comment token.
+    fn skip_comments(&self) -> usize {
         let mut position = self.position;
         while self.tokens.get(position).is_some()
             && self.tokens[position].kind == TokenKind::Comment
         {
             position += 1;
         }
+        position
+    }
+
+    fn end(&self) -> bool {
+        let position = self.skip_comments();
 
         position >= self.tokens.len()
     }
 
     fn peek(&mut self) -> Result<Token, ParserError> {
-        // Skip comments
-        let mut position = self.position;
-        while self.tokens.get(position).is_some()
-            && self.tokens[position].kind == TokenKind::Comment
-        {
-            position += 1;
-        }
+        let position = self.skip_comments();
 
         if position < self.tokens.len() {
             Ok(self.tokens[position])
@@ -741,12 +740,7 @@ impl<'s> TokenStream<'s> {
     }
 
     fn take_match(&mut self, token_kind: TokenKind, source: &[&str]) -> Option<Token> {
-        // Skip comments
-        while self.tokens.get(self.position).is_some()
-            && self.tokens[self.position].kind == TokenKind::Comment
-        {
-            self.position += 1;
-        }
+        self.position = self.skip_comments();
 
         if let Some(token) = self.peek_match(token_kind, source) {
             self.position += 1;
