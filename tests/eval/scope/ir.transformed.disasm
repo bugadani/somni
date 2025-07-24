@@ -3,7 +3,7 @@ Globals:
 Function: main
 block 0
   var return_value: int = None
-  var x: int = Some(Int(10))
+  var x: int = Some(MaybeSignedInt(10))
   var temp3: bool = Some(Bool(true))
   if temp3 -> block 3 else block 2
 
@@ -18,8 +18,8 @@ block 2
   -> block 1
 
 block 3
-  var x: int = Some(Int(20))
-  var temp6: int = Some(Int(10))
+  var x: {int/signed} = Some(MaybeSignedInt(20))
+  var temp6: {int/signed} = Some(MaybeSignedInt(10))
   x = x + temp6
   free(temp6)
   free(x)

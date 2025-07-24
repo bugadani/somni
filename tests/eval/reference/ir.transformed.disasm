@@ -4,7 +4,7 @@ Function: take_by_reference
 block 0
   var return_value: void = None
   var x: &int = None
-  var temp2: int = Some(Int(2))
+  var temp2: int = Some(MaybeSignedInt(2))
   var temp3: int = None
   temp3 = *x
   var temp4: int = None
@@ -23,7 +23,7 @@ block 1
 Function: main
 block 0
   var return_value: int = None
-  var input: int = Some(Int(5))
+  var input: int = Some(MaybeSignedInt(5))
   var temp4: &int = None
   temp4 = &input
   var temp5: int = None

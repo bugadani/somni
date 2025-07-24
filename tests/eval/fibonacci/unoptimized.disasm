@@ -1,15 +1,15 @@
 Function fib(...) -> int (stack: 80)
-  0000: load Local(16) = Int(1)
+  0000: load Local(16) = MaybeSignedInt(1)
   0001: Local(24) = Local(8) <= Local(16) (int)
   0002: if Local(24) == false jump to 5
   0003: copy Local(0) = Local(8)
   0004: return
-  0005: load Local(24) = Int(1)
+  0005: load Local(24) = MaybeSignedInt(1)
   0006: Local(32) = Local(8) - Local(24) (int)
   0007: copy Local(64) = Local(32)
   0008: call fib(..) with sp=Local(56)
   0009: copy Local(16) = Local(56)
-  0010: load Local(32) = Int(2)
+  0010: load Local(32) = MaybeSignedInt(2)
   0011: Local(40) = Local(8) - Local(32) (int)
   0012: copy Local(72) = Local(40)
   0013: call fib(..) with sp=Local(64)

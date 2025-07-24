@@ -5,7 +5,7 @@ Globals:
 Function: double
 block 0
   var return_value: void = None
-  var temp1: int = Some(Int(2))
+  var temp1: int = Some(MaybeSignedInt(2))
   n = n * temp1
   free(temp1)
   free(return_value)

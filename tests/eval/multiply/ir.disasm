@@ -4,7 +4,7 @@ Function: noop
 block 0
   var return_value: void = None
   var n: void = None
-  var temp2: int = Some(Int(2))
+  var temp2: {int/signed} = Some(MaybeSignedInt(2))
   n = temp2
   free(temp2)
   free(n)
@@ -34,7 +34,7 @@ block 2
 
 block 3
   var acc: void = None
-  var temp5: int = Some(Int(0))
+  var temp5: {int/signed} = Some(MaybeSignedInt(0))
   acc = temp5
   free(temp5)
   -> block 5
@@ -49,7 +49,7 @@ block 4
   -> block 11
 
 block 5
-  var temp6: int = Some(Int(0))
+  var temp6: {int/signed} = Some(MaybeSignedInt(0))
   var temp7: void = None
   temp7 = n > temp6
   free(temp6)
@@ -66,7 +66,7 @@ block 7
   free(temp8)
   var temp9: void = None
   free(temp9)
-  var temp10: int = Some(Int(1))
+  var temp10: {int/signed} = Some(MaybeSignedInt(1))
   var temp11: void = None
   temp11 = n - temp10
   free(temp10)

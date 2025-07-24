@@ -3,21 +3,21 @@ Globals:
 Function: loopy
 block 0
   var return_value: int = None
-  var n: int = Some(Int(7))
+  var n: int = Some(MaybeSignedInt(7))
   -> block 3
 
 block 1
   -> return
 
 block 2
-  var temp10: int = Some(Int(0))
+  var temp10: int = Some(MaybeSignedInt(0))
   var temp11: bool = None
   temp11 = n > temp10
   free(temp10)
   if temp11 -> block 10 else block 9
 
 block 3
-  var temp3: int = Some(Int(4))
+  var temp3: int = Some(MaybeSignedInt(4))
   var temp4: bool = None
   temp4 = n > temp3
   free(temp3)
@@ -28,7 +28,7 @@ block 4
   -> block 3
 
 block 5
-  var temp5: int = Some(Int(6))
+  var temp5: int = Some(MaybeSignedInt(6))
   var temp6: bool = None
   temp6 = n == temp5
   free(temp5)
@@ -36,7 +36,7 @@ block 5
 
 block 6
   free(temp6)
-  var temp7: int = Some(Int(1))
+  var temp7: int = Some(MaybeSignedInt(1))
   n = n - temp7
   free(temp7)
   -> block 4
@@ -58,7 +58,7 @@ block 9
   -> block 1
 
 block 10
-  var temp12: int = Some(Int(1))
+  var temp12: int = Some(MaybeSignedInt(1))
   n = n - temp12
   free(temp12)
   free(temp11)

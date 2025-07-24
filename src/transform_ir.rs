@@ -72,7 +72,9 @@ impl<'a, 's> TypeResolver<'a, 's> {
                 required_type: ty,
             },
         });
-        self.step_resolve()
+        self.step_resolve()?;
+
+        Ok(())
     }
 
     /// Add a constraint that two variables must be equal, recording the source location where
@@ -87,7 +89,9 @@ impl<'a, 's> TypeResolver<'a, 's> {
             source_location,
             kind: ConstraintKind::Equals { left, right },
         });
-        self.step_resolve()
+        self.step_resolve()?;
+
+        Ok(())
     }
 
     fn reference(
@@ -100,7 +104,9 @@ impl<'a, 's> TypeResolver<'a, 's> {
             source_location,
             kind: ConstraintKind::Reference { left, right },
         });
-        self.step_resolve()
+        self.step_resolve()?;
+
+        Ok(())
     }
 
     fn current_type_of(&self, variable: VariableIndex) -> Option<ir::Variable> {
@@ -118,8 +124,9 @@ impl<'a, 's> TypeResolver<'a, 's> {
         }
     }
 
-    fn step_resolve(&mut self) -> Result<(), CompileError<'s>> {
+    fn step_resolve(&mut self) -> Result<bool, CompileError<'s>> {
         let mut i = 0;
+        let mut any_changed = false;
         while i < self.constraints.len() {
             let constraint = &self.constraints[i];
             match constraint.kind {
@@ -128,8 +135,23 @@ impl<'a, 's> TypeResolver<'a, 's> {
                     let right_type = self.current_type_of(right);
 
                     let made_progress = match (left_type, right_type) {
+                        (Some(left_ty), Some(right_ty)) if left_ty == right_ty => {
+                            !left_ty.maybe_signed_integer() && !right_ty.maybe_signed_integer()
+                        }
                         (Some(left_ty), Some(right_ty)) => {
-                            if left_ty != right_ty {
+                            if left_ty.maybe_signed_integer() {
+                                self.locals
+                                    .variable_mut(left.local_index().unwrap())
+                                    .unwrap()
+                                    .ty = Some(right_ty);
+                                any_changed = true;
+                            } else if right_ty.maybe_signed_integer() {
+                                self.locals
+                                    .variable_mut(right.local_index().unwrap())
+                                    .unwrap()
+                                    .ty = Some(left_ty);
+                                any_changed = true;
+                            } else {
                                 return Err(CompileError {
                                     source: self.source,
                                     location: constraint.source_location,
@@ -138,21 +160,24 @@ impl<'a, 's> TypeResolver<'a, 's> {
                                     ),
                                 });
                             }
-                            true
+
+                            !left_ty.maybe_signed_integer() && !right_ty.maybe_signed_integer()
                         }
                         (Some(ty), None) => {
                             self.locals
                                 .variable_mut(right.local_index().unwrap())
                                 .unwrap()
                                 .ty = Some(ty);
-                            true
+                            any_changed = true;
+                            !ty.maybe_signed_integer()
                         }
                         (None, Some(ty)) => {
                             self.locals
                                 .variable_mut(left.local_index().unwrap())
                                 .unwrap()
                                 .ty = Some(ty);
-                            true
+                            any_changed = true;
+                            !ty.maybe_signed_integer()
                         }
                         (None, None) => {
                             // Cannot make progress with this constraint yet.
@@ -162,6 +187,7 @@ impl<'a, 's> TypeResolver<'a, 's> {
 
                     if made_progress {
                         // If we made progress, we can remove this constraint.
+                        any_changed = true;
                         self.constraints.swap_remove(i);
                     } else {
                         // If we didn't make progress, just move to the next constraint.
@@ -172,12 +198,40 @@ impl<'a, 's> TypeResolver<'a, 's> {
                     variable,
                     required_type: required_ty,
                 } => {
-                    match variable {
+                    let made_progress = match variable {
                         VariableIndex::Local(local) | VariableIndex::Temporary(local) => {
                             let local_info = self.locals.variable_mut(local).unwrap();
                             match local_info.ty.as_mut() {
                                 Some(ty) => {
                                     if *ty != required_ty {
+                                        any_changed = true;
+                                    }
+
+                                    if required_ty.maybe_signed_integer() {
+                                        if !ty.is_integer() {
+                                            return Err(CompileError {
+                                                source: self.source,
+                                                location: constraint.source_location,
+                                                error: format!(
+                                                    "Type mismatch: expected {required_ty}, found {}",
+                                                    *ty
+                                                ),
+                                            });
+                                        }
+                                        true
+                                    } else if ty.maybe_signed_integer() {
+                                        if !required_ty.is_integer() {
+                                            return Err(CompileError {
+                                                source: self.source,
+                                                location: constraint.source_location,
+                                                error: format!(
+                                                    "Type mismatch: expected {required_ty}, found {}",
+                                                    *ty
+                                                ),
+                                            });
+                                        }
+                                        true
+                                    } else if *ty != required_ty {
                                         return Err(CompileError {
                                             source: self.source,
                                             location: constraint.source_location,
@@ -186,12 +240,16 @@ impl<'a, 's> TypeResolver<'a, 's> {
                                                 *ty
                                             ),
                                         });
+                                    } else {
+                                        *ty = required_ty;
+                                        !ty.maybe_signed_integer()
                                     }
-                                    *ty = required_ty;
                                 }
                                 None => {
                                     // If the type is not set, we can set it now.
                                     local_info.ty = Some(required_ty);
+                                    any_changed = true;
+                                    true
                                 }
                             }
                         }
@@ -202,10 +260,17 @@ impl<'a, 's> TypeResolver<'a, 's> {
                             };
 
                             // TODO
+                            true
                         }
-                    }
+                    };
 
-                    self.constraints.swap_remove(i);
+                    if made_progress {
+                        any_changed = true;
+                        self.constraints.swap_remove(i);
+                    } else {
+                        // If we didn't make progress, just move to the next constraint.
+                        i += 1;
+                    }
                 }
 
                 ConstraintKind::Reference { left, right } => {
@@ -222,18 +287,56 @@ impl<'a, 's> TypeResolver<'a, 's> {
                     let right_type = self.current_type_of(right);
 
                     let made_progress = match (left_type, right_type) {
-                        (Some(left_ty), Some(right_ty)) => {
-                            if left_ty.reference() != right_ty {
-                                return Err(CompileError {
-                                    source: self.source,
-                                    location: constraint.source_location,
-                                    error: format!(
-                                        "Type mismatch: expected {left_ty}, found {right_ty}"
-                                    ),
-                                });
-                            }
+                        (Some(left_ty), Some(right_ty)) if left_ty.reference() == right_ty => {
+                            !left_ty.maybe_signed_integer()
+                        }
+                        (Some(left_ty), Some(right_ty))
+                            if left_ty.maybe_signed_integer() && right_ty.is_integer() =>
+                        {
+                            if right_ty.maybe_signed_integer() {
+                                false
+                            } else {
+                                self.locals
+                                    .variable_mut(left.local_index().unwrap())
+                                    .unwrap()
+                                    .ty = Some(right_ty.reference());
 
-                            true
+                                any_changed = true;
+
+                                !right_ty.maybe_signed_integer()
+                            }
+                        }
+                        (Some(left_ty), Some(right_ty))
+                            if right_ty.maybe_signed_integer() && left_ty.is_integer() =>
+                        {
+                            if left_ty.maybe_signed_integer() {
+                                false
+                            } else {
+                                let left_ty =
+                                    left_ty.dereference().ok_or_else(|| CompileError {
+                                        source: self.source,
+                                        location: constraint.source_location,
+                                        error: format!("Cannot dereference {left_ty}"),
+                                    })?;
+                                self.locals
+                                    .variable_mut(right.local_index().unwrap())
+                                    .unwrap()
+                                    .ty = Some(left_ty);
+
+                                any_changed = true;
+
+                                !left_ty.maybe_signed_integer()
+                            }
+                        }
+
+                        (Some(left_ty), Some(right_ty)) => {
+                            return Err(CompileError {
+                                source: self.source,
+                                location: constraint.source_location,
+                                error: format!(
+                                    "Type mismatch: expected {left_ty}, found {right_ty}"
+                                ),
+                            });
                         }
                         (Some(ty), None) => {
                             let ty = ty.dereference().ok_or_else(|| CompileError {
@@ -245,7 +348,10 @@ impl<'a, 's> TypeResolver<'a, 's> {
                                 .variable_mut(right.local_index().unwrap())
                                 .unwrap()
                                 .ty = Some(ty);
-                            true
+
+                            any_changed = true;
+
+                            !ty.maybe_signed_integer()
                         }
                         (None, Some(ty)) => {
                             self.locals
@@ -253,13 +359,16 @@ impl<'a, 's> TypeResolver<'a, 's> {
                                 .unwrap()
                                 .ty = Some(ty.reference());
 
-                            true
+                            any_changed = true;
+
+                            !ty.maybe_signed_integer()
                         }
                         (None, None) => false,
                     };
 
                     if made_progress {
                         // If we made progress, we can remove this constraint.
+                        any_changed = true;
                         self.constraints.swap_remove(i);
                     } else {
                         // If we didn't make progress, just move to the next constraint.
@@ -269,7 +378,7 @@ impl<'a, 's> TypeResolver<'a, 's> {
             }
         }
 
-        Ok(())
+        Ok(any_changed)
     }
 }
 
@@ -600,14 +709,11 @@ fn propagate_variable_types_inner<'s>(
         }
     }
 
-    let mut constraints = resolver.constraints.len();
-    while constraints > 0 {
-        resolver.step_resolve()?;
-        if resolver.constraints.len() == constraints {
+    while !resolver.constraints.is_empty() {
+        if !resolver.step_resolve()? {
             // No more progress can be made.
             break;
         }
-        constraints = resolver.constraints.len();
     }
 
     Ok(())

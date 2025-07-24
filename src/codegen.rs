@@ -223,6 +223,7 @@ impl From<ir::Type> for Type {
             ir::Type::Float => Type::Float,
             ir::Type::Bool => Type::Bool,
             ir::Type::String => Type::String,
+            ir::Type::MaybeSignedInt => Type::Int,
         }
     }
 }

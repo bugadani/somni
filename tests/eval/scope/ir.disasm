@@ -4,7 +4,7 @@ Function: main
 block 0
   var return_value: int = None
   var x: void = None
-  var temp2: int = Some(Int(10))
+  var temp2: {int/signed} = Some(MaybeSignedInt(10))
   x = temp2
   free(temp2)
   var temp3: bool = Some(Bool(true))
@@ -22,10 +22,10 @@ block 2
 
 block 3
   var x: void = None
-  var temp5: int = Some(Int(20))
+  var temp5: {int/signed} = Some(MaybeSignedInt(20))
   x = temp5
   free(temp5)
-  var temp6: int = Some(Int(10))
+  var temp6: {int/signed} = Some(MaybeSignedInt(10))
   var temp7: void = None
   temp7 = x + temp6
   free(temp6)

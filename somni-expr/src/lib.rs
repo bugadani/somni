@@ -250,7 +250,9 @@ macro_rules! dispatch_unary {
         ) -> Result<Self, OperatorError> {
             match operand {
                 Self::Bool(value) => Ok(ValueType::$method(value)?.store(ctx)),
-                Self::Int(value) | Self::MaybeSignedInt(value) => Ok(ValueType::$method(value)?.store(ctx)),
+                Self::Int(value) | Self::MaybeSignedInt(value) => {
+                    Ok(ValueType::$method(value)?.store(ctx))
+                }
                 Self::SignedInt(value) => Ok(ValueType::$method(value)?.store(ctx)),
                 Self::Float(value) => Ok(ValueType::$method(value)?.store(ctx)),
                 Self::String(value) => Ok(ValueType::$method(value)?.store(ctx)),
@@ -761,7 +763,7 @@ where
     ///
     /// This function will attempt to convert the result of the expression to the specified type `V`.
     /// If the conversion fails, it will return an `ExpressionError`.
-    pub fn evaluate<'s, V: ValueType>(
+    pub fn evaluate<'s, V>(
         &'s mut self,
         expression: &'s str,
     ) -> Result<V::Output<'s>, ExpressionError<'s>>

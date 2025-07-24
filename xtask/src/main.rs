@@ -24,7 +24,7 @@ fn main() {
         Command::Test { filter, bless } => {
             // invoke `cargo test`
             let mut envs = vec![];
-            envs.extend(bless.then(|| ("BLESS", "1")));
+            envs.extend(bless.then_some(("BLESS", "1")));
             envs.extend(filter.as_deref().map(|f| ("TEST_FILTER", f)));
 
             let mut args = vec!["test", "--all-features", "--all"];

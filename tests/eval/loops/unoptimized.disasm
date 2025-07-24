@@ -1,20 +1,20 @@
 Function loopy(...) -> int (stack: 26)
-  0000: load Local(8) = Int(7)
-  0001: load Local(16) = Int(4)
+  0000: load Local(8) = MaybeSignedInt(7)
+  0001: load Local(16) = MaybeSignedInt(4)
   0002: Local(24) = Local(16) < Local(8) (int)
   0003: if Local(24) == false jump to 18
-  0004: load Local(16) = Int(6)
+  0004: load Local(16) = MaybeSignedInt(6)
   0005: Local(25) = Local(8) == Local(16) (int)
   0006: if Local(25) == false jump to 15
-  0007: load Local(16) = Int(0)
+  0007: load Local(16) = MaybeSignedInt(0)
   0008: Local(24) = Local(16) < Local(8) (int)
   0009: if Local(24) == false jump to 13
-  0010: load Local(16) = Int(1)
+  0010: load Local(16) = MaybeSignedInt(1)
   0011: Local(8) = Local(8) - Local(16) (int)
   0012: jump to 1
   0013: copy Local(0) = Local(8)
   0014: return
-  0015: load Local(16) = Int(1)
+  0015: load Local(16) = MaybeSignedInt(1)
   0016: Local(8) = Local(8) - Local(16) (int)
   0017: jump to 1
   0018: jump to 7

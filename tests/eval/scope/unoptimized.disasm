@@ -1,9 +1,9 @@
 Function main(...) -> int (stack: 33)
-  0000: load Local(8) = Int(10)
+  0000: load Local(8) = MaybeSignedInt(10)
   0001: load Local(16) = Bool(true)
   0002: if Local(16) == false jump to 6
-  0003: load Local(17) = Int(20)
-  0004: load Local(25) = Int(10)
+  0003: load Local(17) = MaybeSignedInt(20)
+  0004: load Local(25) = MaybeSignedInt(10)
   0005: Local(17) = Local(17) + Local(25) (int)
   0006: copy Local(0) = Local(8)
   0007: return

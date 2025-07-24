@@ -21,7 +21,7 @@ block 1
   -> return
 
 block 2
-  var acc: int = Some(Int(0))
+  var acc: int = Some(MaybeSignedInt(0))
   -> block 4
 
 block 3
@@ -34,7 +34,7 @@ block 3
   -> block 1
 
 block 4
-  var temp6: int = Some(Int(0))
+  var temp6: int = Some(MaybeSignedInt(0))
   var temp7: bool = None
   temp7 = n > temp6
   free(temp6)
@@ -46,7 +46,7 @@ block 5
 
 block 6
   acc = acc + number
-  var temp10: int = Some(Int(1))
+  var temp10: int = Some(MaybeSignedInt(1))
   n = n - temp10
   free(temp10)
   -> block 5

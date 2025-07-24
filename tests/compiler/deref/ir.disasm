@@ -4,7 +4,7 @@ Function: main
 block 0
   var return_value: int = None
   var x: int = None
-  var temp2: int = Some(Int(0))
+  var temp2: {int/signed} = Some(MaybeSignedInt(0))
   x = temp2
   free(temp2)
   var y: void = None

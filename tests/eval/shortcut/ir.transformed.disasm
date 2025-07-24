@@ -86,7 +86,7 @@ block 9
 Function: increment
 block 0
   var return_value: bool = Some(Bool(true))
-  var temp1: int = Some(Int(1))
+  var temp1: int = Some(MaybeSignedInt(1))
   do_not_touch = do_not_touch + temp1
   free(temp1)
   free(return_value)

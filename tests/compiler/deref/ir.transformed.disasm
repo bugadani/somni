@@ -3,7 +3,7 @@ Globals:
 Function: main
 block 0
   var return_value: int = None
-  var x: int = Some(Int(0))
+  var x: int = Some(MaybeSignedInt(0))
   var y: &int = None
   y = &x
   var z: & int = None

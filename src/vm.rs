@@ -54,6 +54,7 @@ somni_expr::for_all_tuples! {
                 let offset = offset + <$arg>::BYTES;
                 )*
 
+                #[allow(clippy::unused_unit)]
                 ($($arg,)*)
             }
         }
@@ -469,6 +470,15 @@ impl<'p> EvalContext<'p> {
 
         // Store the function arguments as temporaries in the caller's stack frame.
         for (i, ((addr, ty), arg)) in function.arguments.iter().zip(args.iter()).enumerate() {
+            let arg = if let TypedValue::MaybeSignedInt(int) = *arg {
+                match ty {
+                    Type::Int => TypedValue::Int(int),
+                    Type::SignedInt => TypedValue::SignedInt(int as i64),
+                    _ => *arg,
+                }
+            } else {
+                *arg
+            };
             if *ty != arg.type_of() {
                 return self.runtime_error(format!(
                     "Function '{func}' expects argument {} to be of type {ty}, but got {}",
@@ -476,7 +486,7 @@ impl<'p> EvalContext<'p> {
                     arg.type_of()
                 ));
             }
-            if let Err(e) = self.store_typed(*addr, *arg) {
+            if let Err(e) = self.store_typed(*addr, arg) {
                 return e;
             }
         }
@@ -818,15 +828,7 @@ impl<'s> ExprContext for EvalContext<'s> {
                 todo!();
             }
             EvalEvent::Error(e) => {
-                panic!(
-                    "{}",
-                    MarkInSource(
-                        self.source,
-                        self.current_location(),
-                        "Runtime error",
-                        &format!("{e:?}") // TODO: pretty-print this
-                    )
-                )
+                panic!("{}", e.mark(self, "Runtime error"))
             }
             EvalEvent::Complete(value) => Ok(value),
         }

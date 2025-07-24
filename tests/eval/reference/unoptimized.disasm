@@ -1,11 +1,11 @@
 Function take_by_reference(...) -> void (stack: 32)
-  0000: load Local(8) = Int(2)
+  0000: load Local(8) = MaybeSignedInt(2)
   0001: Local(16) = *Local(0)
   0002: Local(24) = Local(8) * Local(16) (int)
   0003: copy *Local(0) = Local(24)
   0004: return
 Function main(...) -> int (stack: 48)
-  0005: load Local(8) = Int(5)
+  0005: load Local(8) = MaybeSignedInt(5)
   0006: Local(16) = &Local(8)
   0007: copy Local(40) = Local(16)
   0008: call take_by_reference(..) with sp=Local(40)

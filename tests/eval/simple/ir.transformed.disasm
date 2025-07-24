@@ -6,12 +6,12 @@ Function: add_from_rust
 Function: main
 block 0
   var return_value: bool = None
-  var n: int = None
+  var n: signed = None
   var temp5: int = None
   var temp6: int = None
-  var temp7: int = None
-  var temp8: int = Some(Int(2))
-  var temp9: int = Some(Int(3))
+  var temp7: signed = None
+  var temp8: {int/signed} = Some(MaybeSignedInt(2))
+  var temp9: {int/signed} = Some(MaybeSignedInt(3))
   temp7 = call add_from_rust(temp8, temp9)
   n = temp7
   free(temp9)
@@ -19,7 +19,7 @@ block 0
   free(temp7)
   free(temp6)
   free(temp5)
-  var temp10: int = Some(Int(5))
+  var temp10: signed = Some(MaybeSignedInt(5))
   return_value = n == temp10
   free(temp10)
   free(n)

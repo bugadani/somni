@@ -1,5 +1,5 @@
 Function main(...) -> int (stack: 40)
-  0000: load Local(8) = Int(0)
+  0000: load Local(8) = MaybeSignedInt(0)
   0001: Local(16) = &Local(8)
   0002: Local(24) = &Local(16)
   0003: Local(32) = *Local(24)

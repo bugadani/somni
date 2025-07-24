@@ -104,7 +104,7 @@ block 11
 Function: increment
 block 0
   var return_value: bool = None
-  var temp1: int = Some(Int(1))
+  var temp1: {int/signed} = Some(MaybeSignedInt(1))
   var temp2: void = None
   temp2 = do_not_touch + temp1
   free(temp1)

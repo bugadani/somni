@@ -20,6 +20,7 @@ use somni_parser::{
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Value {
     Void,
+    MaybeSignedInt(u64),
     Int(u64),
     SignedInt(i64),
     Float(f64),
@@ -31,6 +32,7 @@ impl Value {
     pub(crate) fn into_typed_value(self) -> TypedValue {
         match self {
             ir::Value::Void => TypedValue::Void,
+            ir::Value::MaybeSignedInt(value) => TypedValue::MaybeSignedInt(value),
             ir::Value::Int(value) => TypedValue::Int(value),
             ir::Value::SignedInt(value) => TypedValue::SignedInt(value),
             ir::Value::Float(value) => TypedValue::Float(value),
@@ -68,12 +70,24 @@ impl Variable {
             Self::Reference(n, t) => Some(Self::Reference(*n - 1, *t)),
         }
     }
+    pub(crate) fn maybe_signed_integer(&self) -> bool {
+        matches!(
+            self,
+            Self::Value(Type::MaybeSignedInt) | Self::Reference(_, Type::MaybeSignedInt)
+        )
+    }
+
+    pub(crate) fn is_integer(&self) -> bool {
+        let (Self::Value(t) | Self::Reference(_, t)) = self;
+        matches!(t, Type::MaybeSignedInt | Type::Int | Type::SignedInt)
+    }
 }
 
 impl Value {
     pub fn type_of(&self) -> Type {
         match self {
             Value::Void => Type::Void,
+            Value::MaybeSignedInt(_) => Type::MaybeSignedInt,
             Value::Int(_) => Type::Int,
             Value::SignedInt(_) => Type::SignedInt,
             Value::Bool(_) => Type::Bool,
@@ -86,6 +100,7 @@ impl Value {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Type {
     Void,
+    MaybeSignedInt,
     Int,
     SignedInt,
     Float,
@@ -97,6 +112,7 @@ impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Type::Void => write!(f, "void"),
+            Type::MaybeSignedInt => write!(f, "{{int/signed}}"),
             Type::Int => write!(f, "int"),
             Type::SignedInt => write!(f, "signed"),
             Type::Bool => write!(f, "bool"),
@@ -1101,7 +1117,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         match &expression {
             ast::Expression::Literal { value } => {
                 let val_type = match value.value {
-                    ast::LiteralValue::Integer(_) => Type::Int,
+                    ast::LiteralValue::Integer(_) => Type::MaybeSignedInt,
                     ast::LiteralValue::Float(_) => Type::Float,
                     ast::LiteralValue::Boolean(_) => Type::Bool,
                     ast::LiteralValue::String(_) => Type::String,
@@ -1147,6 +1163,9 @@ impl<'s> FunctionCompiler<'s, '_> {
     ) -> Result<Value, CompileError<'s>> {
         let value = match (literal_type, &literal.value) {
             (Type::Int, ast::LiteralValue::Integer(value)) => Value::Int(*value),
+            (Type::MaybeSignedInt, ast::LiteralValue::Integer(value)) => {
+                Value::MaybeSignedInt(*value)
+            }
             (Type::Float, ast::LiteralValue::Float(value)) => Value::Float(*value),
             (Type::Bool, ast::LiteralValue::Boolean(value)) => Value::Bool(*value),
             (Type::String, ast::LiteralValue::String(value)) => {

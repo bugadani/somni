@@ -2,12 +2,12 @@ Function noop(...) -> void (stack: 0)
   0000: return
 Function multiply(...) -> int (stack: 42)
   0001: if Local(24) == false jump to 12
-  0002: load Local(25) = Int(0)
-  0003: load Local(33) = Int(0)
+  0002: load Local(25) = MaybeSignedInt(0)
+  0003: load Local(33) = MaybeSignedInt(0)
   0004: Local(41) = Local(33) < Local(16) (int)
   0005: if Local(41) == false jump to 10
   0006: Local(25) = Local(25) + Local(8) (int)
-  0007: load Local(33) = Int(1)
+  0007: load Local(33) = MaybeSignedInt(1)
   0008: Local(16) = Local(16) - Local(33) (int)
   0009: jump to 3
   0010: copy Local(0) = Local(25)

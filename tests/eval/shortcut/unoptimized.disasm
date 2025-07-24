@@ -25,6 +25,6 @@ Function main(...) -> int (stack: 27)
   0023: jump to 3
 Function increment(...) -> bool (stack: 9)
   0024: load Local(0) = Bool(true)
-  0025: load Local(1) = Int(1)
-  0026: Global(0) = Global(0) + Local(1) (int)
+  0025: load Local(1) = MaybeSignedInt(1)
+  0026: Global(0) = Global(0) + Local(1) ({int/signed})
   0027: return
