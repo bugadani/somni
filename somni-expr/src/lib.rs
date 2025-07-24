@@ -124,53 +124,31 @@ where
     /// The type of signed integers in this type set.
     type SignedInteger: ValueType;
 
-    /// Negates a value of this type set, returning `None` if the value cannot be negated.
-    fn negate(v: TypedValue<Self>) -> Option<TypedValue<Self>>;
+    /// Converts an unsigned integer into a signed integer.
+    fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError>;
 }
 
 impl TypeSet for DefaultTypeSet {
     type SignedInteger = i64;
 
-    fn negate(v: TypedValue<Self>) -> Option<TypedValue<Self>> {
-        let v = match v {
-            // TODO handle overflow errors
-            TypedValue::SignedInt(i) => TypedValue::SignedInt(-i),
-            TypedValue::Int(i) => TypedValue::SignedInt(-(i as i64)),
-            TypedValue::Float(f) => TypedValue::Float(-f),
-            _ => return None,
-        };
-
-        Some(v)
+    fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
+        i64::try_from(v).map_err(|_| OperatorError::RuntimeError)
     }
 }
 
 impl TypeSet for TypeSet32 {
     type SignedInteger = i32;
 
-    fn negate(v: TypedValue<Self>) -> Option<TypedValue<Self>> {
-        let v = match v {
-            TypedValue::SignedInt(i) => TypedValue::SignedInt(-i),
-            TypedValue::Int(i) => TypedValue::SignedInt(-(i as i32)),
-            TypedValue::Float(f) => TypedValue::Float(-f),
-            _ => return None,
-        };
-
-        Some(v)
+    fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
+        i32::try_from(v).map_err(|_| OperatorError::RuntimeError)
     }
 }
 
 impl TypeSet for TypeSet128 {
     type SignedInteger = i128;
 
-    fn negate(v: TypedValue<Self>) -> Option<TypedValue<Self>> {
-        let v = match v {
-            TypedValue::SignedInt(i) => TypedValue::SignedInt(-i),
-            TypedValue::Int(i) => TypedValue::SignedInt(-(i as i128)),
-            TypedValue::Float(f) => TypedValue::Float(-f),
-            _ => return None,
-        };
-
-        Some(v)
+    fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
+        i128::try_from(v).map_err(|_| OperatorError::RuntimeError)
     }
 }
 
@@ -232,11 +210,29 @@ macro_rules! dispatch_binary {
                 (Self::SignedInt(value), Self::SignedInt(other)) => {
                     ValueType::$method(value, other)?.store(ctx)
                 }
+                (Self::MaybeSignedInt(value), Self::MaybeSignedInt(other)) => {
+                    match ValueType::$method(value, other)?.store(ctx) {
+                        Self::Int(v) => Self::MaybeSignedInt(v),
+                        other => other,
+                    }
+                }
                 (Self::Float(value), Self::Float(other)) => {
                     ValueType::$method(value, other)?.store(ctx)
                 }
                 (Self::String(value), Self::String(other)) => {
                     ValueType::$method(value, other)?.store(ctx)
+                }
+                (Self::Int(value), Self::MaybeSignedInt(other)) => {
+                    ValueType::$method(value, other)?.store(ctx)
+                }
+                (Self::MaybeSignedInt(value), Self::Int(other)) => {
+                    ValueType::$method(value, other)?.store(ctx)
+                }
+                (Self::SignedInt(value), Self::MaybeSignedInt(other)) => {
+                    ValueType::$method(value, T::to_signed(other)?)?.store(ctx)
+                }
+                (Self::MaybeSignedInt(value), Self::SignedInt(other)) => {
+                    ValueType::$method(T::to_signed(value)?, other)?.store(ctx)
                 }
                 _ => return Err(OperatorError::TypeError),
             };
@@ -254,7 +250,7 @@ macro_rules! dispatch_unary {
         ) -> Result<Self, OperatorError> {
             match operand {
                 Self::Bool(value) => Ok(ValueType::$method(value)?.store(ctx)),
-                Self::Int(value) => Ok(ValueType::$method(value)?.store(ctx)),
+                Self::Int(value) | Self::MaybeSignedInt(value) => Ok(ValueType::$method(value)?.store(ctx)),
                 Self::SignedInt(value) => Ok(ValueType::$method(value)?.store(ctx)),
                 Self::Float(value) => Ok(ValueType::$method(value)?.store(ctx)),
                 Self::String(value) => Ok(ValueType::$method(value)?.store(ctx)),
@@ -270,6 +266,10 @@ where
     T::Integer: Load<T> + Store<T>,
     T::Float: Load<T> + Store<T>,
     T::SignedInteger: Load<T> + Store<T>,
+
+    <T::Integer as ValueType>::NegateOutput: Load<T> + Store<T>,
+    <T::SignedInteger as ValueType>::NegateOutput: Load<T> + Store<T>,
+    <T::Float as ValueType>::NegateOutput: Load<T> + Store<T>,
 {
     dispatch_binary!(equals);
     dispatch_binary!(less_than);
@@ -285,6 +285,7 @@ where
     dispatch_binary!(multiply);
     dispatch_binary!(divide);
     dispatch_unary!(not);
+    dispatch_unary!(negate);
 }
 
 /// An expression context that provides the necessary environment for evaluating expressions.
@@ -391,6 +392,10 @@ where
     T::Integer: Load<T> + Store<T>,
     T::Float: Load<T> + Store<T>,
     T::SignedInteger: Load<T> + Store<T>,
+
+    <T::Integer as ValueType>::NegateOutput: Load<T> + Store<T>,
+    <T::SignedInteger as ValueType>::NegateOutput: Load<T> + Store<T>,
+    <T::Float as ValueType>::NegateOutput: Load<T> + Store<T>,
 {
     fn visit_variable(&mut self, variable: &lexer::Token) -> Result<TypedValue<T>, EvalError> {
         let name = variable.source(self.source);
@@ -408,7 +413,7 @@ where
         let result = match expression {
             Expression::Variable { variable } => self.visit_variable(variable)?,
             Expression::Literal { value } => match &value.value {
-                ast::LiteralValue::Integer(value) => TypedValue::<T>::Int(*value),
+                ast::LiteralValue::Integer(value) => TypedValue::<T>::MaybeSignedInt(*value),
                 ast::LiteralValue::Float(value) => TypedValue::<T>::Float(*value),
                 ast::LiteralValue::String(value) => {
                     TypedValue::<T>::String(self.context.intern_string(value))
@@ -434,8 +439,8 @@ where
                 "-" => {
                     let value = self.visit_expression(operand)?;
                     let ty = value.type_of();
-                    T::negate(value).ok_or_else(|| EvalError {
-                        message: format!("Cannot negate {}", ty).into_boxed_str(),
+                    TypedValue::<T>::negate(self.context, value).map_err(|e| EvalError {
+                        message: format!("Cannot negate {ty}: {e}").into_boxed_str(),
                         location: operand.location(),
                     })?
                 }
@@ -573,6 +578,8 @@ where
 pub enum Type {
     /// Represents no value, used for e.g. functions that do not return a value.
     Void,
+    /// Represents integer that may be signed or unsigned.
+    MaybeSignedInt,
     /// Represents an unsigned integer.
     Int,
     /// Represents a signed integer.
@@ -595,7 +602,7 @@ impl Type {
     {
         match self {
             Type::Void => <() as MemoryRepr>::BYTES,
-            Type::Int => <T::Integer as MemoryRepr>::BYTES,
+            Type::Int | Type::MaybeSignedInt => <T::Integer as MemoryRepr>::BYTES,
             Type::SignedInt => <T::SignedInteger as MemoryRepr>::BYTES,
             Type::Float => <T::Float as MemoryRepr>::BYTES,
             Type::Bool => <bool as MemoryRepr>::BYTES,
@@ -608,6 +615,7 @@ impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Type::Void => write!(f, "void"),
+            Type::MaybeSignedInt => write!(f, "{{int/signed}}"),
             Type::Int => write!(f, "int"),
             Type::SignedInt => write!(f, "signed"),
             Type::Bool => write!(f, "bool"),
@@ -686,6 +694,10 @@ where
     T::Integer: Load<T> + Store<T> + Integer,
     T::Float: Load<T> + Store<T>,
     T::SignedInteger: Load<T> + Store<T>,
+
+    <T::Integer as ValueType>::NegateOutput: Load<T> + Store<T>,
+    <T::SignedInteger as ValueType>::NegateOutput: Load<T> + Store<T>,
+    <T::Float as ValueType>::NegateOutput: Load<T> + Store<T>,
 {
     /// Creates a new context. The type set must be specified when using this function.
     ///
@@ -833,6 +845,7 @@ mod test {
     fn test_evaluating_exprs() {
         let mut ctx = Context::new();
 
+        ctx.add_variable::<i64>("signed", 30);
         ctx.add_variable::<u64>("value", 30);
         ctx.add_function("func", |v: u64| 2 * v);
         ctx.add_function("func2", |v1: u64, v2: u64| v1 + v2);
@@ -857,6 +870,7 @@ mod test {
             ctx.evaluate::<&str>("concatenate(five(), \"six\")"),
             Ok("fivesix")
         );
+        assert_eq!(ctx.evaluate::<bool>("signed * 2 == 60"), Ok(true));
     }
 
     #[test]

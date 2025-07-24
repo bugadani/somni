@@ -53,7 +53,7 @@ pub fn run_eval_test(program: codegen::Program, path: impl AsRef<Path>) {
     let mut strings = program.debug_info.strings.clone();
     let mut context = EvalContext::new(&program.debug_info.source, &mut strings, &program);
 
-    context.add_function("add_from_rust", |a: u64, b: u64| a + b);
+    context.add_function("add_from_rust", |a: u64, b: u64| -> i64 { (a + b) as i64 });
     context.add_function("assert", |a: bool| a); // No-op to test calling Rust functions from expressions
 
     for expression in &expressions {

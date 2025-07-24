@@ -216,6 +216,7 @@ macro_rules! dispatch_type {
 
         match $op {
             Type::Int => inner!(u64),
+            Type::MaybeSignedInt => inner!(u64),
             Type::SignedInt => inner!(i64),
             Type::Float => inner!(f64),
             Type::Bool => inner!(bool),
@@ -869,7 +870,7 @@ where
     fn write(&self, to: &mut [u8]) {
         match self {
             TypedValue::Void => ().write(to),
-            TypedValue::Int(value) => value.write(to),
+            TypedValue::Int(value) | TypedValue::MaybeSignedInt(value) => value.write(to),
             TypedValue::SignedInt(value) => value.write(to),
             TypedValue::Float(value) => value.write(to),
             TypedValue::Bool(value) => value.write(to),
@@ -881,6 +882,7 @@ where
         match ty {
             Type::Void => Self::Void,
             Type::Int => Self::Int(<_>::from_bytes(value)),
+            Type::MaybeSignedInt => Self::MaybeSignedInt(<_>::from_bytes(value)),
             Type::SignedInt => Self::SignedInt(<_>::from_bytes(value)),
             Type::Float => Self::Float(<_>::from_bytes(value)),
             Type::Bool => Self::Bool(<_>::from_bytes(value)),
