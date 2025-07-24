@@ -519,7 +519,17 @@ impl<'p> EvalContext<'p> {
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
 
-        let ast = parser::parse_expression(expression, &tokens).unwrap();
+        let ast = parser::parse_expression(expression, &tokens).unwrap_or_else(|e| {
+            panic!(
+                "{}",
+                MarkInSource(
+                    expression,
+                    e.location,
+                    "Failed to parse expression",
+                    &e.error,
+                )
+            )
+        });
 
         let mut visitor = ExpressionVisitor {
             context: self,
