@@ -903,8 +903,8 @@ impl StackAllocator {
             }
         }
 
-        self.push(var.index, size);
-        let address = self.address_of_allocation(self.allocations.len() - 1);
+        let idx = self.push(var.index, size);
+        let address = self.address_of_allocation(idx);
         self.var_addresses
             .insert(var.index, MemoryAddress::Local(address));
         MemoryAddress::Local(address)
@@ -983,7 +983,8 @@ impl StackAllocator {
         None
     }
 
-    fn push(&mut self, var: LocalVariableIndex, var_size: usize) {
+    fn push(&mut self, var: LocalVariableIndex, var_size: usize) -> usize {
+        let len = self.allocations.len();
         if let Some(alloc @ Allocation::Hole { .. }) = self.allocations.last_mut() {
             let hole_size = alloc.size();
 
@@ -1000,11 +1001,13 @@ impl StackAllocator {
                     self.allocations.push(Allocation::Hole { size: remaining });
                 }
             }
+            len - 1
         } else {
             self.allocations.push(Allocation::Used {
                 variable: var,
                 size: var_size,
             });
+            len
         }
     }
 

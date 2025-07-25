@@ -564,14 +564,14 @@ impl<'p> EvalContext<'p> {
                 self.call_function(function, sp)?;
                 return Ok(()); // Skip the step() call below, as we already stepped (into function)
             }
-            Instruction::CallNamed(function_name, ty, sp) => {
+            Instruction::CallNamed(function_name, return_ty, sp) => {
                 let Some((name, intrinsic)) = self.intrinsics.remove_entry(&function_name) else {
-                    self.state = EvalState::WaitingForFunctionResult(function_name, ty, sp);
+                    self.state = EvalState::WaitingForFunctionResult(function_name, return_ty, sp);
                     self.program_counter += 1;
                     return Err(EvalEvent::UnknownFunctionCall(function_name));
                 };
 
-                let first_arg = sp + ty.size_of::<DefaultTypeSet>();
+                let first_arg = sp + return_ty.size_of::<DefaultTypeSet>();
                 let retval = intrinsic.call_from_vm(self, first_arg)?;
                 self.intrinsics.insert(name, intrinsic);
                 self.store_typed(sp, retval)?;
