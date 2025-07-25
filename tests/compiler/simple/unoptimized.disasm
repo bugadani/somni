@@ -1,3 +1,6 @@
 Function add(...) -> int (stack: 24)
   0000: Local(0) = Local(8) + Local(16) (int)
   0001: return
+Function str(...) -> string (stack: 16)
+  0002: load Local(0) = String(StringIndex(11))
+  0003: return

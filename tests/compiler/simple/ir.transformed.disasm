@@ -18,3 +18,14 @@ block 0
 block 1
   -> return
 
+Function: str
+block 0
+  var return_value: string = Some(String(StringIndex(11)))
+  var a: string = None
+  free(a)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+

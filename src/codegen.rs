@@ -457,7 +457,7 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
                 (
                     function_compiler
                         .address_of_variable(VariableIndex::Local(LocalVariableIndex(i + 1)))
-                        .unwrap(),
+                        .unwrap_or_else(|| panic!("Internal error: argument {i} not found")),
                     Type::from(*arg),
                 )
             })

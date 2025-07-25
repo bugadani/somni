@@ -400,14 +400,14 @@ pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), Com
         // This is way too conservative, but relaxing it would require a figuring out loops.
         let mut relevant_variables_in_block = HashMap::new();
         for (block_idx, block) in implem.blocks.iter().enumerate() {
-            let mut declared = HashSet::new();
+            let mut declared = HashMap::new();
             let mut freed = HashSet::new();
             for instruction in &block.instructions {
                 match instruction.instruction {
                     ir::Ir::Declare(var, _) => {
                         // We also don't allow optimizing TopOfStack variables for now.
                         if var.allocation_method == ir::AllocationMethod::FirstFit {
-                            declared.insert(var.index);
+                            declared.insert(var.index, var.is_argument);
                         }
                     }
                     ir::Ir::FreeVariable(var) => {
@@ -416,13 +416,15 @@ pub fn transform_ir<'s>(source: &'s str, ir: &mut ir::Program) -> Result<(), Com
                     _ => {}
                 }
             }
-            relevant_variables_in_block.insert(
-                block_idx,
-                declared
-                    .intersection(&freed)
-                    .copied()
-                    .collect::<HashSet<_>>(),
-            );
+
+            let mut relevant = HashMap::new();
+            for freed in freed {
+                if let Some((key, value)) = declared.remove_entry(&freed) {
+                    relevant.insert(key, value);
+                }
+            }
+
+            relevant_variables_in_block.insert(block_idx, relevant);
         }
 
         for (block_idx, block) in implem.blocks.iter_mut().enumerate() {
@@ -719,13 +721,16 @@ fn propagate_variable_types_inner<'s>(
     Ok(())
 }
 
-fn propagate_destination(block: &mut ir::Block, variables_in_block: &HashSet<LocalVariableIndex>) {
+fn propagate_destination(
+    block: &mut ir::Block,
+    variables_in_block: &HashMap<LocalVariableIndex, bool>,
+) {
     for idx in (1..block.instructions.len()).rev() {
         if let ir::Ir::Assign(dst, src) = block.instructions[idx].instruction {
             // If src is not defined in this block, we can't avoid writing to it.
             if let Some(src) = src.local_index() {
                 // If the source is not in the block, we can skip it.
-                if !variables_in_block.contains(&src) {
+                if !variables_in_block.contains_key(&src) {
                     continue;
                 }
             } else {
@@ -764,7 +769,7 @@ fn propagate_destination(block: &mut ir::Block, variables_in_block: &HashSet<Loc
     }
 }
 
-fn propagate_value(block: &mut ir::Block, _: &HashSet<LocalVariableIndex>) {
+fn propagate_value(block: &mut ir::Block, _: &HashMap<LocalVariableIndex, bool>) {
     let mut candidates = HashMap::new();
     let mut values = HashMap::new();
     let mut to_delete = vec![];
@@ -806,13 +811,12 @@ fn propagate_value(block: &mut ir::Block, _: &HashSet<LocalVariableIndex>) {
 
 fn remove_unused_assignments(
     block: &mut ir::Block,
-    variables_in_block: &HashSet<LocalVariableIndex>,
+    variables_in_block: &HashMap<LocalVariableIndex, bool>,
 ) {
     let mut can_remove = variables_in_block
         .iter()
-        .copied()
-        .filter(|v| *v != LocalVariableIndex::RETURN_VALUE)
-        .collect::<HashSet<_>>();
+        .filter_map(|(v, is_arg)| if *is_arg { None } else { Some((*v, *is_arg)) })
+        .collect::<HashMap<_, _>>();
     for idx in (0..block.instructions.len()).rev() {
         // First, update `can_remove` with the read variables
         match &block.instructions[idx].instruction {
@@ -847,7 +851,7 @@ fn remove_unused_assignments(
             | ir::Ir::UnaryOperator(_, dst, _)
             | ir::Ir::BinaryOperator(_, dst, _, _) => {
                 if let Some(dst) = dst.local_index() {
-                    if can_remove.contains(&dst) {
+                    if can_remove.contains_key(&dst) {
                         block.instructions.remove(idx); // Remove the assignment.
                     }
                 }
@@ -859,13 +863,12 @@ fn remove_unused_assignments(
 
 fn remove_unused_variables(
     block: &mut ir::Block,
-    variables_in_block: &HashSet<LocalVariableIndex>,
+    variables_in_block: &HashMap<LocalVariableIndex, bool>,
 ) {
     let mut can_remove = variables_in_block
         .iter()
-        .copied()
-        .filter(|v| *v != LocalVariableIndex::RETURN_VALUE)
-        .collect::<HashSet<_>>();
+        .filter_map(|(v, is_arg)| if *is_arg { None } else { Some((*v, *is_arg)) })
+        .collect::<HashMap<_, _>>();
     for idx in (0..block.instructions.len()).rev() {
         match &block.instructions[idx].instruction {
             ir::Ir::Assign(_, src) | ir::Ir::DerefAssign(_, src) => {
@@ -908,12 +911,12 @@ fn remove_unused_variables(
     for idx in (0..block.instructions.len()).rev() {
         match &block.instructions[idx].instruction {
             ir::Ir::Declare(v, _) => {
-                if can_remove.contains(&v.index) {
+                if can_remove.contains_key(&v.index) {
                     block.instructions.remove(idx); // Remove the assignment.
                 }
             }
             ir::Ir::FreeVariable(v) => {
-                if can_remove.contains(v) {
+                if can_remove.contains_key(v) {
                     block.instructions.remove(idx); // Remove the assignment.
                 }
             }

@@ -147,6 +147,7 @@ pub struct VariableDeclaration {
     pub index: LocalVariableIndex,
     pub name: StringIndex,
     pub allocation_method: AllocationMethod,
+    pub is_argument: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -590,6 +591,7 @@ impl Function {
             "return_value",
             Some(Variable::Value(return_type)),
             return_token.location,
+            true,
         )?;
 
         // allocate variables for arguments
@@ -602,7 +604,7 @@ impl Function {
                 Variable::Value(ty)
             };
             let name = argument.name.source(source);
-            this.declare_variable(name, Some(ty), argument.name.location)?;
+            this.declare_variable(name, Some(ty), argument.name.location, true)?;
             arguments.push(ty);
         }
 
@@ -759,6 +761,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         name: &str,
         var_ty: Option<Variable>,
         source_location: Location,
+        is_argument: bool,
     ) -> Result<LocalVariableIndex, CompileError<'s>> {
         let name_index = self.strings.intern(name);
         let variable = self.variables.declare_variable(name_index, var_ty);
@@ -769,6 +772,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                     index: variable,
                     name: name_index,
                     allocation_method: AllocationMethod::FirstFit,
+                    is_argument,
                 },
                 None,
             ),
@@ -796,6 +800,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                     index: temp,
                     name: temp_name,
                     allocation_method,
+                    is_argument: false,
                 },
                 init_value,
             ),
@@ -823,6 +828,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                     index: temp,
                     name: temp_name,
                     allocation_method,
+                    is_argument: false,
                 },
                 None,
             ),
@@ -870,7 +876,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         } else {
             None
         };
-        let variable = self.declare_variable(name, var_ty, ident.location)?;
+        let variable = self.declare_variable(name, var_ty, ident.location, false)?;
 
         let rp = self.variables.create_restore_point();
         let expr_result = self.compile_expression(initializer)?;
