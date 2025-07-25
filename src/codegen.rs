@@ -9,6 +9,7 @@ use indexmap::IndexMap;
 use crate::{
     error::CompileError,
     ir::{self, VariableIndex},
+    types::TypeExt,
     variable_tracker::{self, LocalVariableIndex},
 };
 

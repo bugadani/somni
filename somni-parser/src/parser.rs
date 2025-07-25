@@ -838,6 +838,9 @@ mod tests {
         let source = "0x100000000";
 
         let result = parse_expression::<TypeSet32>(source).expect_err("Parsing should fail");
-        assert_eq!("Invalid hexadecimal integer literal", result.error.as_ref());
+        assert_eq!(
+            "Parse error: Invalid hexadecimal integer literal",
+            result.error.as_ref()
+        );
     }
 }

@@ -102,7 +102,7 @@ use crate::{
     error::MarkInSource,
     function::ExprFn,
     string_interner::{StringIndex, StringInterner},
-    value::{Load, MemoryRepr, Store, ValueType},
+    value::{Load, Store, ValueType},
 };
 
 pub use somni_parser::parser::{DefaultTypeSet, TypeSet128, TypeSet32};
@@ -601,25 +601,6 @@ pub enum Type {
     Bool,
     /// Represents a string value.
     String,
-}
-impl Type {
-    /// Returns the size of the type in bytes.
-    pub fn size_of<T>(&self) -> usize
-    where
-        T: TypeSet,
-        T::Integer: MemoryRepr,
-        T::SignedInteger: MemoryRepr,
-        T::Float: MemoryRepr,
-    {
-        match self {
-            Type::Void => <() as MemoryRepr>::BYTES,
-            Type::Int | Type::MaybeSignedInt => <T::Integer as MemoryRepr>::BYTES,
-            Type::SignedInt => <T::SignedInteger as MemoryRepr>::BYTES,
-            Type::Float => <T::Float as MemoryRepr>::BYTES,
-            Type::Bool => <bool as MemoryRepr>::BYTES,
-            Type::String => <StringIndex as MemoryRepr>::BYTES,
-        }
-    }
 }
 
 impl Display for Type {

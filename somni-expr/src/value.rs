@@ -3,14 +3,6 @@ use somni_parser::parser::DefaultTypeSet;
 use crate::{string_interner::StringIndex, ExprContext, OperatorError, Type, TypeSet};
 
 #[doc(hidden)]
-pub trait MemoryRepr: Sized + Copy + PartialEq {
-    const BYTES: usize;
-
-    fn write(&self, to: &mut [u8]);
-    fn from_bytes(bytes: &[u8]) -> Self;
-}
-
-#[doc(hidden)]
 pub trait ValueType: Sized + Clone + PartialEq + std::fmt::Debug {
     const TYPE: Type;
 
@@ -66,14 +58,6 @@ pub trait ValueType: Sized + Clone + PartialEq + std::fmt::Debug {
     }
 }
 
-impl MemoryRepr for () {
-    const BYTES: usize = 0;
-
-    fn write(&self, _to: &mut [u8]) {}
-
-    fn from_bytes(_: &[u8]) -> Self {}
-}
-
 impl ValueType for () {
     type NegateOutput = Self;
     const TYPE: Type = Type::Void;
@@ -81,18 +65,6 @@ impl ValueType for () {
 
 macro_rules! value_type_int {
     ($type:ty, $negate:ty, $kind:ident) => {
-        impl MemoryRepr for $type {
-            const BYTES: usize = std::mem::size_of::<$type>();
-
-            fn write(&self, to: &mut [u8]) {
-                to.copy_from_slice(&self.to_le_bytes());
-            }
-
-            fn from_bytes(bytes: &[u8]) -> Self {
-                <$type>::from_le_bytes(bytes.try_into().unwrap())
-            }
-        }
-
         impl ValueType for $type {
             const TYPE: Type = Type::$kind;
             type NegateOutput = $negate;
@@ -159,17 +131,6 @@ value_type_int!(i32, i32, SignedInt);
 value_type_int!(i64, i64, SignedInt);
 value_type_int!(i128, i128, SignedInt);
 
-impl MemoryRepr for f32 {
-    const BYTES: usize = 4;
-
-    fn write(&self, to: &mut [u8]) {
-        to.copy_from_slice(&self.to_le_bytes());
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        f32::from_le_bytes(bytes.try_into().unwrap())
-    }
-}
 impl ValueType for f32 {
     const TYPE: Type = Type::Float;
 
@@ -198,17 +159,6 @@ impl ValueType for f32 {
     }
 }
 
-impl MemoryRepr for f64 {
-    const BYTES: usize = 8;
-
-    fn write(&self, to: &mut [u8]) {
-        to.copy_from_slice(&self.to_le_bytes());
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        f64::from_le_bytes(bytes.try_into().unwrap())
-    }
-}
 impl ValueType for f64 {
     const TYPE: Type = Type::Float;
 
@@ -234,18 +184,6 @@ impl ValueType for f64 {
     }
     fn negate(a: Self) -> Result<Self::NegateOutput, OperatorError> {
         Ok(-a)
-    }
-}
-
-impl MemoryRepr for bool {
-    const BYTES: usize = 1;
-
-    fn write(&self, to: &mut [u8]) {
-        to.copy_from_slice(&[*self as u8]);
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        bytes[0] != 0
     }
 }
 
@@ -275,16 +213,6 @@ impl ValueType for bool {
     }
 }
 
-impl MemoryRepr for StringIndex {
-    const BYTES: usize = 8;
-
-    fn write(&self, to: &mut [u8]) {
-        to.copy_from_slice(&self.0.to_le_bytes());
-    }
-    fn from_bytes(bytes: &[u8]) -> Self {
-        StringIndex(u64::from_le_bytes(bytes.try_into().unwrap()) as usize)
-    }
-}
 impl ValueType for StringIndex {
     const TYPE: Type = Type::String;
 

@@ -1,10 +1,14 @@
 use std::{collections::HashMap, marker::PhantomData, ops::Range};
 
-use crate::codegen::{self, CodeAddress, Function, Instruction, MemoryAddress};
+use crate::{
+    codegen::{self, CodeAddress, Function, Instruction, MemoryAddress},
+    types::{MemoryRepr, TypeExt},
+};
+
 use somni_expr::{
     error::MarkInSource,
     string_interner::{StringIndex, Strings},
-    value::{Load, MemoryRepr, Store, ValueType},
+    value::{Load, Store, ValueType},
     DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type, TypeSet,
     TypedValue,
 };

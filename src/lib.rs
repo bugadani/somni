@@ -4,6 +4,7 @@ pub mod ir;
 #[cfg(test)]
 pub mod test;
 pub mod transform_ir;
+pub mod types;
 pub mod variable_tracker;
 pub mod vm;
 
