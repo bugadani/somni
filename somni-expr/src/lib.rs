@@ -93,7 +93,9 @@ use std::{
 use indexmap::IndexMap;
 use somni_parser::{
     ast::{self, Expression},
-    lexer, parser, Location,
+    lexer,
+    parser::{self, TypeSet as ParserTypeSet},
+    Location,
 };
 
 use crate::{
@@ -115,20 +117,36 @@ mod private {
 use private::Sealed;
 
 /// Defines numeric types in expressions.
-pub trait TypeSet: somni_parser::parser::TypeSet + PartialEq
-where
-    Self::Integer: ValueType,
-    Self::Float: ValueType,
-{
+pub trait TypeSet: PartialEq + Sized + Clone + Copy {
+    /// The typeset that will be used to parse source code.
+    type Parser: ParserTypeSet<Integer = Self::Integer, Float = Self::Float>;
+
+    /// The type of unsigned integers in this type set.
+    type Integer: Copy
+        + ValueType<NegateOutput: Load<Self> + Store<Self>>
+        + Load<Self>
+        + Store<Self>
+        + Integer;
+
     /// The type of signed integers in this type set.
-    type SignedInteger: ValueType;
+    type SignedInteger: Copy
+        + ValueType<NegateOutput: Load<Self> + Store<Self>>
+        + Load<Self>
+        + Store<Self>;
+
+    /// The type of floating point numbers in this type set.
+    type Float: Copy + ValueType<NegateOutput: Load<Self> + Store<Self>> + Load<Self> + Store<Self>;
 
     /// Converts an unsigned integer into a signed integer.
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError>;
 }
 
 impl TypeSet for DefaultTypeSet {
+    type Parser = Self;
+
+    type Integer = <Self::Parser as ParserTypeSet>::Integer;
     type SignedInteger = i64;
+    type Float = <Self::Parser as ParserTypeSet>::Float;
 
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
         i64::try_from(v).map_err(|_| OperatorError::RuntimeError)
@@ -136,7 +154,11 @@ impl TypeSet for DefaultTypeSet {
 }
 
 impl TypeSet for TypeSet32 {
+    type Parser = Self;
+
+    type Integer = <Self::Parser as ParserTypeSet>::Integer;
     type SignedInteger = i32;
+    type Float = <Self::Parser as ParserTypeSet>::Float;
 
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
         i32::try_from(v).map_err(|_| OperatorError::RuntimeError)
@@ -144,7 +166,11 @@ impl TypeSet for TypeSet32 {
 }
 
 impl TypeSet for TypeSet128 {
+    type Parser = Self;
+
+    type Integer = <Self::Parser as ParserTypeSet>::Integer;
     type SignedInteger = i128;
+    type Float = <Self::Parser as ParserTypeSet>::Float;
 
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
         i128::try_from(v).map_err(|_| OperatorError::RuntimeError)
@@ -264,13 +290,6 @@ macro_rules! dispatch_unary {
 impl<T> TypedValue<T>
 where
     T: TypeSet,
-    T::Integer: Load<T> + Store<T>,
-    T::Float: Load<T> + Store<T>,
-    T::SignedInteger: Load<T> + Store<T>,
-
-    <T::Integer as ValueType>::NegateOutput: Load<T> + Store<T>,
-    <T::SignedInteger as ValueType>::NegateOutput: Load<T> + Store<T>,
-    <T::Float as ValueType>::NegateOutput: Load<T> + Store<T>,
 {
     dispatch_binary!(equals);
     dispatch_binary!(less_than);
@@ -293,8 +312,6 @@ where
 pub trait ExprContext<T = DefaultTypeSet>
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     /// Implements string interning.
     fn intern_string(&mut self, s: &str) -> StringIndex;
@@ -390,13 +407,6 @@ impl<'a, C, T> ExpressionVisitor<'a, C, T>
 where
     C: ExprContext<T>,
     T: TypeSet,
-    T::Integer: Load<T> + Store<T>,
-    T::Float: Load<T> + Store<T>,
-    T::SignedInteger: Load<T> + Store<T>,
-
-    <T::Integer as ValueType>::NegateOutput: Load<T> + Store<T>,
-    <T::SignedInteger as ValueType>::NegateOutput: Load<T> + Store<T>,
-    <T::Float as ValueType>::NegateOutput: Load<T> + Store<T>,
 {
     fn visit_variable(&mut self, variable: &lexer::Token) -> Result<TypedValue<T>, EvalError> {
         let name = variable.source(self.source);
@@ -409,7 +419,7 @@ where
     /// Visits an expression and evaluates it, returning the result as a `TypedValue`.
     pub fn visit_expression(
         &mut self,
-        expression: &Expression<T>,
+        expression: &Expression<T::Parser>,
     ) -> Result<TypedValue<T>, EvalError> {
         let result = match expression {
             Expression::Variable { variable } => self.visit_variable(variable)?,
@@ -597,9 +607,9 @@ impl Type {
     pub fn size_of<T>(&self) -> usize
     where
         T: TypeSet,
-        T::Integer: ValueType + MemoryRepr,
-        T::SignedInteger: ValueType + MemoryRepr,
-        T::Float: ValueType + MemoryRepr,
+        T::Integer: MemoryRepr,
+        T::SignedInteger: MemoryRepr,
+        T::Float: MemoryRepr,
     {
         match self {
             Type::Void => <() as MemoryRepr>::BYTES,
@@ -631,9 +641,6 @@ impl Display for Type {
 pub struct Context<'ctx, T = DefaultTypeSet>
 where
     T: TypeSet,
-    T::Integer: Load<T> + Store<T>,
-    T::Float: Load<T> + Store<T>,
-    T::SignedInteger: Load<T> + Store<T>,
 {
     variables: IndexMap<String, TypedValue<T>>,
     functions: HashMap<String, ExprFn<'ctx, T>>,
@@ -644,9 +651,6 @@ where
 impl<T> ExprContext<T> for Context<'_, T>
 where
     T: TypeSet,
-    T::Integer: Load<T> + Store<T> + Integer,
-    T::Float: Load<T> + Store<T>,
-    T::SignedInteger: Load<T> + Store<T>,
 {
     fn intern_string(&mut self, s: &str) -> StringIndex {
         self.strings.intern(s)
@@ -692,13 +696,6 @@ impl<'ctx> Context<'ctx, DefaultTypeSet> {
 impl<'ctx, T> Context<'ctx, T>
 where
     T: TypeSet,
-    T::Integer: Load<T> + Store<T> + Integer,
-    T::Float: Load<T> + Store<T>,
-    T::SignedInteger: Load<T> + Store<T>,
-
-    <T::Integer as ValueType>::NegateOutput: Load<T> + Store<T>,
-    <T::SignedInteger as ValueType>::NegateOutput: Load<T> + Store<T>,
-    <T::Float as ValueType>::NegateOutput: Load<T> + Store<T>,
 {
     /// Creates a new context. The type set must be specified when using this function.
     ///
@@ -718,7 +715,7 @@ where
     fn evaluate_any_impl(&mut self, expression: &str) -> Result<TypedValue<T>, EvalError> {
         // TODO: we can allow new globals to be defined in the expression, but that would require
         // storing a copy of the original globals, so that they can be reset?
-        let ast = match parser::parse_expression(expression) {
+        let ast = match parser::parse_expression::<T::Parser>(expression) {
             Ok(ast) => ast,
             Err(e) => {
                 return Err(EvalError {

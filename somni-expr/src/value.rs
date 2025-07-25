@@ -318,8 +318,6 @@ impl ValueType for String {
 pub enum TypedValue<T = DefaultTypeSet>
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     /// Represents no value.
     Void,
@@ -340,8 +338,6 @@ where
 impl<T> TypedValue<T>
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     /// Returns the Somni type of this value.
     pub fn type_of(&self) -> Type {
@@ -360,8 +356,6 @@ where
 pub trait Load<T = DefaultTypeSet>: ValueType
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     type Output<'s>
     where
@@ -373,8 +367,6 @@ where
 pub trait Store<T = DefaultTypeSet>: ValueType
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     fn store(self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T>;
 }
@@ -384,8 +376,6 @@ macro_rules! load {
         impl<T> Load<T> for $type
         where
             T: TypeSet$(<$ts_kind = $type>)?,
-            T::Integer: ValueType,
-            T::Float: ValueType,
         {
             type Output<'s> = Self where T: 's;
             fn load(_ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
@@ -405,8 +395,6 @@ macro_rules! load_signed {
         impl<T> Load<T> for $type
         where
             T: TypeSet$(<$ts_kind = $type>)?,
-            T::Integer: ValueType,
-            T::Float: ValueType,
         {
             type Output<'s> = Self where T: 's;
             fn load(_ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
@@ -426,8 +414,6 @@ macro_rules! store {
         impl<T> Store<T> for $type
         where
             T: TypeSet$(<$ts_kind = $type>)?,
-            T::Integer: ValueType,
-            T::Float: ValueType,
         {
             fn store(self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
                 TypedValue::$kind(self)
@@ -462,8 +448,6 @@ store!(StringIndex, String);
 impl<T> Load<T> for ()
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     type Output<'s>
         = Self
@@ -480,8 +464,6 @@ where
 impl<T> Store<T> for ()
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     fn store(self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
         TypedValue::Void
@@ -491,8 +473,6 @@ where
 impl<T> Store<T> for &str
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     fn store(self, ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
         let idx = ctx.intern_string(self);
@@ -503,8 +483,6 @@ where
 impl<T> Store<T> for String
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     fn store(self, ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
         let idx = ctx.intern_string(&self);
@@ -515,8 +493,6 @@ where
 impl<T> Load<T> for &str
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     type Output<'s>
         = &'s str

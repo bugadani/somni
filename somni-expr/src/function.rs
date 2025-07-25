@@ -1,6 +1,5 @@
 use crate::{
     for_all_tuples,
-    value::ValueType,
     value::{Load, Store},
     ExprContext, Type, TypeSet, TypedValue,
 };
@@ -32,8 +31,6 @@ pub enum FunctionCallError {
 pub trait DynFunction<A, T>
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     const ARG_COUNT: usize;
 
@@ -54,16 +51,14 @@ for_all_tuples! {
     ($($arg:ident),*) => {
         impl<$($arg,)* R, F, T> DynFunction<($($arg,)*), T> for F
         where
-            $($arg: ValueType + Load<T>,)*
+            $($arg: Load<T>,)*
             // This double bound on F ensures that we can work with reference types (&str), too:
             // The first one ensures type-inference matches the Load implementation we want
             // The second one ensures we don't run into "... is not generic enough" errors.
             F: Fn($($arg,)*) -> R,
             F: for<'t> Fn($($arg::Output<'t>,)*) -> R,
-            R: ValueType + Store<T>,
+            R: Store<T>,
             T: TypeSet,
-            T::Integer: ValueType,
-            T::Float: ValueType,
         {
             const ARG_COUNT: usize = 0 $( + substitute!($arg, 1) )* ;
 
@@ -91,8 +86,6 @@ for_all_tuples! {
 pub(crate) struct ExprFn<'ctx, T>
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     #[allow(clippy::type_complexity)]
     func: Box<
@@ -107,8 +100,6 @@ where
 impl<'ctx, T> ExprFn<'ctx, T>
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     pub fn new<A, F>(func: F) -> Self
     where
