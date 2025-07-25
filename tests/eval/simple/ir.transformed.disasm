@@ -29,3 +29,41 @@ block 0
 block 1
   -> return
 
+Function: multiple_calls
+block 0
+  var return_value: bool = None
+  var n: signed = None
+  var temp5: int = None
+  var temp6: int = None
+  var temp7: signed = None
+  var temp8: {int/signed} = Some(MaybeSignedInt(2))
+  var temp9: {int/signed} = Some(MaybeSignedInt(3))
+  temp7 = call add_from_rust(temp8, temp9)
+  n = temp7
+  free(temp9)
+  free(temp8)
+  free(temp7)
+  free(temp6)
+  free(temp5)
+  var m: signed = None
+  var temp14: int = None
+  var temp15: int = None
+  var temp16: signed = None
+  var temp17: {int/signed} = Some(MaybeSignedInt(3))
+  var temp18: {int/signed} = Some(MaybeSignedInt(2))
+  temp16 = call add_from_rust(temp17, temp18)
+  m = temp16
+  free(temp18)
+  free(temp17)
+  free(temp16)
+  free(temp15)
+  free(temp14)
+  return_value = n == m
+  free(m)
+  free(n)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+
