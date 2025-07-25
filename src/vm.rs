@@ -62,7 +62,11 @@ somni_expr::for_all_tuples! {
 }
 
 pub trait NativeFunction<A>: DynFunction<A, DefaultTypeSet> + Clone {
-    fn call_from_vm(&self, ctx: &mut EvalContext<'_>, sp: MemoryAddress) -> TypedValue;
+    fn call_from_vm(
+        &self,
+        ctx: &mut EvalContext<'_>,
+        sp: MemoryAddress,
+    ) -> Result<TypedValue, EvalEvent>;
 }
 
 somni_expr::for_all_tuples! {
@@ -76,14 +80,14 @@ somni_expr::for_all_tuples! {
             R: ValueType + Store,
         {
             #[allow(non_snake_case)]
-            fn call_from_vm(&self, ctx: &mut EvalContext<'_>, sp: MemoryAddress) -> TypedValue {
+            fn call_from_vm(&self, ctx: &mut EvalContext<'_>, sp: MemoryAddress) -> Result<TypedValue, EvalEvent> {
                 let offset = 0;
                 $(
-                let $arg = ctx.load::<$arg>(sp + offset).unwrap();
+                let $arg = ctx.load::<$arg>(sp + offset)?;
                 let offset = offset + <$arg>::BYTES;
                 )*
 
-                self($($arg),*).store(ctx)
+                Ok(self($($arg),*).store(ctx))
             }
         }
     };
@@ -91,7 +95,7 @@ somni_expr::for_all_tuples! {
 
 pub struct SomniFn<'p> {
     #[allow(clippy::type_complexity)]
-    func: Box<dyn Fn(&mut EvalContext<'p>, MemoryAddress) -> TypedValue + 'p>,
+    func: Box<dyn Fn(&mut EvalContext<'p>, MemoryAddress) -> Result<TypedValue, EvalEvent> + 'p>,
     #[allow(clippy::type_complexity)]
     expr_func: Box<
         dyn Fn(&mut dyn ExprContext, &[TypedValue]) -> Result<TypedValue, FunctionCallError> + 'p,
@@ -110,7 +114,11 @@ impl<'p> SomniFn<'p> {
         }
     }
 
-    fn call_from_vm(&self, ctx: &mut EvalContext<'p>, sp: MemoryAddress) -> TypedValue {
+    fn call_from_vm(
+        &self,
+        ctx: &mut EvalContext<'p>,
+        sp: MemoryAddress,
+    ) -> Result<TypedValue, EvalEvent> {
         (self.func)(ctx, sp)
     }
 
@@ -564,7 +572,7 @@ impl<'p> EvalContext<'p> {
                 };
 
                 let first_arg = sp + ty.size_of::<DefaultTypeSet>();
-                let retval = intrinsic.call_from_vm(self, first_arg);
+                let retval = intrinsic.call_from_vm(self, first_arg)?;
                 self.intrinsics.insert(name, intrinsic);
                 self.store_typed(sp, retval)?;
             }
