@@ -8,12 +8,12 @@ use crate::{
 
 use somni_expr::{
     error::MarkInSource,
-    value::{Load, Store, TypedValue as ExprTypedValue, ValueType},
+    value::{Load, Store, ValueType},
     DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type,
 };
 use somni_parser::{parser, Location};
 
-pub type TypedValue = ExprTypedValue<VmTypeSet>;
+pub type TypedValue = somni_expr::value::TypedValue<VmTypeSet>;
 
 #[derive(Clone, Debug)]
 pub struct EvalError(Box<str>);
@@ -25,10 +25,10 @@ impl EvalError {
 }
 
 #[derive(Clone, Debug)]
-pub enum EvalEvent {
+pub enum EvalEvent<V> {
     UnknownFunctionCall(StringIndex),
     Error(EvalError),
-    Complete(ExprTypedValue<VmTypeSet>),
+    Complete(V),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -103,8 +103,8 @@ pub struct SomniFn<'p> {
     expr_func: Box<
         dyn Fn(
                 &mut dyn ExprContext<VmTypeSet>,
-                &[ExprTypedValue<VmTypeSet>],
-            ) -> Result<ExprTypedValue<VmTypeSet>, FunctionCallError>
+                &[TypedValue],
+            ) -> Result<TypedValue, FunctionCallError>
             + 'p,
     >,
 }
@@ -132,8 +132,8 @@ impl<'p> SomniFn<'p> {
     fn call_from_expr(
         &self,
         ctx: &mut dyn ExprContext<VmTypeSet>,
-        args: &[ExprTypedValue<VmTypeSet>],
-    ) -> Result<ExprTypedValue<VmTypeSet>, FunctionCallError> {
+        args: &[TypedValue],
+    ) -> Result<TypedValue, FunctionCallError> {
         (self.expr_func)(ctx, args)
     }
 }
@@ -315,7 +315,7 @@ for_each_binary_operator!(
             dst: MemoryAddress,
             lhs: MemoryAddress,
             rhs: MemoryAddress,
-        ) -> Result<(), EvalEvent> {
+        ) -> Result<(), EvalEvent<TypedValue>> {
             dispatch_type!(ty, ($ty:ty) => {
                 let lhs = ctx.load::<$ty>(lhs)?;
                 let rhs = ctx.load::<$ty>(rhs)?;
@@ -335,7 +335,7 @@ for_each_unary_operator!(
             ctx: &mut EvalContext<'_>,
             dst: MemoryAddress,
             operand: MemoryAddress,
-        ) -> Result<(), EvalEvent> {
+        ) -> Result<(), EvalEvent<TypedValue>> {
             dispatch_type!(ty, ($ty:ty) => {
                 let operand = ctx.load::<$ty>(operand)?;
 
@@ -349,7 +349,7 @@ for_each_unary_operator!(
 );
 
 #[cold]
-fn operator_error(ctx: &EvalContext<'_>, error: OperatorError) -> EvalEvent {
+fn operator_error(ctx: &EvalContext<'_>, error: OperatorError) -> EvalEvent<TypedValue> {
     ctx.runtime_error(format_args!("Failed to apply operator: {error:?}"))
 }
 
@@ -384,26 +384,6 @@ impl<'p> EvalContext<'p> {
         self.intrinsics.insert(name, SomniFn::new(f));
     }
 
-    /// Calls the `main` function and starts the evaluation. If the program is already running,
-    /// it will continue executing the current function.
-    ///
-    /// If the function returns with [`EvalEvent::UnknownFunctionCall`], it means that the script
-    /// tried to call a function that is not defined in the program. You can use
-    /// [`Self::string`] to read the function name, and [`Self::unknown_call_args()`]
-    /// to get the arguments of the function that was called. Set the return value with
-    /// [`Self::set_return_value()`], then call [`Self::run`] to continue execution.
-    pub fn run(&mut self) -> EvalEvent {
-        if matches!(self.state, EvalState::Idle) {
-            // Restore VM state.
-            self.reset();
-
-            // Initialize the first frame with the main program
-            self.call("main", &[])
-        } else {
-            self.execute()
-        }
-    }
-
     pub fn reset(&mut self) {
         // TODO: only if eval_expression is supported
         self.state = EvalState::Idle;
@@ -424,6 +404,26 @@ impl<'p> EvalContext<'p> {
         }
     }
 
+    /// Calls the `main` function and starts the evaluation. If the program is already running,
+    /// it will continue executing the current function.
+    ///
+    /// If the function returns with [`EvalEvent::UnknownFunctionCall`], it means that the script
+    /// tried to call a function that is not defined in the program. You can use
+    /// [`Self::string`] to read the function name, and [`Self::unknown_call_args()`]
+    /// to get the arguments of the function that was called. Set the return value with
+    /// [`Self::set_return_value()`], then call [`Self::run`] to continue execution.
+    pub fn run(&mut self) -> EvalEvent<TypedValue> {
+        if matches!(self.state, EvalState::Idle) {
+            // Restore VM state.
+            self.reset();
+
+            // Initialize the first frame with the main program
+            self.call("main", &[])
+        } else {
+            self.execute()
+        }
+    }
+
     /// Calls a function by its name with the given arguments.
     ///
     /// If the function returns with [`EvalEvent::UnknownFunctionCall`], it means that the script
@@ -431,14 +431,14 @@ impl<'p> EvalContext<'p> {
     /// [`Self::string`] to read the function name, and [`Self::unknown_call_args()`]
     /// to get the arguments of the function that was called. Set the return value with
     /// [`Self::set_return_value()`], then call [`Self::run`] to continue execution.
-    pub fn call(&mut self, func: &str, args: &[ExprTypedValue<VmTypeSet>]) -> EvalEvent {
+    pub fn call(&mut self, func: &str, args: &[TypedValue]) -> EvalEvent<TypedValue> {
         let Some(function) = self.load_function_by_name(func) else {
             if let Some(fn_name) = self.strings.find(func) {
                 if let Some((name, intrinsic)) = self.intrinsics.remove_entry(&fn_name) {
                     let retval = intrinsic.call_from_expr(self, args);
                     self.intrinsics.insert(name, intrinsic);
                     return match retval {
-                        Ok(result) => EvalEvent::Complete(result.into()),
+                        Ok(result) => EvalEvent::Complete(result),
                         Err(FunctionCallError::IncorrectArgumentCount { expected }) => self
                             .runtime_error(format_args!(
                                 "{func} takes {expected} arguments, {} given",
@@ -485,10 +485,10 @@ impl<'p> EvalContext<'p> {
 
         // Store the function arguments as temporaries in the caller's stack frame.
         for (i, ((addr, ty), arg)) in function.arguments.iter().zip(args.iter()).enumerate() {
-            let arg = if let ExprTypedValue::MaybeSignedInt(int) = *arg {
+            let arg = if let TypedValue::MaybeSignedInt(int) = *arg {
                 match ty {
-                    Type::Int => ExprTypedValue::Int(int),
-                    Type::SignedInt => ExprTypedValue::SignedInt(int as i64),
+                    Type::Int => TypedValue::Int(int),
+                    Type::SignedInt => TypedValue::SignedInt(int as i64),
                     _ => arg.clone(),
                 }
             } else {
@@ -544,7 +544,7 @@ impl<'p> EvalContext<'p> {
         visitor.visit_expression(&ast).unwrap()
     }
 
-    fn execute(&mut self) -> EvalEvent {
+    fn execute(&mut self) -> EvalEvent<TypedValue> {
         if let EvalState::WaitingForFunctionResult(name, ..) = self.state {
             return self.runtime_error(format!(
                 "Function '{}' is still waiting for a result",
@@ -559,7 +559,7 @@ impl<'p> EvalContext<'p> {
         }
     }
 
-    fn step(&mut self) -> Result<(), EvalEvent> {
+    fn step(&mut self) -> Result<(), EvalEvent<TypedValue>> {
         let instruction = self.current_instruction();
 
         // println!(
@@ -606,10 +606,11 @@ impl<'p> EvalContext<'p> {
                     let retval = self
                         .memory
                         .load_typed(MemoryAddress::Local(0), function.return_type)
-                        .unwrap();
+                        .unwrap()
+                        .into();
                     self.state = EvalState::Idle;
 
-                    return Err(EvalEvent::Complete(retval.into()));
+                    return Err(EvalEvent::Complete(retval));
                 } else {
                     self.memory.sp = sp as usize;
                     self.program_counter = CodeAddress(pc as usize);
@@ -668,7 +669,11 @@ impl<'p> EvalContext<'p> {
         Ok(())
     }
 
-    fn store<V: MemoryRepr>(&mut self, addr: MemoryAddress, value: V) -> Result<(), EvalEvent> {
+    fn store<V: MemoryRepr>(
+        &mut self,
+        addr: MemoryAddress,
+        value: V,
+    ) -> Result<(), EvalEvent<TypedValue>> {
         match self.memory.as_mut(addr..addr + V::BYTES) {
             Ok(memory) => {
                 value.write(memory);
@@ -680,7 +685,11 @@ impl<'p> EvalContext<'p> {
         }
     }
 
-    fn store_typed(&mut self, addr: MemoryAddress, value: VmTypedValue) -> Result<(), EvalEvent> {
+    fn store_typed(
+        &mut self,
+        addr: MemoryAddress,
+        value: VmTypedValue,
+    ) -> Result<(), EvalEvent<TypedValue>> {
         match self
             .memory
             .as_mut(addr..addr + value.type_of().vm_size_of())
@@ -695,7 +704,7 @@ impl<'p> EvalContext<'p> {
         }
     }
 
-    fn load<V: MemoryRepr>(&self, addr: MemoryAddress) -> Result<V, EvalEvent> {
+    fn load<V: MemoryRepr>(&self, addr: MemoryAddress) -> Result<V, EvalEvent<TypedValue>> {
         let bytes = self.memory.load(addr, V::BYTES).map_err(|e| {
             self.runtime_error(format_args!("Failed to load value from address: {e}"))
         })?;
@@ -707,7 +716,7 @@ impl<'p> EvalContext<'p> {
         addr: MemoryAddress,
         dst: MemoryAddress,
         amount: usize,
-    ) -> Result<(), EvalEvent> {
+    ) -> Result<(), EvalEvent<TypedValue>> {
         self.memory
             .copy(addr, dst, amount)
             .map_err(|e| self.runtime_error(format_args!("Failed to copy value: {e}")))
@@ -722,7 +731,7 @@ impl<'p> EvalContext<'p> {
         }
     }
 
-    pub fn set_return_value(&mut self, value: TypedValue) -> Result<(), EvalEvent> {
+    pub fn set_return_value(&mut self, value: TypedValue) -> Result<(), EvalEvent<TypedValue>> {
         let EvalState::WaitingForFunctionResult(_, ty, sp) = self.state else {
             return Err(self.runtime_error("No function is currently waiting for a result"));
         };
@@ -782,7 +791,7 @@ impl<'p> EvalContext<'p> {
         &mut self,
         function: &'p Function,
         sp: MemoryAddress,
-    ) -> Result<(), EvalEvent> {
+    ) -> Result<(), EvalEvent<TypedValue>> {
         self.store(sp - 16, self.program_counter.0 as u64)?;
         self.store(sp - 8, self.memory.sp as u64)?;
         self.memory.sp = self.memory.address(sp);
@@ -794,7 +803,7 @@ impl<'p> EvalContext<'p> {
     }
 
     #[cold]
-    fn runtime_error(&self, message: impl ToString) -> EvalEvent {
+    fn runtime_error(&self, message: impl ToString) -> EvalEvent<TypedValue> {
         EvalEvent::Error(EvalError(message.to_string().into_boxed_str()))
     }
 
@@ -809,7 +818,7 @@ impl<'p> EvalContext<'p> {
 }
 
 impl<'s> ExprContext<VmTypeSet> for EvalContext<'s> {
-    fn try_load_variable(&self, name: &str) -> Option<ExprTypedValue<VmTypeSet>> {
+    fn try_load_variable(&self, name: &str) -> Option<TypedValue> {
         let name_idx = self
             .strings
             .find(name)
@@ -831,8 +840,8 @@ impl<'s> ExprContext<VmTypeSet> for EvalContext<'s> {
     fn call_function(
         &mut self,
         function_name: &str,
-        args: &[ExprTypedValue<VmTypeSet>],
-    ) -> Result<ExprTypedValue<VmTypeSet>, FunctionCallError> {
+        args: &[TypedValue],
+    ) -> Result<TypedValue, FunctionCallError> {
         match self.call(function_name, args) {
             EvalEvent::UnknownFunctionCall(fn_name) => {
                 println!("unknown function call {:?}", self.string(fn_name));
@@ -842,11 +851,11 @@ impl<'s> ExprContext<VmTypeSet> for EvalContext<'s> {
             EvalEvent::Error(e) => {
                 panic!("{}", e.mark(self, "Runtime error"))
             }
-            EvalEvent::Complete(value) => Ok(value.into()),
+            EvalEvent::Complete(value) => Ok(value),
         }
     }
 
-    fn address_of(&self, name: &str) -> ExprTypedValue<VmTypeSet> {
+    fn address_of(&self, name: &str) -> TypedValue {
         let name_idx = self
             .strings
             .find(name)
@@ -856,7 +865,7 @@ impl<'s> ExprContext<VmTypeSet> for EvalContext<'s> {
             .globals
             .get_index_of(&name_idx)
             .unwrap_or_else(|| panic!("Variable '{name}' not found in program"));
-        ExprTypedValue::Int(addr as u64)
+        TypedValue::Int(addr as u64)
     }
 }
 
