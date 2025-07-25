@@ -3,6 +3,9 @@ Globals:
 Function: add_from_rust
   External function
 
+Function: reverse
+  External function
+
 Function: main
 block 0
   var return_value: bool = None
@@ -28,23 +31,52 @@ block 0
   free(temp3)
   n = temp2
   free(temp2)
-  var temp10: {int/signed} = Some(MaybeSignedInt(5))
-  var temp11: void = None
-  temp11 = n == temp10
-  free(temp10)
-  return_value = temp11
+  var temp10: bool = Some(Bool(false))
+  var temp11: {int/signed} = Some(MaybeSignedInt(5))
+  var temp12: void = None
+  temp12 = n == temp11
   free(temp11)
-  free(n)
-  free(return_value)
-  -> block 2
+  if temp12 -> block 3 else block 2
 
 block 1
   -> return
 
 block 2
-  -> block 1
+  free(temp12)
+  return_value = temp10
+  free(temp10)
+  free(n)
+  free(return_value)
+  -> block 4
 
 block 3
+  var temp13: void = None
+  var temp14: string = Some(String(StringIndex(19)))
+  var temp15: int = None
+  var temp16: int = None
+  var temp17: void = None
+  var temp18: void = None
+  temp18 = temp14
+  temp17 = call reverse(temp18)
+  temp13 = temp17
+  free(temp18)
+  free(temp17)
+  free(temp16)
+  free(temp15)
+  free(temp14)
+  var temp19: string = Some(String(StringIndex(25)))
+  var temp20: void = None
+  temp20 = temp13 == temp19
+  free(temp13)
+  free(temp19)
+  temp10 = temp20
+  free(temp20)
+  -> block 2
+
+block 4
+  -> block 1
+
+block 5
   -> block 1
 
 Function: multiple_calls

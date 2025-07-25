@@ -2,10 +2,11 @@
 //@ assert(multiple_calls())
 
 extern fn add_from_rust(a: int, b: int) -> signed;
+extern fn reverse(a: string) -> string;
 
 fn main() -> bool {
     var n = add_from_rust(2, 3);
-    return n == 5;
+    return n == 5 && reverse("oof") == "foo";
 }
 
 fn multiple_calls() -> bool {

@@ -68,28 +68,33 @@ pub trait NativeFunction<A>: DynFunction<A, VmTypeSet> + Clone {
         &self,
         ctx: &mut EvalContext<'_>,
         sp: MemoryAddress,
-    ) -> Result<VmTypedValue, EvalEvent>;
+    ) -> Result<VmTypedValue, EvalEvent<TypedValue>>;
 }
 
 somni_expr::for_all_tuples! {
     ($($arg:ident),*) => {
         impl<$($arg,)* R, F> NativeFunction<($($arg,)*)> for F
         where
-            $($arg: MemoryRepr + Load<VmTypeSet>,)*
+            $($arg: Load<VmTypeSet>,)*
             F: Fn($($arg,)*) -> R,
             F: for<'t> Fn($($arg::Output<'t>,)*) -> R,
             F: Clone,
             R: ValueType + Store<VmTypeSet>,
         {
             #[allow(non_snake_case)]
-            fn call_from_vm(&self, ctx: &mut EvalContext<'_>, sp: MemoryAddress) -> Result<VmTypedValue, EvalEvent> {
+            fn call_from_vm(&self, ctx: &mut EvalContext<'_>, sp: MemoryAddress) -> Result<VmTypedValue, EvalEvent<TypedValue>> {
                 let offset = 0;
                 $(
-                let $arg = ctx.load::<$arg>(sp + offset)?;
-                let offset = offset + <$arg>::BYTES;
+                    let $arg = match ctx.memory.load_typed(sp + offset, <$arg>::TYPE) {
+                        Ok(typed) => TypedValue::from(typed),
+                        Err(e) => return Err(ctx.runtime_error(e)),
+                    };
+                    let offset = offset + <$arg>::TYPE.vm_size_of();
                 )*
 
-                Ok(VmTypedValue::from(self($($arg),*).store(ctx)))
+                Ok(VmTypedValue::from(self($(
+                    <$arg>::load(ctx, &$arg).expect("Expect to be able to load the specified type"),
+                )*).store(ctx)))
             }
         }
     };
@@ -97,7 +102,10 @@ somni_expr::for_all_tuples! {
 
 pub struct SomniFn<'p> {
     #[allow(clippy::type_complexity)]
-    func: Box<dyn Fn(&mut EvalContext<'p>, MemoryAddress) -> Result<VmTypedValue, EvalEvent> + 'p>,
+    func: Box<
+        dyn Fn(&mut EvalContext<'p>, MemoryAddress) -> Result<VmTypedValue, EvalEvent<TypedValue>>
+            + 'p,
+    >,
 
     #[allow(clippy::type_complexity)]
     expr_func: Box<
@@ -125,7 +133,7 @@ impl<'p> SomniFn<'p> {
         &self,
         ctx: &mut EvalContext<'p>,
         sp: MemoryAddress,
-    ) -> Result<VmTypedValue, EvalEvent> {
+    ) -> Result<VmTypedValue, EvalEvent<TypedValue>> {
         (self.func)(ctx, sp)
     }
 

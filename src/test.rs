@@ -60,6 +60,7 @@ pub fn run_eval_test(program: codegen::Program, path: impl AsRef<Path>) {
 
     context.add_function("add_from_rust", |a: u64, b: u64| -> i64 { (a + b) as i64 });
     context.add_function("assert", |a: bool| a); // No-op to test calling Rust functions from expressions
+    context.add_function("reverse", |s: &str| s.chars().rev().collect::<String>());
 
     for expression in &expressions {
         let expression = if let Some(e) = expression.strip_prefix('+') {
