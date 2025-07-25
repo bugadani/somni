@@ -35,6 +35,8 @@ where
     T::Integer: ValueType,
     T::Float: ValueType,
 {
+    const ARG_COUNT: usize;
+
     fn call(
         &self,
         ctx: &mut dyn ExprContext<T>,
@@ -42,8 +44,10 @@ where
     ) -> Result<TypedValue<T>, FunctionCallError>;
 }
 
-macro_rules! ignore {
-    ($arg:tt) => {};
+macro_rules! substitute {
+    ($arg:tt, $replacement:tt) => {
+        $replacement
+    };
 }
 
 for_all_tuples! {
@@ -61,30 +65,22 @@ for_all_tuples! {
             T::Integer: ValueType,
             T::Float: ValueType,
         {
+            const ARG_COUNT: usize = 0 $( + substitute!($arg, 1) )* ;
+
             #[allow(non_snake_case, unused)]
             fn call(&self, ctx: &mut dyn ExprContext<T>, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> {
-                let arg_count = 0;
-                $(
-                    ignore!($arg);
-                    let arg_count = arg_count + 1;
-                )*
+                if args.len() != Self::ARG_COUNT {
+                    return Err(FunctionCallError::IncorrectArgumentCount { expected: Self::ARG_COUNT });
+                }
 
                 let idx = 0;
-                let mut args = args.iter().cloned();
                 $(
-                    let Some(arg) = args.next() else {
-                        return Err(FunctionCallError::IncorrectArgumentCount { expected: arg_count });
-                    };
-                    let $arg = match <$arg>::load(ctx, arg) {
-                        Some(arg) => arg,
-                        None => return Err(FunctionCallError::IncorrectArgumentType { idx, expected: $arg::TYPE }),
-                    };
+                    let $arg = <$arg>::load(ctx, args[idx].clone()).ok_or_else(|| {
+                        FunctionCallError::IncorrectArgumentType { idx, expected: $arg::TYPE }
+                    })?;
                     let idx = idx + 1;
                 )*
 
-                if args.next().is_some() {
-                    return Err(FunctionCallError::IncorrectArgumentCount { expected: arg_count });
-                }
 
                 Ok(self($($arg),*).store(ctx))
             }
