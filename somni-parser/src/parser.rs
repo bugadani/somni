@@ -110,13 +110,13 @@ impl FloatParser for f64 {
 }
 
 /// Defines the numeric types used in the parser.
-pub trait TypeSet: Clone + Debug + Copy {
+pub trait TypeSet: Debug + Default {
     type Integer: IntParser + Clone + Copy + PartialEq + Debug;
     type Float: FloatParser + Clone + Copy + PartialEq + Debug;
 }
 
 /// Use 64-bit integers and 64-bit floats (default).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default)]
 pub struct DefaultTypeSet;
 impl Sealed for DefaultTypeSet {}
 
@@ -126,7 +126,7 @@ impl TypeSet for DefaultTypeSet {
 }
 
 /// Use 32-bit integers and floats.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default)]
 pub struct TypeSet32;
 impl Sealed for TypeSet32 {}
 impl TypeSet for TypeSet32 {
@@ -135,7 +135,7 @@ impl TypeSet for TypeSet32 {
 }
 
 /// Use 128-bit integers and 64-bit floats.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default)]
 pub struct TypeSet128;
 impl Sealed for TypeSet128 {}
 impl TypeSet for TypeSet128 {
@@ -143,7 +143,10 @@ impl TypeSet for TypeSet128 {
     type Float = f64;
 }
 
-impl Program {
+impl<T> Program<T>
+where
+    T: TypeSet,
+{
     fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let mut items = Vec::new();
 
@@ -155,7 +158,10 @@ impl Program {
     }
 }
 
-impl Item {
+impl<T> Item<T>
+where
+    T: TypeSet,
+{
     fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         if let Some(global_var) = GlobalVariable::try_parse(stream)? {
             return Ok(Item::GlobalVariable(global_var));
@@ -171,7 +177,10 @@ impl Item {
     }
 }
 
-impl GlobalVariable {
+impl<T> GlobalVariable<T>
+where
+    T: TypeSet,
+{
     fn try_parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Option<Self>, Error> {
         let Some(decl_token) = stream.take_match(TokenKind::Identifier, &["var"])? else {
             return Ok(None);
@@ -253,7 +262,10 @@ impl ExternalFunction {
     }
 }
 
-impl Function {
+impl<T> Function<T>
+where
+    T: TypeSet,
+{
     fn try_parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Option<Self>, Error> {
         let Some(fn_token) = stream.take_match(TokenKind::Identifier, &["fn"])? else {
             return Ok(None);
@@ -306,12 +318,15 @@ impl Function {
     }
 }
 
-impl Body {
+impl<T> Body<T>
+where
+    T: TypeSet,
+{
     fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let opening_brace = stream.expect_match(TokenKind::Symbol, &["{"])?;
 
         let mut body = Vec::new();
-        while Statement::matches(stream)? {
+        while Statement::<T>::matches(stream)? {
             body.push(Statement::parse(stream)?);
         }
 
@@ -333,7 +348,10 @@ impl TypeHint {
     }
 }
 
-impl Statement {
+impl<T> Statement<T>
+where
+    T: TypeSet,
+{
     fn matches(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<bool, Error> {
         stream
             .peek_match(TokenKind::Symbol, &["}"])
@@ -805,11 +823,14 @@ where
     }
 }
 
-pub fn parse(source: &str) -> Result<Program, Error> {
+pub fn parse<T>(source: &str) -> Result<Program<T>, Error>
+where
+    T: TypeSet,
+{
     let tokens = crate::lexer::tokenize(source);
     let mut stream = TokenStream::new(source, tokens);
 
-    Program::parse(&mut stream)
+    Program::<T>::parse(&mut stream)
 }
 
 pub fn parse_expression<T>(source: &str) -> Result<Expression<T>, Error>

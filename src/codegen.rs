@@ -9,15 +9,15 @@ use indexmap::IndexMap;
 use crate::{
     error::CompileError,
     ir::{self, VariableIndex},
-    types::TypeExt,
+    string_interner::{StringIndex, Strings},
+    types::{TypeExt, TypedValue, VmTypeSet},
     variable_tracker::{self, LocalVariableIndex},
 };
 
 use somni_expr::{
-    string_interner::{StringIndex, Strings},
-    ExprContext, ExpressionVisitor, FunctionCallError, Type, TypedValue,
+    ExprContext, ExpressionVisitor, FunctionCallError, Type, TypedValue as ExprTypedValue,
 };
-use somni_parser::{parser::DefaultTypeSet, Location};
+use somni_parser::Location;
 
 // This is just to keep the size of Instruction small enough. Re-evaluate this later.
 #[derive(Clone, Copy, Debug)]
@@ -312,34 +312,26 @@ impl Program {
 }
 
 // This enables evaluating initializer expressions
-impl ExprContext for Program {
-    fn intern_string(&mut self, s: &str) -> StringIndex {
-        self.debug_info.strings.find(s).unwrap()
-    }
-
-    fn load_interned_string(&self, idx: StringIndex) -> &str {
-        self.debug_info.strings.lookup(idx)
-    }
-
-    fn try_load_variable(&self, variable: &str) -> Option<TypedValue> {
+impl ExprContext<VmTypeSet> for Program {
+    fn try_load_variable(&self, variable: &str) -> Option<ExprTypedValue<VmTypeSet>> {
         let idx = self.debug_info.strings.find(variable)?;
-        self.globals[&idx].initial_value
+        self.globals[&idx].initial_value.map(ExprTypedValue::from)
     }
 
-    fn address_of(&self, variable: &str) -> TypedValue {
+    fn address_of(&self, variable: &str) -> ExprTypedValue<VmTypeSet> {
         let idx = self.debug_info.strings.find(variable).unwrap();
         let MemoryAddress::Global(addr) = self.globals[&idx].address else {
             unreachable!();
         };
 
-        TypedValue::Int(addr as u64)
+        ExprTypedValue::Int(addr as u64)
     }
 
     fn call_function(
         &mut self,
         _function_name: &str,
-        _args: &[TypedValue],
-    ) -> Result<TypedValue, FunctionCallError> {
+        _args: &[ExprTypedValue<VmTypeSet>],
+    ) -> Result<ExprTypedValue<VmTypeSet>, FunctionCallError> {
         Err(FunctionCallError::Other("Function calls are not supported"))
     }
 }
@@ -371,7 +363,7 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
                 initial_value: None,
             },
         );
-        global_addr += ty.size_of::<DefaultTypeSet>();
+        global_addr += ty.vm_size_of();
     }
 
     loop {
@@ -388,7 +380,7 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
                 _marker: PhantomData,
             };
             if let Ok(value) = visitor.visit_expression(&global.initializer) {
-                this.program.globals[name].initial_value = Some(value);
+                this.program.globals[name].initial_value = Some(value.into());
                 made_progress = true;
             }
         }
@@ -634,7 +626,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
                 self.push_instruction(
                     location,
-                    Instruction::Copy(dst, src, ty.size_of::<DefaultTypeSet>() as u32),
+                    Instruction::Copy(dst, src, ty.vm_size_of() as u32),
                 );
             }
             ir::Ir::DerefAssign(dst, src) => {
@@ -819,9 +811,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         let ty = self
             .type_of_variable(VariableIndex::Local(var.index))
             .expect("At this point, the variable type should be known");
-        let address = self
-            .stack_allocator
-            .allocate_variable(var, ty.size_of::<DefaultTypeSet>());
+        let address = self.stack_allocator.allocate_variable(var, ty.vm_size_of());
 
         if let Some(value) = value {
             self.push_instruction(

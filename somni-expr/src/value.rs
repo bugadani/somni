@@ -1,6 +1,6 @@
 use somni_parser::parser::DefaultTypeSet;
 
-use crate::{string_interner::StringIndex, ExprContext, OperatorError, Type, TypeSet};
+use crate::{ExprContext, OperatorError, Type, TypeSet};
 
 #[doc(hidden)]
 pub trait ValueType: Sized + Clone + PartialEq + std::fmt::Debug {
@@ -213,15 +213,6 @@ impl ValueType for bool {
     }
 }
 
-impl ValueType for StringIndex {
-    const TYPE: Type = Type::String;
-
-    type NegateOutput = Self;
-
-    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
-        Ok(a == b)
-    }
-}
 impl ValueType for &str {
     const TYPE: Type = Type::String;
 
@@ -242,7 +233,7 @@ impl ValueType for String {
 }
 
 /// Represents any value in the expression language.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug)]
 pub enum TypedValue<T = DefaultTypeSet>
 where
     T: TypeSet,
@@ -259,8 +250,42 @@ where
     Float(T::Float),
     /// Represents a boolean.
     Bool(bool),
-    /// Represents an interned string.
-    String(StringIndex),
+    /// Represents a string.
+    String(T::String),
+}
+
+impl<T> PartialEq for TypedValue<T>
+where
+    T: TypeSet,
+{
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::MaybeSignedInt(lhs), Self::MaybeSignedInt(rhs)) => lhs == rhs,
+            (Self::Int(lhs), Self::Int(rhs)) => lhs == rhs,
+            (Self::SignedInt(lhs), Self::SignedInt(rhs)) => lhs == rhs,
+            (Self::Float(lhs), Self::Float(rhs)) => lhs == rhs,
+            (Self::Bool(lhs), Self::Bool(rhs)) => lhs == rhs,
+            (Self::String(lhs), Self::String(rhs)) => lhs == rhs,
+            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+        }
+    }
+}
+
+impl<T> Clone for TypedValue<T>
+where
+    T: TypeSet,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Self::Void => Self::Void,
+            Self::MaybeSignedInt(inner) => Self::MaybeSignedInt(inner.clone()),
+            Self::Int(inner) => Self::Int(inner.clone()),
+            Self::SignedInt(inner) => Self::SignedInt(inner.clone()),
+            Self::Float(inner) => Self::Float(inner.clone()),
+            Self::Bool(inner) => Self::Bool(inner.clone()),
+            Self::String(inner) => Self::String(inner.clone()),
+        }
+    }
 }
 
 impl<T> TypedValue<T>
@@ -289,50 +314,90 @@ where
     where
         T: 's;
 
-    fn load(_ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self::Output<'_>>;
+    fn load<'s>(_ctx: &'s dyn ExprContext<T>, typed: &'s TypedValue<T>)
+        -> Option<Self::Output<'s>>;
+}
+
+pub trait LoadOwned<T = DefaultTypeSet>: ValueType
+where
+    T: TypeSet,
+{
+    type Output;
+
+    fn load(_ctx: &dyn ExprContext<T>, typed: &TypedValue<T>) -> Option<Self::Output>;
 }
 
 pub trait Store<T = DefaultTypeSet>: ValueType
 where
     T: TypeSet,
 {
-    fn store(self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T>;
+    fn store(&self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T>;
 }
 
 macro_rules! load {
     ($type:ty, [$($kind:ident),+] $(, $ts_kind:ident)?) => {
-        impl<T> Load<T> for $type
+        impl<T> LoadOwned<T> for $type
         where
             T: TypeSet$(<$ts_kind = $type>)?,
         {
-            type Output<'s> = Self where T: 's;
-            fn load(_ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
+            type Output = Self;
+            fn load(_ctx: &dyn ExprContext<T>, typed: &TypedValue<T>)
+                -> Option<Self::Output> {
                 $(
                     if let TypedValue::$kind(value) = typed {
-                        return Some(value);
+                        return Some(*value);
                     }
                 )+
 
                 None
             }
         }
-    };
-}
-macro_rules! load_signed {
-    ($type:ty, $kind:ident $(, $ts_kind:ident)?) => {
+
         impl<T> Load<T> for $type
         where
             T: TypeSet$(<$ts_kind = $type>)?,
         {
-            type Output<'s> = Self where T: 's;
-            fn load(_ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
+            type Output<'s>
+                = Self
+            where
+                T: 's;
+
+            fn load(ctx: &dyn ExprContext<T>, typed: &TypedValue<T>) -> Option<Self> {
+                <Self as LoadOwned<T>>::load(ctx, typed)
+            }
+        }
+    };
+}
+macro_rules! load_signed {
+    ($type:ty, $kind:ident $(, $ts_kind:ident)?) => {
+        impl<T> LoadOwned<T> for $type
+        where
+            T: TypeSet$(<$ts_kind = $type>)?,
+        {
+            type Output = Self;
+            fn load(_ctx: &dyn ExprContext<T>, typed: &TypedValue<T>)
+                -> Option<Self::Output> {
                 if let TypedValue::SignedInt(value) = typed {
-                    Some(value)
+                    Some(*value)
                 } else if let TypedValue::MaybeSignedInt(value) = typed {
-                    T::to_signed(value).ok()
+                    T::to_signed(*value).ok()
                 } else {
                     None
                 }
+            }
+        }
+
+        impl<T> Load<T> for $type
+        where
+            T: TypeSet$(<$ts_kind = $type>)?,
+        {
+            type Output<'s>
+                = Self
+            where
+                T: 's;
+
+            fn load(ctx: &dyn ExprContext<T>, typed: &TypedValue<T>) -> Option<Self> {
+                <Self as LoadOwned<T>>::load(ctx, typed)
             }
         }
     };
@@ -343,8 +408,8 @@ macro_rules! store {
         where
             T: TypeSet$(<$ts_kind = $type>)?,
         {
-            fn store(self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
-                TypedValue::$kind(self)
+            fn store(&self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
+                TypedValue::$kind(*self)
             }
         }
     };
@@ -356,7 +421,6 @@ load!(u128, [Int, MaybeSignedInt], Integer);
 load!(f32, [Float], Float);
 load!(f64, [Float], Float);
 load!(bool, [Bool]);
-load!(StringIndex, [String]);
 
 load_signed!(i32, SignedInt, SignedInteger);
 load_signed!(i64, SignedInt, SignedInteger);
@@ -371,7 +435,21 @@ store!(i128, SignedInt, SignedInteger);
 store!(f32, Float, Float);
 store!(f64, Float, Float);
 store!(bool, Bool);
-store!(StringIndex, String);
+
+impl<T> LoadOwned<T> for ()
+where
+    T: TypeSet,
+{
+    type Output = Self;
+
+    fn load(_ctx: &dyn ExprContext<T>, typed: &TypedValue<T>) -> Option<Self> {
+        if let TypedValue::Void = typed {
+            Some(())
+        } else {
+            None
+        }
+    }
+}
 
 impl<T> Load<T> for ()
 where
@@ -381,19 +459,16 @@ where
         = Self
     where
         T: 's;
-    fn load(_ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self> {
-        if let TypedValue::Void = typed {
-            Some(())
-        } else {
-            None
-        }
+
+    fn load(ctx: &dyn ExprContext<T>, typed: &TypedValue<T>) -> Option<Self> {
+        <Self as LoadOwned<T>>::load(ctx, typed)
     }
 }
 impl<T> Store<T> for ()
 where
     T: TypeSet,
 {
-    fn store(self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
+    fn store(&self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
         TypedValue::Void
     }
 }
@@ -402,9 +477,8 @@ impl<T> Store<T> for &str
 where
     T: TypeSet,
 {
-    fn store(self, ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
-        let idx = ctx.intern_string(self);
-        TypedValue::String(idx)
+    fn store(&self, ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
+        TypedValue::String(T::store_string(ctx, self))
     }
 }
 
@@ -412,9 +486,8 @@ impl<T> Store<T> for String
 where
     T: TypeSet,
 {
-    fn store(self, ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
-        let idx = ctx.intern_string(&self);
-        TypedValue::String(idx)
+    fn store(&self, ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
+        TypedValue::String(T::store_string(ctx, self))
     }
 }
 
@@ -427,11 +500,40 @@ where
     where
         T: 's;
 
-    fn load(ctx: &dyn ExprContext<T>, typed: TypedValue<T>) -> Option<Self::Output<'_>> {
+    fn load<'s>(ctx: &'s dyn ExprContext<T>, typed: &'s TypedValue<T>) -> Option<Self::Output<'s>> {
         if let TypedValue::String(index) = typed {
-            Some(ctx.load_interned_string(index))
+            Some(T::load_string(ctx, index))
         } else {
             None
         }
+    }
+}
+
+impl<T> LoadOwned<T> for String
+where
+    T: TypeSet,
+{
+    type Output = String;
+
+    fn load(ctx: &dyn ExprContext<T>, typed: &TypedValue<T>) -> Option<Self::Output> {
+        if let TypedValue::String(index) = typed {
+            Some(T::load_string(ctx, index).to_string())
+        } else {
+            None
+        }
+    }
+}
+
+impl<T> Load<T> for String
+where
+    T: TypeSet,
+{
+    type Output<'s>
+        = Self
+    where
+        T: 's;
+
+    fn load(ctx: &dyn ExprContext<T>, typed: &TypedValue<T>) -> Option<Self> {
+        <Self as LoadOwned<T>>::load(ctx, typed)
     }
 }

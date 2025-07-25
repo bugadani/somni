@@ -2,20 +2,18 @@ use std::{collections::HashMap, marker::PhantomData, ops::Range};
 
 use crate::{
     codegen::{self, CodeAddress, Function, Instruction, MemoryAddress},
-    types::{MemoryRepr, TypeExt},
+    string_interner::{StringIndex, Strings},
+    types::{MemoryRepr, TypeExt, TypedValue as VmTypedValue, VmTypeSet},
 };
 
 use somni_expr::{
     error::MarkInSource,
-    string_interner::{StringIndex, Strings},
-    value::{Load, Store, ValueType},
-    DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type, TypeSet,
-    TypedValue,
+    value::{Load, Store, TypedValue as ExprTypedValue, ValueType},
+    DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type,
 };
-use somni_parser::{
-    parser::{self, DefaultTypeSet},
-    Location,
-};
+use somni_parser::{parser, Location};
+
+pub type TypedValue = ExprTypedValue<VmTypeSet>;
 
 #[derive(Clone, Debug)]
 pub struct EvalError(Box<str>);
@@ -30,7 +28,7 @@ impl EvalError {
 pub enum EvalEvent {
     UnknownFunctionCall(StringIndex),
     Error(EvalError),
-    Complete(TypedValue),
+    Complete(ExprTypedValue<VmTypeSet>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -65,33 +63,33 @@ somni_expr::for_all_tuples! {
     };
 }
 
-pub trait NativeFunction<A>: DynFunction<A, DefaultTypeSet> + Clone {
+pub trait NativeFunction<A>: DynFunction<A, VmTypeSet> + Clone {
     fn call_from_vm(
         &self,
         ctx: &mut EvalContext<'_>,
         sp: MemoryAddress,
-    ) -> Result<TypedValue, EvalEvent>;
+    ) -> Result<VmTypedValue, EvalEvent>;
 }
 
 somni_expr::for_all_tuples! {
     ($($arg:ident),*) => {
         impl<$($arg,)* R, F> NativeFunction<($($arg,)*)> for F
         where
-            $($arg: MemoryRepr + Load,)*
+            $($arg: MemoryRepr + Load<VmTypeSet>,)*
             F: Fn($($arg,)*) -> R,
             F: for<'t> Fn($($arg::Output<'t>,)*) -> R,
             F: Clone,
-            R: ValueType + Store,
+            R: ValueType + Store<VmTypeSet>,
         {
             #[allow(non_snake_case)]
-            fn call_from_vm(&self, ctx: &mut EvalContext<'_>, sp: MemoryAddress) -> Result<TypedValue, EvalEvent> {
+            fn call_from_vm(&self, ctx: &mut EvalContext<'_>, sp: MemoryAddress) -> Result<VmTypedValue, EvalEvent> {
                 let offset = 0;
                 $(
                 let $arg = ctx.load::<$arg>(sp + offset)?;
                 let offset = offset + <$arg>::BYTES;
                 )*
 
-                Ok(self($($arg),*).store(ctx))
+                Ok(VmTypedValue::from(self($($arg),*).store(ctx)))
             }
         }
     };
@@ -99,10 +97,15 @@ somni_expr::for_all_tuples! {
 
 pub struct SomniFn<'p> {
     #[allow(clippy::type_complexity)]
-    func: Box<dyn Fn(&mut EvalContext<'p>, MemoryAddress) -> Result<TypedValue, EvalEvent> + 'p>,
+    func: Box<dyn Fn(&mut EvalContext<'p>, MemoryAddress) -> Result<VmTypedValue, EvalEvent> + 'p>,
+
     #[allow(clippy::type_complexity)]
     expr_func: Box<
-        dyn Fn(&mut dyn ExprContext, &[TypedValue]) -> Result<TypedValue, FunctionCallError> + 'p,
+        dyn Fn(
+                &mut dyn ExprContext<VmTypeSet>,
+                &[ExprTypedValue<VmTypeSet>],
+            ) -> Result<ExprTypedValue<VmTypeSet>, FunctionCallError>
+            + 'p,
     >,
 }
 
@@ -122,15 +125,15 @@ impl<'p> SomniFn<'p> {
         &self,
         ctx: &mut EvalContext<'p>,
         sp: MemoryAddress,
-    ) -> Result<TypedValue, EvalEvent> {
+    ) -> Result<VmTypedValue, EvalEvent> {
         (self.func)(ctx, sp)
     }
 
     fn call_from_expr(
         &self,
-        ctx: &mut dyn ExprContext,
-        args: &[TypedValue],
-    ) -> Result<TypedValue, FunctionCallError> {
+        ctx: &mut dyn ExprContext<VmTypeSet>,
+        args: &[ExprTypedValue<VmTypeSet>],
+    ) -> Result<ExprTypedValue<VmTypeSet>, FunctionCallError> {
         (self.expr_func)(ctx, args)
     }
 }
@@ -195,10 +198,10 @@ impl Memory {
         Ok(variable)
     }
 
-    fn load_typed(&self, local: MemoryAddress, return_type: Type) -> Result<TypedValue, String> {
-        let data = self.load(local, return_type.size_of::<DefaultTypeSet>())?;
+    fn load_typed(&self, local: MemoryAddress, return_type: Type) -> Result<VmTypedValue, String> {
+        let data = self.load(local, return_type.vm_size_of())?;
 
-        Ok(TypedValue::from_typed_bytes(return_type, data))
+        Ok(VmTypedValue::from_typed_bytes(return_type, data))
     }
 
     fn copy(
@@ -351,7 +354,7 @@ fn operator_error(ctx: &EvalContext<'_>, error: OperatorError) -> EvalEvent {
 }
 
 impl<'p> EvalContext<'p> {
-    fn string(&self, index: StringIndex) -> &str {
+    pub fn string(&self, index: StringIndex) -> &str {
         self.strings.lookup(index)
     }
 
@@ -409,7 +412,7 @@ impl<'p> EvalContext<'p> {
             self.program
                 .globals
                 .values()
-                .map(|v| v.ty().size_of::<DefaultTypeSet>())
+                .map(|v| v.ty().vm_size_of())
                 .sum::<usize>()
                 + 16, // SP + PC
         );
@@ -417,7 +420,7 @@ impl<'p> EvalContext<'p> {
         for (_, def) in self.program.globals.iter() {
             self.store_typed(MemoryAddress::Global(address), def.value())
                 .unwrap();
-            address += def.ty().size_of::<DefaultTypeSet>();
+            address += def.ty().vm_size_of();
         }
     }
 
@@ -428,14 +431,14 @@ impl<'p> EvalContext<'p> {
     /// [`Self::string`] to read the function name, and [`Self::unknown_call_args()`]
     /// to get the arguments of the function that was called. Set the return value with
     /// [`Self::set_return_value()`], then call [`Self::run`] to continue execution.
-    pub fn call(&mut self, func: &str, args: &[TypedValue]) -> EvalEvent {
+    pub fn call(&mut self, func: &str, args: &[ExprTypedValue<VmTypeSet>]) -> EvalEvent {
         let Some(function) = self.load_function_by_name(func) else {
             if let Some(fn_name) = self.strings.find(func) {
                 if let Some((name, intrinsic)) = self.intrinsics.remove_entry(&fn_name) {
                     let retval = intrinsic.call_from_expr(self, args);
                     self.intrinsics.insert(name, intrinsic);
                     return match retval {
-                        Ok(result) => EvalEvent::Complete(result),
+                        Ok(result) => EvalEvent::Complete(result.into()),
                         Err(FunctionCallError::IncorrectArgumentCount { expected }) => self
                             .runtime_error(format_args!(
                                 "{func} takes {expected} arguments, {} given",
@@ -482,14 +485,14 @@ impl<'p> EvalContext<'p> {
 
         // Store the function arguments as temporaries in the caller's stack frame.
         for (i, ((addr, ty), arg)) in function.arguments.iter().zip(args.iter()).enumerate() {
-            let arg = if let TypedValue::MaybeSignedInt(int) = *arg {
+            let arg = if let ExprTypedValue::MaybeSignedInt(int) = *arg {
                 match ty {
-                    Type::Int => TypedValue::Int(int),
-                    Type::SignedInt => TypedValue::SignedInt(int as i64),
-                    _ => *arg,
+                    Type::Int => ExprTypedValue::Int(int),
+                    Type::SignedInt => ExprTypedValue::SignedInt(int as i64),
+                    _ => arg.clone(),
                 }
             } else {
-                *arg
+                arg.clone()
             };
             if *ty != arg.type_of() {
                 return self.runtime_error(format!(
@@ -498,7 +501,7 @@ impl<'p> EvalContext<'p> {
                     arg.type_of()
                 ));
             }
-            if let Err(e) = self.store_typed(*addr, arg) {
+            if let Err(e) = self.store_typed(*addr, arg.into()) {
                 return e;
             }
         }
@@ -582,7 +585,7 @@ impl<'p> EvalContext<'p> {
                     return Err(EvalEvent::UnknownFunctionCall(function_name));
                 };
 
-                let first_arg = sp + return_ty.size_of::<DefaultTypeSet>();
+                let first_arg = sp + return_ty.vm_size_of();
                 let retval = intrinsic.call_from_vm(self, first_arg)?;
                 self.intrinsics.insert(name, intrinsic);
                 self.store_typed(sp, retval)?;
@@ -606,7 +609,7 @@ impl<'p> EvalContext<'p> {
                         .unwrap();
                     self.state = EvalState::Idle;
 
-                    return Err(EvalEvent::Complete(retval));
+                    return Err(EvalEvent::Complete(retval.into()));
                 } else {
                     self.memory.sp = sp as usize;
                     self.program_counter = CodeAddress(pc as usize);
@@ -642,20 +645,20 @@ impl<'p> EvalContext<'p> {
 
             Instruction::AddressOf(dst, lhs) => {
                 let value = self.memory.address(lhs) as u64;
-                self.store_typed(dst, TypedValue::Int(value))?;
+                self.store_typed(dst, VmTypedValue::Int(value))?;
             }
             Instruction::Dereference(ty, dst, lhs) => {
                 let address = self.load::<u64>(lhs)?;
                 let address = MemoryAddress::Global(address as usize);
 
-                self.copy(address, dst, ty.size_of::<DefaultTypeSet>())?;
+                self.copy(address, dst, ty.vm_size_of())?;
             }
             Instruction::Copy(dst, from, amount) => self.copy(from, dst, amount as usize)?,
             Instruction::DerefCopy(ty, addr, from) => {
                 let dst = self.load::<u64>(addr)?;
                 let dst = MemoryAddress::Global(dst as usize);
 
-                self.copy(from, dst, ty.size_of::<DefaultTypeSet>())?;
+                self.copy(from, dst, ty.vm_size_of())?;
             }
             Instruction::LoadValue(addr, value) => self.store_typed(addr, value)?,
         }
@@ -677,10 +680,10 @@ impl<'p> EvalContext<'p> {
         }
     }
 
-    fn store_typed(&mut self, addr: MemoryAddress, value: TypedValue) -> Result<(), EvalEvent> {
+    fn store_typed(&mut self, addr: MemoryAddress, value: VmTypedValue) -> Result<(), EvalEvent> {
         match self
             .memory
-            .as_mut(addr..addr + value.type_of().size_of::<DefaultTypeSet>())
+            .as_mut(addr..addr + value.type_of().vm_size_of())
         {
             Ok(memory) => {
                 value.write(memory);
@@ -712,7 +715,7 @@ impl<'p> EvalContext<'p> {
 
     pub fn unknown_call_args<A: Arguments>(&self) -> Option<A> {
         if let EvalState::WaitingForFunctionResult(_name, ty, sp) = self.state {
-            let first_arg = sp + ty.size_of::<DefaultTypeSet>();
+            let first_arg = sp + ty.vm_size_of();
             Some(A::read(self, first_arg))
         } else {
             None
@@ -723,6 +726,8 @@ impl<'p> EvalContext<'p> {
         let EvalState::WaitingForFunctionResult(_, ty, sp) = self.state else {
             return Err(self.runtime_error("No function is currently waiting for a result"));
         };
+
+        let value = VmTypedValue::from(value);
 
         if value.type_of() != ty {
             return Err(self.runtime_error(format_args!("Expcted a {ty} as the return value")));
@@ -803,20 +808,8 @@ impl<'p> EvalContext<'p> {
     }
 }
 
-impl<'s> ExprContext for EvalContext<'s> {
-    fn intern_string(&mut self, s: &str) -> StringIndex {
-        if let Some(string_index) = self.strings.find(s) {
-            string_index
-        } else {
-            self.strings.intern(s)
-        }
-    }
-
-    fn load_interned_string(&self, idx: StringIndex) -> &str {
-        self.strings.lookup(idx)
-    }
-
-    fn try_load_variable(&self, name: &str) -> Option<TypedValue> {
+impl<'s> ExprContext<VmTypeSet> for EvalContext<'s> {
+    fn try_load_variable(&self, name: &str) -> Option<ExprTypedValue<VmTypeSet>> {
         let name_idx = self
             .strings
             .find(name)
@@ -832,14 +825,14 @@ impl<'s> ExprContext for EvalContext<'s> {
             .load_typed(global.address, global.ty())
             .unwrap_or_else(|_| panic!("Variable '{name}' not found in memory"));
 
-        Some(value)
+        Some(value.into())
     }
 
     fn call_function(
         &mut self,
         function_name: &str,
-        args: &[TypedValue],
-    ) -> Result<TypedValue, FunctionCallError> {
+        args: &[ExprTypedValue<VmTypeSet>],
+    ) -> Result<ExprTypedValue<VmTypeSet>, FunctionCallError> {
         match self.call(function_name, args) {
             EvalEvent::UnknownFunctionCall(fn_name) => {
                 println!("unknown function call {:?}", self.string(fn_name));
@@ -849,11 +842,11 @@ impl<'s> ExprContext for EvalContext<'s> {
             EvalEvent::Error(e) => {
                 panic!("{}", e.mark(self, "Runtime error"))
             }
-            EvalEvent::Complete(value) => Ok(value),
+            EvalEvent::Complete(value) => Ok(value.into()),
         }
     }
 
-    fn address_of(&self, name: &str) -> TypedValue {
+    fn address_of(&self, name: &str) -> ExprTypedValue<VmTypeSet> {
         let name_idx = self
             .strings
             .find(name)
@@ -863,52 +856,7 @@ impl<'s> ExprContext for EvalContext<'s> {
             .globals
             .get_index_of(&name_idx)
             .unwrap_or_else(|| panic!("Variable '{name}' not found in program"));
-        TypedValue::Int(addr as u64)
-    }
-}
-
-trait TypedValueExt<T>
-where
-    T: TypeSet,
-    T::Integer: ValueType + MemoryRepr,
-    T::SignedInteger: ValueType + MemoryRepr,
-    T::Float: ValueType + MemoryRepr,
-{
-    /// Writes the raw bytes of this value to the provided buffer.
-    fn write(&self, to: &mut [u8]);
-
-    /// Creates a `TypedValue` from the provided type and bytes.
-    fn from_typed_bytes(ty: Type, value: &[u8]) -> TypedValue<T>;
-}
-
-impl<T> TypedValueExt<T> for TypedValue<T>
-where
-    T: TypeSet,
-    T::Integer: ValueType + MemoryRepr,
-    T::SignedInteger: ValueType + MemoryRepr,
-    T::Float: ValueType + MemoryRepr,
-{
-    fn write(&self, to: &mut [u8]) {
-        match self {
-            TypedValue::Void => ().write(to),
-            TypedValue::Int(value) | TypedValue::MaybeSignedInt(value) => value.write(to),
-            TypedValue::SignedInt(value) => value.write(to),
-            TypedValue::Float(value) => value.write(to),
-            TypedValue::Bool(value) => value.write(to),
-            TypedValue::String(value) => value.write(to),
-        }
-    }
-
-    fn from_typed_bytes(ty: Type, value: &[u8]) -> TypedValue<T> {
-        match ty {
-            Type::Void => Self::Void,
-            Type::Int => Self::Int(<_>::from_bytes(value)),
-            Type::MaybeSignedInt => Self::MaybeSignedInt(<_>::from_bytes(value)),
-            Type::SignedInt => Self::SignedInt(<_>::from_bytes(value)),
-            Type::Float => Self::Float(<_>::from_bytes(value)),
-            Type::Bool => Self::Bool(<_>::from_bytes(value)),
-            Type::String => Self::String(<_>::from_bytes(value)),
-        }
+        ExprTypedValue::Int(addr as u64)
     }
 }
 

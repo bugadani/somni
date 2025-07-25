@@ -78,8 +78,6 @@ pub mod error;
 #[doc(hidden)]
 pub mod function;
 #[doc(hidden)]
-pub mod string_interner;
-#[doc(hidden)]
 pub mod value;
 
 pub use function::{DynFunction, FunctionCallError};
@@ -101,8 +99,7 @@ use somni_parser::{
 use crate::{
     error::MarkInSource,
     function::ExprFn,
-    string_interner::{StringIndex, StringInterner},
-    value::{Load, Store, ValueType},
+    value::{Load, LoadOwned, Store, ValueType},
 };
 
 pub use somni_parser::parser::{DefaultTypeSet, TypeSet128, TypeSet32};
@@ -117,7 +114,7 @@ mod private {
 use private::Sealed;
 
 /// Defines numeric types in expressions.
-pub trait TypeSet: PartialEq + Sized + Clone + Copy {
+pub trait TypeSet: Sized + Default + Debug + 'static {
     /// The typeset that will be used to parse source code.
     type Parser: ParserTypeSet<Integer = Self::Integer, Float = Self::Float>;
 
@@ -137,8 +134,17 @@ pub trait TypeSet: PartialEq + Sized + Clone + Copy {
     /// The type of floating point numbers in this type set.
     type Float: Copy + ValueType<NegateOutput: Load<Self> + Store<Self>> + Load<Self> + Store<Self>;
 
+    /// The type of a string in this type set.
+    type String: ValueType<NegateOutput: Load<Self> + Store<Self>> + Load<Self> + Store<Self>;
+
     /// Converts an unsigned integer into a signed integer.
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError>;
+
+    /// Loads a string.
+    fn load_string<'s>(ctx: &'s dyn ExprContext<Self>, str: &'s Self::String) -> &'s str;
+
+    /// Stores a string.
+    fn store_string(ctx: &mut dyn ExprContext<Self>, str: &str) -> Self::String;
 }
 
 impl TypeSet for DefaultTypeSet {
@@ -147,9 +153,18 @@ impl TypeSet for DefaultTypeSet {
     type Integer = <Self::Parser as ParserTypeSet>::Integer;
     type SignedInteger = i64;
     type Float = <Self::Parser as ParserTypeSet>::Float;
+    type String = String;
 
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
         i64::try_from(v).map_err(|_| OperatorError::RuntimeError)
+    }
+
+    fn load_string<'s>(_ctx: &'s dyn ExprContext<Self>, str: &'s Self::String) -> &'s str {
+        str
+    }
+
+    fn store_string(_ctx: &mut dyn ExprContext<Self>, str: &str) -> Self::String {
+        str.to_string()
     }
 }
 
@@ -159,9 +174,18 @@ impl TypeSet for TypeSet32 {
     type Integer = <Self::Parser as ParserTypeSet>::Integer;
     type SignedInteger = i32;
     type Float = <Self::Parser as ParserTypeSet>::Float;
+    type String = String;
 
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
         i32::try_from(v).map_err(|_| OperatorError::RuntimeError)
+    }
+
+    fn load_string<'s>(_ctx: &'s dyn ExprContext<Self>, str: &'s Self::String) -> &'s str {
+        str
+    }
+
+    fn store_string(_ctx: &mut dyn ExprContext<Self>, str: &str) -> Self::String {
+        str.to_string()
     }
 }
 
@@ -171,9 +195,18 @@ impl TypeSet for TypeSet128 {
     type Integer = <Self::Parser as ParserTypeSet>::Integer;
     type SignedInteger = i128;
     type Float = <Self::Parser as ParserTypeSet>::Float;
+    type String = String;
 
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
         i128::try_from(v).map_err(|_| OperatorError::RuntimeError)
+    }
+
+    fn load_string<'s>(_ctx: &'s dyn ExprContext<Self>, str: &'s Self::String) -> &'s str {
+        str
+    }
+
+    fn store_string(_ctx: &mut dyn ExprContext<Self>, str: &str) -> Self::String {
+        str.to_string()
     }
 }
 
@@ -313,12 +346,6 @@ pub trait ExprContext<T = DefaultTypeSet>
 where
     T: TypeSet,
 {
-    /// Implements string interning.
-    fn intern_string(&mut self, s: &str) -> StringIndex;
-
-    /// Loads an interned string.
-    fn load_interned_string(&self, idx: StringIndex) -> &str;
-
     /// Attempts to load a variable from the context.
     fn try_load_variable(&self, variable: &str) -> Option<TypedValue<T>>;
 
@@ -426,9 +453,7 @@ where
             Expression::Literal { value } => match &value.value {
                 ast::LiteralValue::Integer(value) => TypedValue::<T>::MaybeSignedInt(*value),
                 ast::LiteralValue::Float(value) => TypedValue::<T>::Float(*value),
-                ast::LiteralValue::String(value) => {
-                    TypedValue::<T>::String(self.context.intern_string(value))
-                }
+                ast::LiteralValue::String(value) => value.store(self.context),
                 ast::LiteralValue::Boolean(value) => TypedValue::<T>::Bool(*value),
             },
             Expression::UnaryOperator { name, operand } => match name.source(self.source) {
@@ -625,7 +650,6 @@ where
 {
     variables: IndexMap<String, TypedValue<T>>,
     functions: HashMap<String, ExprFn<'ctx, T>>,
-    strings: StringInterner,
     marker: std::marker::PhantomData<T>,
 }
 
@@ -633,14 +657,6 @@ impl<T> ExprContext<T> for Context<'_, T>
 where
     T: TypeSet,
 {
-    fn intern_string(&mut self, s: &str) -> StringIndex {
-        self.strings.intern(s)
-    }
-
-    fn load_interned_string(&self, idx: StringIndex) -> &str {
-        self.strings.lookup(idx)
-    }
-
     fn try_load_variable(&self, variable: &str) -> Option<TypedValue<T>> {
         self.variables.get(variable).cloned()
     }
@@ -688,7 +704,6 @@ where
         Self {
             variables: IndexMap::new(),
             functions: HashMap::new(),
-            strings: StringInterner::new(),
             marker: std::marker::PhantomData,
         }
     }
@@ -734,13 +749,13 @@ where
     pub fn evaluate<'s, V>(
         &'s mut self,
         expression: &'s str,
-    ) -> Result<V::Output<'s>, ExpressionError<'s>>
+    ) -> Result<V::Output, ExpressionError<'s>>
     where
-        V: Load<T>,
+        V: LoadOwned<T>,
     {
         let result = self.evaluate_any(expression)?;
         let result_ty = result.type_of();
-        V::load(self, result).ok_or_else(|| ExpressionError {
+        V::load(self, &result).ok_or_else(|| ExpressionError {
             error: EvalError {
                 message: format!(
                     "Expression evaluates to {result_ty}, which cannot be converted to {}",
@@ -837,8 +852,8 @@ mod test {
         assert_eq!(ctx.evaluate::<bool>("true ^ true"), Ok(false));
         assert_eq!(ctx.evaluate::<u64>("!0x1111"), Ok(0xFFFF_FFFF_FFFF_EEEE));
         assert_eq!(
-            ctx.evaluate::<&str>("concatenate(five(), \"six\")"),
-            Ok("fivesix")
+            ctx.evaluate::<String>("concatenate(five(), \"six\")"),
+            Ok(String::from("fivesix"))
         );
         assert_eq!(ctx.evaluate::<bool>("signed * 2 == 60"), Ok(true));
     }

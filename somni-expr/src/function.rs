@@ -70,7 +70,7 @@ for_all_tuples! {
 
                 let idx = 0;
                 $(
-                    let $arg = <$arg>::load(ctx, args[idx].clone()).ok_or_else(|| {
+                    let $arg = <$arg>::load(ctx, &args[idx]).ok_or_else(|| {
                         FunctionCallError::IncorrectArgumentType { idx, expected: $arg::TYPE }
                     })?;
                     let idx = idx + 1;

@@ -1,7 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use crate::{codegen, error::CompileError, ir, transform_ir::transform_ir, vm::EvalContext};
-use somni_expr::TypedValue;
+use crate::{
+    codegen,
+    error::CompileError,
+    ir,
+    transform_ir::transform_ir,
+    vm::{EvalContext, TypedValue},
+};
 use somni_parser::parser::parse;
 
 fn walk(dir: &Path, on_file: &impl Fn(&Path)) {
