@@ -897,7 +897,7 @@ Evaluation error
  ---> at line 1 column 10
   |
 1 | func(20, true)
-  |          ^^^^ func expects argument 1 to be int, got bool"#,
+  |          ^^^^ func expects argument 1 to be u64, got bool"#,
         );
     }
 }
