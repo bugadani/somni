@@ -234,10 +234,7 @@ impl ValueType for String {
 
 /// Represents any value in the expression language.
 #[derive(Debug)]
-pub enum TypedValue<T = DefaultTypeSet>
-where
-    T: TypeSet,
-{
+pub enum TypedValue<T: TypeSet = DefaultTypeSet> {
     /// Represents no value.
     Void,
     /// Represents an integer that may be signed or unsigned.
@@ -254,10 +251,7 @@ where
     String(T::String),
 }
 
-impl<T> PartialEq for TypedValue<T>
-where
-    T: TypeSet,
-{
+impl<T: TypeSet> PartialEq for TypedValue<T> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::MaybeSignedInt(lhs), Self::MaybeSignedInt(rhs)) => lhs == rhs,
@@ -271,10 +265,7 @@ where
     }
 }
 
-impl<T> Clone for TypedValue<T>
-where
-    T: TypeSet,
-{
+impl<T: TypeSet> Clone for TypedValue<T> {
     fn clone(&self) -> Self {
         match self {
             Self::Void => Self::Void,
@@ -288,10 +279,7 @@ where
     }
 }
 
-impl<T> TypedValue<T>
-where
-    T: TypeSet,
-{
+impl<T: TypeSet> TypedValue<T> {
     /// Returns the Somni type of this value.
     pub fn type_of(&self) -> Type {
         match self {
@@ -306,107 +294,45 @@ where
     }
 }
 
-pub trait Load<T = DefaultTypeSet>
-where
-    T: TypeSet,
-{
+/// Loads an owned Rust value from a TypedValue.
+pub trait LoadOwned<T: TypeSet = DefaultTypeSet> {
+    type Output;
+
+    /// Loads an owned value from the given type context.
+    fn load_owned(_ctx: &T, typed: &TypedValue<T>) -> Option<Self::Output>;
+}
+
+/// Loads a borrowed Rust value from a TypedValue.
+pub trait Load<T: TypeSet = DefaultTypeSet> {
     type Output<'s>
     where
         T: 's;
 
+    /// Loads a borrowed value from the given type context.
     fn load<'s>(_ctx: &'s T, typed: &'s TypedValue<T>) -> Option<Self::Output<'s>>;
 }
 
-pub trait LoadOwned<T = DefaultTypeSet>
-where
-    T: TypeSet,
-{
-    type Output;
-
-    fn load(_ctx: &T, typed: &TypedValue<T>) -> Option<Self::Output>;
-}
-
-pub trait Store<T = DefaultTypeSet>
-where
-    T: TypeSet,
-{
+/// Stores a Rust value into a TypedValue.
+pub trait Store<T: TypeSet = DefaultTypeSet> {
+    /// Stores a Rust value into a TypedValue using the given type context.
     fn store(&self, _ctx: &mut T) -> TypedValue<T>;
 }
 
-macro_rules! load {
-    ($type:ty, [$($kind:ident),+] $(, $ts_kind:ident)?) => {
-        impl<T> LoadOwned<T> for $type
-        where
-            T: TypeSet$(<$ts_kind = $type>)?,
-        {
-            type Output = Self;
-            fn load(_ctx: &T, typed: &TypedValue<T>)
-                -> Option<Self::Output> {
-                $(
-                    if let TypedValue::$kind(value) = typed {
-                        return Some(*value);
-                    }
-                )+
-
-                None
-            }
-        }
-
-        impl<T> Load<T> for $type
-        where
-            T: TypeSet$(<$ts_kind = $type>)?,
-        {
-            type Output<'s>
-                = Self
-            where
-                T: 's;
+macro_rules! load_from_owned {
+    ($type:ty $(,$kind:ident)?) => {
+        impl<T: TypeSet $(<$kind = Self>)?> Load<T> for $type {
+            type Output<'s> = Self;
 
             fn load(ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
-                <Self as LoadOwned<T>>::load(ctx, typed)
+                <Self as LoadOwned<T>>::load_owned(ctx, typed)
             }
         }
-    };
+    }
 }
-macro_rules! load_signed {
-    ($type:ty, $kind:ident $(, $ts_kind:ident)?) => {
-        impl<T> LoadOwned<T> for $type
-        where
-            T: TypeSet$(<$ts_kind = $type>)?,
-        {
-            type Output = Self;
-            fn load(_ctx: &T, typed: &TypedValue<T>)
-                -> Option<Self::Output> {
-                if let TypedValue::SignedInt(value) = typed {
-                    Some(*value)
-                } else if let TypedValue::MaybeSignedInt(value) = typed {
-                    T::to_signed(*value).ok()
-                } else {
-                    None
-                }
-            }
-        }
 
-        impl<T> Load<T> for $type
-        where
-            T: TypeSet$(<$ts_kind = $type>)?,
-        {
-            type Output<'s>
-                = Self
-            where
-                T: 's;
-
-            fn load(ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
-                <Self as LoadOwned<T>>::load(ctx, typed)
-            }
-        }
-    };
-}
 macro_rules! store {
     ($type:ty, $kind:ident $(, $ts_kind:ident)?) => {
-        impl<T> Store<T> for $type
-        where
-            T: TypeSet$(<$ts_kind = $type>)?,
-        {
+        impl<T: TypeSet$(<$ts_kind = $type>)?> Store<T> for $type {
             fn store(&self, _ctx: &mut T) -> TypedValue<T> {
                 TypedValue::$kind(*self)
             }
@@ -414,34 +340,28 @@ macro_rules! store {
     };
 }
 
-load!(u32, [Int, MaybeSignedInt], Integer);
-load!(u64, [Int, MaybeSignedInt], Integer);
-load!(u128, [Int, MaybeSignedInt], Integer);
-load!(f32, [Float], Float);
-load!(f64, [Float], Float);
-load!(bool, [Bool]);
+macro_rules! for_each {
+    ($($pattern:tt in [$($choice:ty),*] => $code:tt;)*) => {
+        $(
+            macro_rules! inner { $pattern => $code; }
 
-load_signed!(i32, SignedInt, SignedInteger);
-load_signed!(i64, SignedInt, SignedInteger);
-load_signed!(i128, SignedInt, SignedInteger);
+            $(
+                inner!($choice);
+            )*
+        )*
+    };
+}
 
-store!(u32, Int, Integer);
-store!(u64, Int, Integer);
-store!(u128, Int, Integer);
-store!(i32, SignedInt, SignedInteger);
-store!(i64, SignedInt, SignedInteger);
-store!(i128, SignedInt, SignedInteger);
-store!(f32, Float, Float);
-store!(f64, Float, Float);
-store!(bool, Bool);
-
-impl<T> LoadOwned<T> for ()
-where
-    T: TypeSet,
-{
+// LoadOwned
+impl<T: TypeSet> LoadOwned<T> for TypedValue<T> {
     type Output = Self;
-
-    fn load(_ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
+    fn load_owned(_ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
+        Some(typed.clone())
+    }
+}
+impl<T: TypeSet> LoadOwned<T> for () {
+    type Output = Self;
+    fn load_owned(_ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
         if let TypedValue::Void = typed {
             Some(())
         } else {
@@ -449,84 +369,72 @@ where
         }
     }
 }
-
-impl<T> Load<T> for ()
-where
-    T: TypeSet,
-{
-    type Output<'s>
-        = Self
-    where
-        T: 's;
-
-    fn load(ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
-        <Self as LoadOwned<T>>::load(ctx, typed)
-    }
-}
-impl<T> Store<T> for ()
-where
-    T: TypeSet,
-{
-    fn store(&self, _ctx: &mut T) -> TypedValue<T> {
-        TypedValue::Void
-    }
-}
-
-impl<T> LoadOwned<T> for TypedValue<T>
-where
-    T: TypeSet,
-{
+impl<T: TypeSet> LoadOwned<T> for bool {
     type Output = Self;
-
-    fn load(_ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
-        Some(typed.clone())
+    fn load_owned(_ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
+        if let TypedValue::Bool(value) = typed {
+            Some(*value)
+        } else {
+            None
+        }
     }
 }
 
-impl<T> Load<T> for TypedValue<T>
-where
-    T: TypeSet,
-{
-    type Output<'s>
-        = Self
-    where
-        T: 's;
+for_each! {
+    // Unsigned integers
+    ($type:ty) in [u32, u64, u128] => {
+        impl<T: TypeSet<Integer = Self>> LoadOwned<T> for $type {
+            type Output = Self;
+            fn load_owned(_ctx: &T, typed: &TypedValue<T>) -> Option<Self::Output> {
+                match typed {
+                    TypedValue::MaybeSignedInt(value) => Some(*value),
+                    TypedValue::Int(value) => Some(*value),
+                    _ => None,
+                }
+            }
+        }
+    };
 
-    fn load(ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
-        <Self as LoadOwned<T>>::load(ctx, typed)
-    }
-}
-impl<T> Store<T> for TypedValue<T>
-where
-    T: TypeSet,
-{
-    fn store(&self, _ctx: &mut T) -> TypedValue<T> {
-        self.clone()
-    }
+    // Signed integers
+    ($type:ty) in [i32, i64, i128] => {
+        impl<T: TypeSet<SignedInteger = Self>> LoadOwned<T> for $type {
+            type Output = Self;
+            fn load_owned(_ctx: &T, typed: &TypedValue<T>) -> Option<Self::Output> {
+                match typed {
+                    TypedValue::MaybeSignedInt(value) => T::to_signed(*value).ok(),
+                    TypedValue::SignedInt(value) => Some(*value),
+                    _ => None,
+                }
+            }
+        }
+    };
+
+    // Floats
+    ($type:ty) in [f32, f64] => {
+        impl<T: TypeSet<Float = Self>> LoadOwned<T> for $type {
+            type Output = Self;
+            fn load_owned(_ctx: &T, typed: &TypedValue<T>) -> Option<Self::Output> {
+                match typed {
+                    TypedValue::Float(value) => Some(*value),
+                    _ => None,
+                }
+            }
+        }
+    };
+
+    // Strings
+    ($type:ty) in [String, Box<str>] => {
+        impl<T: TypeSet> LoadOwned<T> for $type {
+            type Output = Self;
+            fn load_owned(ctx: &T, typed: &TypedValue<T>) -> Option<Self::Output> {
+                <&str as Load<T>>::load(ctx, typed).map(Into::into)
+            }
+        }
+    };
 }
 
-impl<T> Store<T> for &str
-where
-    T: TypeSet,
-{
-    fn store(&self, ctx: &mut T) -> TypedValue<T> {
-        TypedValue::String(ctx.store_string(self))
-    }
-}
-
-impl<T> Store<T> for String
-where
-    T: TypeSet,
-{
-    fn store(&self, ctx: &mut T) -> TypedValue<T> {
-        TypedValue::String(ctx.store_string(self))
-    }
-}
-
-impl<T> Load<T> for &str
-where
-    T: TypeSet,
-{
+// Load
+impl<T: TypeSet> Load<T> for &str {
     type Output<'s>
         = &'s str
     where
@@ -541,31 +449,49 @@ where
     }
 }
 
-impl<T> LoadOwned<T> for String
-where
-    T: TypeSet,
-{
-    type Output = String;
+for_each! {
+    ($type:ty) in [(), bool, TypedValue<T>, String, Box<str>] => { load_from_owned!($type); };
 
-    fn load(ctx: &T, typed: &TypedValue<T>) -> Option<Self::Output> {
-        if let TypedValue::String(index) = typed {
-            Some(ctx.load_string(index).to_string())
-        } else {
-            None
-        }
+    // Unsigned integers
+    ($type:ty) in [u32, u64, u128] => { load_from_owned!($type, Integer); };
+
+    // Signed integers
+    ($type:ty) in [i32, i64, i128] => { load_from_owned!($type, SignedInteger); };
+
+    // Floats
+    ($type:ty) in [f32, f64] => { load_from_owned!($type, Float); };
+}
+
+// Store
+impl<T: TypeSet> Store<T> for TypedValue<T> {
+    fn store(&self, _ctx: &mut T) -> TypedValue<T> {
+        self.clone()
     }
 }
 
-impl<T> Load<T> for String
-where
-    T: TypeSet,
-{
-    type Output<'s>
-        = Self
-    where
-        T: 's;
-
-    fn load(ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
-        <Self as LoadOwned<T>>::load(ctx, typed)
+impl<T: TypeSet> Store<T> for () {
+    fn store(&self, _ctx: &mut T) -> TypedValue<T> {
+        TypedValue::Void
     }
+}
+store!(bool, Bool);
+
+for_each! {
+    // Unsigned integers
+    ($type:ty) in [u32, u64, u128] => { store!($type, Int, Integer); };
+
+    // Signed integers
+    ($type:ty) in [i32, i64, i128] => { store!($type, SignedInt, SignedInteger); };
+
+    // Floats
+    ($type:ty) in [f32, f64] => { store!($type, Float, Float); };
+
+    // Strings
+    ($type:ty) in [&str, String, Box<str>] => {
+        impl<T: TypeSet> Store<T> for $type {
+            fn store(&self, ctx: &mut T) -> TypedValue<T> {
+                TypedValue::String(ctx.store_string(self))
+            }
+        }
+    };
 }

@@ -557,7 +557,7 @@ impl<'p> EvalContext<'p> {
         let result = visitor.visit_expression(&ast).unwrap();
 
         let result_ty = result.type_of();
-        V::load(self.type_context(), &result).unwrap_or_else(|| {
+        V::load_owned(self.type_context(), &result).unwrap_or_else(|| {
             panic!(
                 "{}",
                 MarkInSource(

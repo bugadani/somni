@@ -113,7 +113,9 @@ mod private {
 
 use private::Sealed;
 
-/// Defines numeric types in expressions.
+/// Defines the backing types for Somni types.
+///
+/// The [`LoadOwned`], [`Load`] and [`Store`] traits can be used to convert between Rust and Somni types.
 pub trait TypeSet: Sized + Default + Debug + 'static {
     /// The typeset that will be used to parse source code.
     type Parser: ParserTypeSet<Integer = Self::Integer, Float = Self::Float>;
@@ -760,7 +762,7 @@ where
     {
         let result = self.evaluate_any(expression)?;
         let result_ty = result.type_of();
-        V::load(self.type_context(), &result).ok_or_else(|| ExpressionError {
+        V::load_owned(self.type_context(), &result).ok_or_else(|| ExpressionError {
             error: EvalError {
                 message: format!(
                     "Expression evaluates to {result_ty}, which cannot be converted to {}",
