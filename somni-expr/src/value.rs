@@ -1,6 +1,6 @@
 use somni_parser::parser::DefaultTypeSet;
 
-use crate::{ExprContext, OperatorError, Type, TypeSet};
+use crate::{OperatorError, Type, TypeSet};
 
 #[doc(hidden)]
 pub trait ValueType: Sized + Clone + PartialEq + std::fmt::Debug {
@@ -314,8 +314,7 @@ where
     where
         T: 's;
 
-    fn load<'s>(_ctx: &'s dyn ExprContext<T>, typed: &'s TypedValue<T>)
-        -> Option<Self::Output<'s>>;
+    fn load<'s>(_ctx: &'s T, typed: &'s TypedValue<T>) -> Option<Self::Output<'s>>;
 }
 
 pub trait LoadOwned<T = DefaultTypeSet>: ValueType
@@ -324,14 +323,14 @@ where
 {
     type Output;
 
-    fn load(_ctx: &dyn ExprContext<T>, typed: &TypedValue<T>) -> Option<Self::Output>;
+    fn load(_ctx: &T, typed: &TypedValue<T>) -> Option<Self::Output>;
 }
 
 pub trait Store<T = DefaultTypeSet>: ValueType
 where
     T: TypeSet,
 {
-    fn store(&self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T>;
+    fn store(&self, _ctx: &mut T) -> TypedValue<T>;
 }
 
 macro_rules! load {
@@ -341,7 +340,7 @@ macro_rules! load {
             T: TypeSet$(<$ts_kind = $type>)?,
         {
             type Output = Self;
-            fn load(_ctx: &dyn ExprContext<T>, typed: &TypedValue<T>)
+            fn load(_ctx: &T, typed: &TypedValue<T>)
                 -> Option<Self::Output> {
                 $(
                     if let TypedValue::$kind(value) = typed {
@@ -362,7 +361,7 @@ macro_rules! load {
             where
                 T: 's;
 
-            fn load(ctx: &dyn ExprContext<T>, typed: &TypedValue<T>) -> Option<Self> {
+            fn load(ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
                 <Self as LoadOwned<T>>::load(ctx, typed)
             }
         }
@@ -375,7 +374,7 @@ macro_rules! load_signed {
             T: TypeSet$(<$ts_kind = $type>)?,
         {
             type Output = Self;
-            fn load(_ctx: &dyn ExprContext<T>, typed: &TypedValue<T>)
+            fn load(_ctx: &T, typed: &TypedValue<T>)
                 -> Option<Self::Output> {
                 if let TypedValue::SignedInt(value) = typed {
                     Some(*value)
@@ -396,7 +395,7 @@ macro_rules! load_signed {
             where
                 T: 's;
 
-            fn load(ctx: &dyn ExprContext<T>, typed: &TypedValue<T>) -> Option<Self> {
+            fn load(ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
                 <Self as LoadOwned<T>>::load(ctx, typed)
             }
         }
@@ -408,7 +407,7 @@ macro_rules! store {
         where
             T: TypeSet$(<$ts_kind = $type>)?,
         {
-            fn store(&self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
+            fn store(&self, _ctx: &mut T) -> TypedValue<T> {
                 TypedValue::$kind(*self)
             }
         }
@@ -442,7 +441,7 @@ where
 {
     type Output = Self;
 
-    fn load(_ctx: &dyn ExprContext<T>, typed: &TypedValue<T>) -> Option<Self> {
+    fn load(_ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
         if let TypedValue::Void = typed {
             Some(())
         } else {
@@ -460,7 +459,7 @@ where
     where
         T: 's;
 
-    fn load(ctx: &dyn ExprContext<T>, typed: &TypedValue<T>) -> Option<Self> {
+    fn load(ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
         <Self as LoadOwned<T>>::load(ctx, typed)
     }
 }
@@ -468,7 +467,7 @@ impl<T> Store<T> for ()
 where
     T: TypeSet,
 {
-    fn store(&self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
+    fn store(&self, _ctx: &mut T) -> TypedValue<T> {
         TypedValue::Void
     }
 }
@@ -477,8 +476,8 @@ impl<T> Store<T> for &str
 where
     T: TypeSet,
 {
-    fn store(&self, ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
-        TypedValue::String(T::store_string(ctx, self))
+    fn store(&self, ctx: &mut T) -> TypedValue<T> {
+        TypedValue::String(ctx.store_string(self))
     }
 }
 
@@ -486,8 +485,8 @@ impl<T> Store<T> for String
 where
     T: TypeSet,
 {
-    fn store(&self, ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
-        TypedValue::String(T::store_string(ctx, self))
+    fn store(&self, ctx: &mut T) -> TypedValue<T> {
+        TypedValue::String(ctx.store_string(self))
     }
 }
 
@@ -500,9 +499,9 @@ where
     where
         T: 's;
 
-    fn load<'s>(ctx: &'s dyn ExprContext<T>, typed: &'s TypedValue<T>) -> Option<Self::Output<'s>> {
+    fn load<'s>(ctx: &'s T, typed: &'s TypedValue<T>) -> Option<Self::Output<'s>> {
         if let TypedValue::String(index) = typed {
-            Some(T::load_string(ctx, index))
+            Some(ctx.load_string(index))
         } else {
             None
         }
@@ -515,9 +514,9 @@ where
 {
     type Output = String;
 
-    fn load(ctx: &dyn ExprContext<T>, typed: &TypedValue<T>) -> Option<Self::Output> {
+    fn load(ctx: &T, typed: &TypedValue<T>) -> Option<Self::Output> {
         if let TypedValue::String(index) = typed {
-            Some(T::load_string(ctx, index).to_string())
+            Some(ctx.load_string(index).to_string())
         } else {
             None
         }
@@ -533,7 +532,7 @@ where
     where
         T: 's;
 
-    fn load(ctx: &dyn ExprContext<T>, typed: &TypedValue<T>) -> Option<Self> {
+    fn load(ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
         <Self as LoadOwned<T>>::load(ctx, typed)
     }
 }

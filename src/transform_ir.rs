@@ -601,7 +601,7 @@ fn propagate_variable_types_inner<'s>(
     source: &'s str,
     _name: StringIndex,
     function: &mut ir::Function,
-    strings: &string_interner::Strings,
+    strings: &string_interner::StringInterner,
     globals: &IndexMap<StringIndex, ir::GlobalVariableInfo>,
     signatures: &HashMap<StringIndex, FunctionSignature>,
 ) -> Result<(), CompileError<'s>> {

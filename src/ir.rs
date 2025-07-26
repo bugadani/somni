@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 use crate::{
     error::CompileError,
     ir,
-    string_interner::{StringIndex, StringInterner, Strings},
+    string_interner::{StringIndex, StringInterner},
     types::{TypedValue, VmTypeSet},
     variable_tracker::{LocalVariableIndex, RestorePoint, ScopeData, VariableTracker},
 };
@@ -367,7 +367,7 @@ impl GlobalVariableIndex {
 pub struct Program {
     pub globals: IndexMap<StringIndex, GlobalVariableInfo>,
     pub functions: IndexMap<StringIndex, Function>,
-    pub strings: Strings,
+    pub strings: StringInterner,
 }
 
 impl Program {
@@ -475,7 +475,7 @@ impl Program {
         Ok(Program {
             globals,
             functions,
-            strings: strings.finalize(),
+            strings,
         })
     }
 }

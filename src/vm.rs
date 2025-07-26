@@ -93,8 +93,8 @@ somni_expr::for_all_tuples! {
                 )*
 
                 Ok(VmTypedValue::from(self($(
-                    <$arg>::load(ctx, &$arg).expect("Expect to be able to load the specified type"),
-                )*).store(ctx)))
+                    <$arg>::load(&ctx.type_ctx, &$arg).expect("Expect to be able to load the specified type"),
+                )*).store(&mut ctx.type_ctx)))
             }
         }
     };
@@ -125,7 +125,7 @@ impl<'p> SomniFn<'p> {
         let expr_func = func.clone();
         Self {
             func: Box::new(move |ctx, sp| func.call_from_vm(ctx, sp)),
-            expr_func: Box::new(move |ctx, args| expr_func.call(ctx, args)),
+            expr_func: Box::new(move |ctx, args| expr_func.call(ctx.type_context(), args)),
         }
     }
 
@@ -152,6 +152,7 @@ pub struct EvalContext<'p> {
     strings: &'p mut Strings,
     intrinsics: HashMap<StringIndex, SomniFn<'p>>,
     state: EvalState,
+    type_ctx: VmTypeSet,
 
     memory: Memory,
 
@@ -375,6 +376,7 @@ impl<'p> EvalContext<'p> {
         EvalContext {
             intrinsics: HashMap::new(),
             state: EvalState::Idle,
+            type_ctx: program.type_ctx.clone(),
             program,
             memory: Memory::new(),
             source,
@@ -826,6 +828,10 @@ impl<'p> EvalContext<'p> {
 }
 
 impl<'s> ExprContext<VmTypeSet> for EvalContext<'s> {
+    fn type_context(&mut self) -> &mut VmTypeSet {
+        &mut self.type_ctx
+    }
+
     fn try_load_variable(&self, name: &str) -> Option<TypedValue> {
         let name_idx = self
             .strings

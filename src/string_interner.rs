@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use somni_expr::{
     value::{Load, Store, ValueType},
-    ExprContext, OperatorError, Type, TypeSet, TypedValue,
+    OperatorError, Type, TypeSet, TypedValue,
 };
 
 /// The ID of a string in the interner.
@@ -35,10 +35,7 @@ where
     where
         T: 's;
 
-    fn load<'s>(
-        _ctx: &'s dyn ExprContext<T>,
-        typed: &'s TypedValue<T>,
-    ) -> Option<Self::Output<'s>> {
+    fn load<'s>(_ctx: &'s T, typed: &'s TypedValue<T>) -> Option<Self::Output<'s>> {
         if let TypedValue::String(value) = typed {
             return Some(*value);
         }
@@ -50,7 +47,7 @@ impl<T> Store<T> for StringIndex
 where
     T: TypeSet<String = StringIndex>,
 {
-    fn store(&self, _ctx: &mut dyn ExprContext<T>) -> TypedValue<T> {
+    fn store(&self, _ctx: &mut T) -> TypedValue<T> {
         TypedValue::String(*self)
     }
 }
@@ -63,11 +60,6 @@ pub struct Strings {
 }
 
 impl Strings {
-    /// Creates a new `Strings` instance.
-    pub fn new() -> Self {
-        Strings::default()
-    }
-
     /// Interns a string and returns its index.
     pub fn intern(&mut self, value: &str) -> StringIndex {
         let start = self.strings.len();

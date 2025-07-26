@@ -1,7 +1,7 @@
 use somni_expr::{OperatorError, Type, TypeSet};
 use somni_parser::parser::TypeSet as ParserTypeSet;
 
-use crate::string_interner::StringIndex;
+use crate::string_interner::{StringIndex, StringInterner};
 
 #[doc(hidden)]
 pub trait MemoryRepr: Sized + Copy + PartialEq {
@@ -164,8 +164,14 @@ impl TypedValue {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct VmTypeSet;
+#[derive(Debug, Clone, Default)]
+pub struct VmTypeSet(StringInterner);
+
+impl VmTypeSet {
+    pub fn new(string_interner: StringInterner) -> Self {
+        Self(string_interner)
+    }
+}
 
 impl ParserTypeSet for VmTypeSet {
     type Integer = u64;
@@ -184,14 +190,11 @@ impl TypeSet for VmTypeSet {
         i64::try_from(v).map_err(|_| OperatorError::RuntimeError)
     }
 
-    fn load_string<'s>(
-        _ctx: &'s dyn somni_expr::ExprContext<Self>,
-        _str: &'s Self::String,
-    ) -> &'s str {
-        todo!()
+    fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
+        self.0.lookup(*str)
     }
 
-    fn store_string(_ctx: &mut dyn somni_expr::ExprContext<Self>, _str: &str) -> Self::String {
-        todo!()
+    fn store_string(&mut self, str: &str) -> Self::String {
+        self.0.intern(str)
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
     for_all_tuples,
     value::{Load, Store},
-    ExprContext, Type, TypeSet, TypedValue,
+    Type, TypeSet, TypedValue,
 };
 
 /// An error that occurs when calling a function.
@@ -34,11 +34,8 @@ where
 {
     const ARG_COUNT: usize;
 
-    fn call(
-        &self,
-        ctx: &mut dyn ExprContext<T>,
-        args: &[TypedValue<T>],
-    ) -> Result<TypedValue<T>, FunctionCallError>;
+    fn call(&self, ctx: &mut T, args: &[TypedValue<T>])
+        -> Result<TypedValue<T>, FunctionCallError>;
 }
 
 macro_rules! substitute {
@@ -63,7 +60,7 @@ for_all_tuples! {
             const ARG_COUNT: usize = 0 $( + substitute!($arg, 1) )* ;
 
             #[allow(non_snake_case, unused)]
-            fn call(&self, ctx: &mut dyn ExprContext<T>, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> {
+            fn call(&self, ctx: &mut T, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> {
                 if args.len() != Self::ARG_COUNT {
                     return Err(FunctionCallError::IncorrectArgumentCount { expected: Self::ARG_COUNT });
                 }
@@ -88,13 +85,7 @@ where
     T: TypeSet,
 {
     #[allow(clippy::type_complexity)]
-    func: Box<
-        dyn Fn(
-                &mut dyn ExprContext<T>,
-                &[TypedValue<T>],
-            ) -> Result<TypedValue<T>, FunctionCallError>
-            + 'ctx,
-    >,
+    func: Box<dyn Fn(&mut T, &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> + 'ctx>,
 }
 
 impl<'ctx, T> ExprFn<'ctx, T>
@@ -112,7 +103,7 @@ where
 
     pub fn call(
         &self,
-        ctx: &mut dyn ExprContext<T>,
+        ctx: &mut T,
         args: &[TypedValue<T>],
     ) -> Result<TypedValue<T>, FunctionCallError> {
         (self.func)(ctx, args)

@@ -44,7 +44,7 @@ fn main() {
         println!("{:?}", e);
         panic!("Transformation failed");
     }
-    let mut strings = ir.strings.clone();
+    let mut strings = ir.strings.clone().finalize();
     let program = match codegen::compile(&source_code, &ir) {
         Ok(program) => program,
         Err(e) => {

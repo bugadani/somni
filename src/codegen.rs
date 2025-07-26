@@ -285,6 +285,9 @@ pub struct Program {
     pub functions: IndexMap<StringIndex, Function>,
     pub external_functions: IndexMap<StringIndex, ExternalFunction>,
     pub debug_info: DebugInfo,
+
+    /// Type context used to evaluate initializers. VM needs to use this as the initial type context.
+    pub type_ctx: VmTypeSet,
 }
 
 impl Program {
@@ -313,6 +316,10 @@ impl Program {
 
 // This enables evaluating initializer expressions
 impl ExprContext<VmTypeSet> for Program {
+    fn type_context(&mut self) -> &mut VmTypeSet {
+        &mut self.type_ctx
+    }
+
     fn try_load_variable(&self, variable: &str) -> Option<ExprTypedValue<VmTypeSet>> {
         let idx = self.debug_info.strings.find(variable)?;
         self.globals[&idx].initial_value.map(ExprTypedValue::from)
@@ -337,6 +344,8 @@ impl ExprContext<VmTypeSet> for Program {
 }
 
 pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, CompileError<'s>> {
+    let interner = ir.strings.clone();
+    let strings = ir.strings.clone().finalize();
     let mut this = Compiler {
         program: Program {
             code: Vec::new(),
@@ -345,12 +354,12 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
             external_functions: IndexMap::new(),
             debug_info: DebugInfo {
                 source: source.to_string(),
-                strings: ir.strings.clone(),
+                strings,
                 instruction_locations: Vec::new(),
                 function_names: ir.functions.iter().map(|(name, _)| *name).collect(),
             },
+            type_ctx: VmTypeSet::new(interner),
         },
-        strings: ir.strings.clone(),
     };
 
     let mut global_addr = 0;
@@ -473,7 +482,6 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
 
 pub struct Compiler {
     program: Program,
-    strings: Strings,
 }
 
 struct FunctionCompiler<'s, 'p> {
@@ -690,7 +698,8 @@ impl<'s> FunctionCompiler<'s, '_> {
                     .address_of_variable(*rhs)
                     .expect("Variable not found in stack allocator");
 
-                let (normalized, swap) = match self.compiler.strings.lookup(*op) {
+                let (normalized, swap) = match self.compiler.program.debug_info.strings.lookup(*op)
+                {
                     ">" => ("<", true),
                     ">=" => ("<=", true),
                     other => (other, false),
@@ -745,7 +754,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                     .address_of_variable(*operand)
                     .expect("Variable not found in stack allocator");
 
-                let instruction = match self.compiler.strings.lookup(*op) {
+                let instruction = match self.compiler.program.debug_info.strings.lookup(*op) {
                     "-" => Instruction::UnaryOperator {
                         ty: self.type_of_variable(*dst).unwrap(),
                         operator: UnaryOperator::Negate,

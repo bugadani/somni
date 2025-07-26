@@ -141,10 +141,10 @@ pub trait TypeSet: Sized + Default + Debug + 'static {
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError>;
 
     /// Loads a string.
-    fn load_string<'s>(ctx: &'s dyn ExprContext<Self>, str: &'s Self::String) -> &'s str;
+    fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str;
 
     /// Stores a string.
-    fn store_string(ctx: &mut dyn ExprContext<Self>, str: &str) -> Self::String;
+    fn store_string(&mut self, str: &str) -> Self::String;
 }
 
 impl TypeSet for DefaultTypeSet {
@@ -159,11 +159,11 @@ impl TypeSet for DefaultTypeSet {
         i64::try_from(v).map_err(|_| OperatorError::RuntimeError)
     }
 
-    fn load_string<'s>(_ctx: &'s dyn ExprContext<Self>, str: &'s Self::String) -> &'s str {
+    fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
         str
     }
 
-    fn store_string(_ctx: &mut dyn ExprContext<Self>, str: &str) -> Self::String {
+    fn store_string(&mut self, str: &str) -> Self::String {
         str.to_string()
     }
 }
@@ -180,11 +180,11 @@ impl TypeSet for TypeSet32 {
         i32::try_from(v).map_err(|_| OperatorError::RuntimeError)
     }
 
-    fn load_string<'s>(_ctx: &'s dyn ExprContext<Self>, str: &'s Self::String) -> &'s str {
+    fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
         str
     }
 
-    fn store_string(_ctx: &mut dyn ExprContext<Self>, str: &str) -> Self::String {
+    fn store_string(&mut self, str: &str) -> Self::String {
         str.to_string()
     }
 }
@@ -201,11 +201,11 @@ impl TypeSet for TypeSet128 {
         i128::try_from(v).map_err(|_| OperatorError::RuntimeError)
     }
 
-    fn load_string<'s>(_ctx: &'s dyn ExprContext<Self>, str: &'s Self::String) -> &'s str {
+    fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
         str
     }
 
-    fn store_string(_ctx: &mut dyn ExprContext<Self>, str: &str) -> Self::String {
+    fn store_string(&mut self, str: &str) -> Self::String {
         str.to_string()
     }
 }
@@ -253,11 +253,7 @@ impl Display for OperatorError {
 
 macro_rules! dispatch_binary {
     ($method:ident) => {
-        pub(crate) fn $method(
-            ctx: &mut dyn ExprContext<T>,
-            lhs: Self,
-            rhs: Self,
-        ) -> Result<Self, OperatorError> {
+        pub(crate) fn $method(ctx: &mut T, lhs: Self, rhs: Self) -> Result<Self, OperatorError> {
             let result = match (lhs, rhs) {
                 (Self::Bool(value), Self::Bool(other)) => {
                     ValueType::$method(value, other)?.store(ctx)
@@ -302,10 +298,7 @@ macro_rules! dispatch_binary {
 
 macro_rules! dispatch_unary {
     ($method:ident) => {
-        pub(crate) fn $method(
-            ctx: &mut dyn ExprContext<T>,
-            operand: Self,
-        ) -> Result<Self, OperatorError> {
+        pub(crate) fn $method(ctx: &mut T, operand: Self) -> Result<Self, OperatorError> {
             match operand {
                 Self::Bool(value) => Ok(ValueType::$method(value)?.store(ctx)),
                 Self::Int(value) | Self::MaybeSignedInt(value) => {
@@ -346,6 +339,9 @@ pub trait ExprContext<T = DefaultTypeSet>
 where
     T: TypeSet,
 {
+    /// Returns a reference to the `TypeSet`.
+    fn type_context(&mut self) -> &mut T;
+
     /// Attempts to load a variable from the context.
     fn try_load_variable(&self, variable: &str) -> Option<TypedValue<T>>;
 
@@ -453,14 +449,14 @@ where
             Expression::Literal { value } => match &value.value {
                 ast::LiteralValue::Integer(value) => TypedValue::<T>::MaybeSignedInt(*value),
                 ast::LiteralValue::Float(value) => TypedValue::<T>::Float(*value),
-                ast::LiteralValue::String(value) => value.store(self.context),
+                ast::LiteralValue::String(value) => value.store(self.context.type_context()),
                 ast::LiteralValue::Boolean(value) => TypedValue::<T>::Bool(*value),
             },
             Expression::UnaryOperator { name, operand } => match name.source(self.source) {
                 "!" => {
                     let operand = self.visit_expression(operand)?;
 
-                    match TypedValue::<T>::not(self.context, operand) {
+                    match TypedValue::<T>::not(self.context.type_context(), operand) {
                         Ok(r) => r,
                         Err(error) => {
                             return Err(EvalError {
@@ -475,9 +471,11 @@ where
                 "-" => {
                     let value = self.visit_expression(operand)?;
                     let ty = value.type_of();
-                    TypedValue::<T>::negate(self.context, value).map_err(|e| EvalError {
-                        message: format!("Cannot negate {ty}: {e}").into_boxed_str(),
-                        location: operand.location(),
+                    TypedValue::<T>::negate(self.context.type_context(), value).map_err(|e| {
+                        EvalError {
+                            message: format!("Cannot negate {ty}: {e}").into_boxed_str(),
+                            location: operand.location(),
+                        }
                     })?
                 }
                 "&" => match operand.as_variable() {
@@ -522,22 +520,23 @@ where
 
                 let lhs = self.visit_expression(&operands[0])?;
                 let rhs = self.visit_expression(&operands[1])?;
+                let type_context = self.context.type_context();
                 let result = match name.source(self.source) {
-                    "+" => TypedValue::<T>::add(self.context, lhs, rhs),
-                    "-" => TypedValue::<T>::subtract(self.context, lhs, rhs),
-                    "*" => TypedValue::<T>::multiply(self.context, lhs, rhs),
-                    "/" => TypedValue::<T>::divide(self.context, lhs, rhs),
-                    "<" => TypedValue::<T>::less_than(self.context, lhs, rhs),
-                    ">" => TypedValue::<T>::less_than(self.context, rhs, lhs),
-                    "<=" => TypedValue::<T>::less_than_or_equal(self.context, lhs, rhs),
-                    ">=" => TypedValue::<T>::less_than_or_equal(self.context, rhs, lhs),
-                    "==" => TypedValue::<T>::equals(self.context, lhs, rhs),
-                    "!=" => TypedValue::<T>::not_equals(self.context, lhs, rhs),
-                    "|" => TypedValue::<T>::bitwise_or(self.context, lhs, rhs),
-                    "^" => TypedValue::<T>::bitwise_xor(self.context, lhs, rhs),
-                    "&" => TypedValue::<T>::bitwise_and(self.context, lhs, rhs),
-                    "<<" => TypedValue::<T>::shift_left(self.context, lhs, rhs),
-                    ">>" => TypedValue::<T>::shift_right(self.context, lhs, rhs),
+                    "+" => TypedValue::<T>::add(type_context, lhs, rhs),
+                    "-" => TypedValue::<T>::subtract(type_context, lhs, rhs),
+                    "*" => TypedValue::<T>::multiply(type_context, lhs, rhs),
+                    "/" => TypedValue::<T>::divide(type_context, lhs, rhs),
+                    "<" => TypedValue::<T>::less_than(type_context, lhs, rhs),
+                    ">" => TypedValue::<T>::less_than(type_context, rhs, lhs),
+                    "<=" => TypedValue::<T>::less_than_or_equal(type_context, lhs, rhs),
+                    ">=" => TypedValue::<T>::less_than_or_equal(type_context, rhs, lhs),
+                    "==" => TypedValue::<T>::equals(type_context, lhs, rhs),
+                    "!=" => TypedValue::<T>::not_equals(type_context, lhs, rhs),
+                    "|" => TypedValue::<T>::bitwise_or(type_context, lhs, rhs),
+                    "^" => TypedValue::<T>::bitwise_xor(type_context, lhs, rhs),
+                    "&" => TypedValue::<T>::bitwise_and(type_context, lhs, rhs),
+                    "<<" => TypedValue::<T>::shift_left(type_context, lhs, rhs),
+                    ">>" => TypedValue::<T>::shift_right(type_context, lhs, rhs),
 
                     other => {
                         return Err(EvalError {
@@ -651,12 +650,17 @@ where
     variables: IndexMap<String, TypedValue<T>>,
     functions: HashMap<String, ExprFn<'ctx, T>>,
     marker: std::marker::PhantomData<T>,
+    type_context: T,
 }
 
 impl<T> ExprContext<T> for Context<'_, T>
 where
     T: TypeSet,
 {
+    fn type_context(&mut self) -> &mut T {
+        &mut self.type_context
+    }
+
     fn try_load_variable(&self, variable: &str) -> Option<TypedValue<T>> {
         self.variables.get(variable).cloned()
     }
@@ -673,7 +677,7 @@ where
     ) -> Result<TypedValue<T>, FunctionCallError> {
         match self.functions.remove_entry(function_name) {
             Some((name, func)) => {
-                let retval = func.call(self, args);
+                let retval = func.call(self.type_context(), args);
                 self.functions.insert(name, func);
 
                 retval
@@ -705,6 +709,7 @@ where
             variables: IndexMap::new(),
             functions: HashMap::new(),
             marker: std::marker::PhantomData,
+            type_context: T::default(),
         }
     }
 
@@ -755,7 +760,7 @@ where
     {
         let result = self.evaluate_any(expression)?;
         let result_ty = result.type_of();
-        V::load(self, &result).ok_or_else(|| ExpressionError {
+        V::load(self.type_context(), &result).ok_or_else(|| ExpressionError {
             error: EvalError {
                 message: format!(
                     "Expression evaluates to {result_ty}, which cannot be converted to {}",
@@ -773,7 +778,7 @@ where
     where
         V: Store<T>,
     {
-        let stored = value.store(self);
+        let stored = value.store(self.type_context());
         self.variables.insert(name.to_string(), stored);
     }
 
