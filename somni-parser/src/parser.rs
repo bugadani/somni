@@ -47,7 +47,7 @@
 //! `STRING`: Double-quoted strings with escape sequences.
 
 use std::{
-    fmt::Debug,
+    fmt::{Debug, Display},
     num::{ParseFloatError, ParseIntError},
 };
 
@@ -57,8 +57,9 @@ use crate::{
         FunctionArgument, GlobalVariable, If, Item, Literal, LiteralValue, Loop, Program,
         ReturnDecl, ReturnWithValue, Statement, TypeHint, VariableDefinition,
     },
-    lexer::{Location, Token, TokenKind},
+    lexer::{Token, TokenKind, Tokenizer},
     parser::private::Sealed,
+    Error, Location,
 };
 
 mod private {
@@ -109,13 +110,13 @@ impl FloatParser for f64 {
 }
 
 /// Defines the numeric types used in the parser.
-pub trait TypeSet: Clone + Debug + Copy {
+pub trait TypeSet: Debug + Default {
     type Integer: IntParser + Clone + Copy + PartialEq + Debug;
     type Float: FloatParser + Clone + Copy + PartialEq + Debug;
 }
 
 /// Use 64-bit integers and 64-bit floats (default).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default)]
 pub struct DefaultTypeSet;
 impl Sealed for DefaultTypeSet {}
 
@@ -125,7 +126,7 @@ impl TypeSet for DefaultTypeSet {
 }
 
 /// Use 32-bit integers and floats.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default)]
 pub struct TypeSet32;
 impl Sealed for TypeSet32 {}
 impl TypeSet for TypeSet32 {
@@ -134,7 +135,7 @@ impl TypeSet for TypeSet32 {
 }
 
 /// Use 128-bit integers and 64-bit floats.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default)]
 pub struct TypeSet128;
 impl Sealed for TypeSet128 {}
 impl TypeSet for TypeSet128 {
@@ -142,23 +143,14 @@ impl TypeSet for TypeSet128 {
     type Float = f64;
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ParserError {
-    pub location: Location,
-    pub error: String,
-}
-
-impl std::fmt::Display for ParserError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Parse error: {}", self.error)
-    }
-}
-
-impl Program {
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
+impl<T> Program<T>
+where
+    T: TypeSet,
+{
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let mut items = Vec::new();
 
-        while !stream.end() {
+        while !stream.end()? {
             items.push(Item::parse(stream)?);
         }
 
@@ -166,8 +158,11 @@ impl Program {
     }
 }
 
-impl Item {
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
+impl<T> Item<T>
+where
+    T: TypeSet,
+{
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         if let Some(global_var) = GlobalVariable::try_parse(stream)? {
             return Ok(Item::GlobalVariable(global_var));
         }
@@ -182,9 +177,12 @@ impl Item {
     }
 }
 
-impl GlobalVariable {
-    fn try_parse<'s>(stream: &mut TokenStream<'s>) -> Result<Option<Self>, ParserError> {
-        let Some(decl_token) = stream.take_match(TokenKind::Identifier, &["var"]) else {
+impl<T> GlobalVariable<T>
+where
+    T: TypeSet,
+{
+    fn try_parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Option<Self>, Error> {
+        let Some(decl_token) = stream.take_match(TokenKind::Identifier, &["var"])? else {
             return Ok(None);
         };
 
@@ -208,11 +206,11 @@ impl GlobalVariable {
 }
 
 impl ExternalFunction {
-    fn try_parse<'s>(stream: &mut TokenStream<'s>) -> Result<Option<Self>, ParserError> {
-        let Some(extern_fn_token) = stream.take_match(TokenKind::Identifier, &["extern"]) else {
+    fn try_parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Option<Self>, Error> {
+        let Some(extern_fn_token) = stream.take_match(TokenKind::Identifier, &["extern"])? else {
             return Ok(None);
         };
-        let Some(fn_token) = stream.take_match(TokenKind::Identifier, &["fn"]) else {
+        let Some(fn_token) = stream.take_match(TokenKind::Identifier, &["fn"])? else {
             return Ok(None);
         };
 
@@ -220,9 +218,9 @@ impl ExternalFunction {
         let opening_paren = stream.expect_match(TokenKind::Symbol, &["("])?;
 
         let mut arguments = Vec::new();
-        while let Some(arg_name) = stream.take_match(TokenKind::Identifier, &[]) {
+        while let Some(arg_name) = stream.take_match(TokenKind::Identifier, &[])? {
             let colon = stream.expect_match(TokenKind::Symbol, &[":"])?;
-            let reference_token = stream.take_match(TokenKind::Symbol, &["&"]);
+            let reference_token = stream.take_match(TokenKind::Symbol, &["&"])?;
             let type_token = TypeHint::parse(stream)?;
 
             arguments.push(FunctionArgument {
@@ -232,22 +230,22 @@ impl ExternalFunction {
                 arg_type: type_token,
             });
 
-            if stream.take_match(TokenKind::Symbol, &[","]).is_none() {
+            if stream.take_match(TokenKind::Symbol, &[","])?.is_none() {
                 break;
             }
         }
 
         let closing_paren = stream.expect_match(TokenKind::Symbol, &[")"])?;
 
-        let return_decl = if let Some(return_token) = stream.take_match(TokenKind::Symbol, &["->"])
-        {
-            Some(ReturnDecl {
-                return_token,
-                return_type: TypeHint::parse(stream)?,
-            })
-        } else {
-            None
-        };
+        let return_decl =
+            if let Some(return_token) = stream.take_match(TokenKind::Symbol, &["->"])? {
+                Some(ReturnDecl {
+                    return_token,
+                    return_type: TypeHint::parse(stream)?,
+                })
+            } else {
+                None
+            };
 
         let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
 
@@ -264,9 +262,12 @@ impl ExternalFunction {
     }
 }
 
-impl Function {
-    fn try_parse<'s>(stream: &mut TokenStream<'s>) -> Result<Option<Self>, ParserError> {
-        let Some(fn_token) = stream.take_match(TokenKind::Identifier, &["fn"]) else {
+impl<T> Function<T>
+where
+    T: TypeSet,
+{
+    fn try_parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Option<Self>, Error> {
+        let Some(fn_token) = stream.take_match(TokenKind::Identifier, &["fn"])? else {
             return Ok(None);
         };
 
@@ -274,9 +275,9 @@ impl Function {
         let opening_paren = stream.expect_match(TokenKind::Symbol, &["("])?;
 
         let mut arguments = Vec::new();
-        while let Some(arg_name) = stream.take_match(TokenKind::Identifier, &[]) {
+        while let Some(arg_name) = stream.take_match(TokenKind::Identifier, &[])? {
             let colon = stream.expect_match(TokenKind::Symbol, &[":"])?;
-            let reference_token = stream.take_match(TokenKind::Symbol, &["&"]);
+            let reference_token = stream.take_match(TokenKind::Symbol, &["&"])?;
             let type_token = TypeHint::parse(stream)?;
 
             arguments.push(FunctionArgument {
@@ -286,22 +287,22 @@ impl Function {
                 arg_type: type_token,
             });
 
-            if stream.take_match(TokenKind::Symbol, &[","]).is_none() {
+            if stream.take_match(TokenKind::Symbol, &[","])?.is_none() {
                 break;
             }
         }
 
         let closing_paren = stream.expect_match(TokenKind::Symbol, &[")"])?;
 
-        let return_decl = if let Some(return_token) = stream.take_match(TokenKind::Symbol, &["->"])
-        {
-            Some(ReturnDecl {
-                return_token,
-                return_type: TypeHint::parse(stream)?,
-            })
-        } else {
-            None
-        };
+        let return_decl =
+            if let Some(return_token) = stream.take_match(TokenKind::Symbol, &["->"])? {
+                Some(ReturnDecl {
+                    return_token,
+                    return_type: TypeHint::parse(stream)?,
+                })
+            } else {
+                None
+            };
 
         let body = Body::parse(stream)?;
 
@@ -317,12 +318,15 @@ impl Function {
     }
 }
 
-impl Body {
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
+impl<T> Body<T>
+where
+    T: TypeSet,
+{
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let opening_brace = stream.expect_match(TokenKind::Symbol, &["{"])?;
 
         let mut body = Vec::new();
-        while Statement::matches(stream) {
+        while Statement::<T>::matches(stream)? {
             body.push(Statement::parse(stream)?);
         }
 
@@ -337,21 +341,26 @@ impl Body {
 }
 
 impl TypeHint {
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let type_name = stream.expect_match(TokenKind::Identifier, &[])?;
 
         Ok(TypeHint { type_name })
     }
 }
 
-impl Statement {
-    fn matches(stream: &mut TokenStream<'_>) -> bool {
-        !stream.end() && stream.peek_match(TokenKind::Symbol, &["}"]).is_none()
+impl<T> Statement<T>
+where
+    T: TypeSet,
+{
+    fn matches(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<bool, Error> {
+        stream
+            .peek_match(TokenKind::Symbol, &["}"])
+            .map(|t| t.is_none())
     }
 
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
-        if let Some(return_token) = stream.take_match(TokenKind::Identifier, &["return"]) {
-            if let Some(semicolon) = stream.take_match(TokenKind::Symbol, &[";"]) {
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
+        if let Some(return_token) = stream.take_match(TokenKind::Identifier, &["return"])? {
+            if let Some(semicolon) = stream.take_match(TokenKind::Symbol, &[";"])? {
                 return Ok(Statement::EmptyReturn(EmptyReturn {
                     return_token,
                     semicolon,
@@ -367,10 +376,10 @@ impl Statement {
             }));
         }
 
-        if let Some(decl_token) = stream.take_match(TokenKind::Identifier, &["var"]) {
+        if let Some(decl_token) = stream.take_match(TokenKind::Identifier, &["var"])? {
             let identifier = stream.expect_match(TokenKind::Identifier, &[])?;
 
-            let type_token = if stream.take_match(TokenKind::Symbol, &[":"]).is_some() {
+            let type_token = if stream.take_match(TokenKind::Symbol, &[":"])?.is_some() {
                 Some(TypeHint::parse(stream)?)
             } else {
                 None
@@ -390,12 +399,12 @@ impl Statement {
             }));
         }
 
-        if let Some(if_token) = stream.take_match(TokenKind::Identifier, &["if"]) {
+        if let Some(if_token) = stream.take_match(TokenKind::Identifier, &["if"])? {
             let condition = Expression::parse(stream)?;
             let body = Body::parse(stream)?;
 
             let else_branch =
-                if let Some(else_token) = stream.take_match(TokenKind::Identifier, &["else"]) {
+                if let Some(else_token) = stream.take_match(TokenKind::Identifier, &["else"])? {
                     let else_body = Body::parse(stream)?;
 
                     Some(Else {
@@ -414,12 +423,12 @@ impl Statement {
             }));
         }
 
-        if let Some(loop_token) = stream.take_match(TokenKind::Identifier, &["loop"]) {
+        if let Some(loop_token) = stream.take_match(TokenKind::Identifier, &["loop"])? {
             let body = Body::parse(stream)?;
             return Ok(Statement::Loop(Loop { loop_token, body }));
         }
 
-        if let Some(while_token) = stream.take_match(TokenKind::Identifier, &["while"]) {
+        if let Some(while_token) = stream.take_match(TokenKind::Identifier, &["while"])? {
             // Desugar while into loop { if condition { loop_body; } else { break; } }
             let condition = Expression::parse(stream)?;
             let body = Body::parse(stream)?;
@@ -448,14 +457,14 @@ impl Statement {
             }));
         }
 
-        if let Some(break_token) = stream.take_match(TokenKind::Identifier, &["break"]) {
+        if let Some(break_token) = stream.take_match(TokenKind::Identifier, &["break"])? {
             let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
             return Ok(Statement::Break(Break {
                 break_token,
                 semicolon,
             }));
         }
-        if let Some(continue_token) = stream.take_match(TokenKind::Identifier, &["continue"]) {
+        if let Some(continue_token) = stream.take_match(TokenKind::Identifier, &["continue"])? {
             let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
             return Ok(Statement::Continue(Continue {
                 continue_token,
@@ -476,8 +485,8 @@ impl<T> Literal<T>
 where
     T: TypeSet,
 {
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
-        let token = stream.peek()?;
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
+        let token = stream.peek_expect()?;
 
         let token_source = stream.source(token.location);
         let location = token.location;
@@ -495,8 +504,9 @@ where
             TokenKind::String => match unescape(&token_source[1..token_source.len() - 1]) {
                 Ok(string) => LiteralValue::String(string),
                 Err(offset) => {
-                    return Err(ParserError {
-                        error: "Invalid escape sequence in string literal".to_string(),
+                    return Err(Error {
+                        error: String::from("Invalid escape sequence in string literal")
+                            .into_boxed_str(),
                         location: Location {
                             start: token.location.start + offset,
                             end: token.location.start + offset + 1,
@@ -557,7 +567,7 @@ impl<T> Expression<T>
 where
     T: TypeSet,
 {
-    fn parse<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         // We define the binary operators from the lowest precedence to the highest.
         // Each recursive call to `parse_binary` will handle one level of precedence, and pass
         // the rest to the inner calls of `parse_binary`.
@@ -577,10 +587,10 @@ where
         Self::parse_binary(stream, operators)
     }
 
-    fn parse_binary<'s>(
-        stream: &mut TokenStream<'s>,
+    fn parse_binary(
+        stream: &mut TokenStream<'_, impl Tokenizer>,
         binary_operators: &[(Associativity, &[&str])],
-    ) -> Result<Self, ParserError> {
+    ) -> Result<Self, Error> {
         let Some(((associativity, current), higher)) = binary_operators.split_first() else {
             unreachable!("At least one operator set is expected");
         };
@@ -591,7 +601,7 @@ where
             Self::parse_binary(stream, higher)?
         };
 
-        while let Some(operator) = stream.take_match(TokenKind::Symbol, current) {
+        while let Some(operator) = stream.take_match(TokenKind::Symbol, current)? {
             let rhs = if higher.is_empty() {
                 Self::parse_unary(stream)?
             } else {
@@ -611,9 +621,9 @@ where
         Ok(expr)
     }
 
-    fn parse_unary<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
+    fn parse_unary(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         const UNARY_OPERATORS: &[&str] = &["!", "-", "&", "*"];
-        if let Some(operator) = stream.take_match(TokenKind::Symbol, UNARY_OPERATORS) {
+        if let Some(operator) = stream.take_match(TokenKind::Symbol, UNARY_OPERATORS)? {
             let operand = Self::parse_unary(stream)?;
             Ok(Self::UnaryOperator {
                 name: operator,
@@ -624,8 +634,8 @@ where
         }
     }
 
-    fn parse_primary<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
-        let token = stream.peek()?;
+    fn parse_primary(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
+        let token = stream.peek_expect()?;
 
         match token.kind {
             TokenKind::Identifier => {
@@ -651,19 +661,19 @@ where
         }
     }
 
-    fn parse_call<'s>(stream: &mut TokenStream<'s>) -> Result<Self, ParserError> {
+    fn parse_call(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let token = stream.expect_match(TokenKind::Identifier, &[]).unwrap();
 
-        if stream.take_match(TokenKind::Symbol, &["("]).is_none() {
+        if stream.take_match(TokenKind::Symbol, &["("])?.is_none() {
             return Ok(Self::Variable { variable: token });
         };
 
         let mut arguments = Vec::new();
-        while stream.peek_match(TokenKind::Symbol, &[")"]).is_none() {
+        while stream.peek_match(TokenKind::Symbol, &[")"])?.is_none() {
             let arg = Self::parse(stream)?;
             arguments.push(arg);
 
-            if stream.take_match(TokenKind::Symbol, &[","]).is_none() {
+            if stream.take_match(TokenKind::Symbol, &[","])?.is_none() {
                 break;
             }
         }
@@ -676,84 +686,95 @@ where
     }
 }
 
-struct TokenStream<'s> {
+struct TokenStream<'s, I>
+where
+    I: Tokenizer,
+{
     source: &'s str,
-    tokens: &'s [Token],
-    position: usize,
+    tokens: I,
 }
 
-impl<'s> TokenStream<'s> {
-    fn new(source: &'s str, tokens: &'s [Token]) -> Self {
-        TokenStream {
-            source,
-            tokens,
-            position: 0,
+impl<'s, I> TokenStream<'s, I>
+where
+    I: Tokenizer,
+{
+    fn new(source: &'s str, tokens: I) -> Self {
+        TokenStream { source, tokens }
+    }
+
+    /// Fast-forwards the token iterator past comments.
+    fn skip_comments(&mut self) -> Result<(), Error> {
+        let mut peekable = self.tokens.clone();
+        while let Some(token) = peekable.next() {
+            if token?.kind == TokenKind::Comment {
+                self.tokens = peekable.clone();
+            } else {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn end(&mut self) -> Result<bool, Error> {
+        self.skip_comments()?;
+
+        Ok(self.tokens.clone().next().is_none())
+    }
+
+    fn peek(&mut self) -> Result<Option<Token>, Error> {
+        self.skip_comments()?;
+
+        match self.tokens.clone().next() {
+            Some(Ok(token)) => Ok(Some(token)),
+            Some(Err(error)) => Err(error),
+            None => Ok(None),
         }
     }
 
-    fn end(&self) -> bool {
-        // Skip comments
-        let mut position = self.position;
-        while self.tokens.get(position).is_some()
-            && self.tokens[position].kind == TokenKind::Comment
-        {
-            position += 1;
-        }
-
-        position >= self.tokens.len()
+    fn peek_expect(&mut self) -> Result<Token, Error> {
+        self.peek()?.ok_or_else(|| Error {
+            location: Location {
+                start: self.source.len(),
+                end: self.source.len(),
+            },
+            error: String::from("Unexpected end of input").into_boxed_str(),
+        })
     }
 
-    fn peek(&mut self) -> Result<Token, ParserError> {
-        // Skip comments
-        let mut position = self.position;
-        while self.tokens.get(position).is_some()
-            && self.tokens[position].kind == TokenKind::Comment
-        {
-            position += 1;
-        }
+    fn peek_match(
+        &mut self,
+        token_kind: TokenKind,
+        source: &[&str],
+    ) -> Result<Option<Token>, Error> {
+        let Some(token) = self.peek()? else {
+            return Ok(None);
+        };
 
-        if position < self.tokens.len() {
-            Ok(self.tokens[position])
-        } else {
-            Err(ParserError {
-                error: "Unexpected end of input".to_string(),
-                location: self.tokens.get(self.position).map_or(
-                    Location {
-                        start: self.source.len(),
-                        end: self.source.len(),
-                    },
-                    |t| t.location,
-                ),
-            })
-        }
-    }
-
-    fn peek_match(&mut self, token_kind: TokenKind, source: &[&str]) -> Option<Token> {
-        let token = self.peek().ok()?;
-
-        if token.kind == token_kind
+        let peeked = if token.kind == token_kind
             && (source.is_empty() || source.contains(&self.source(token.location)))
         {
             Some(token)
         } else {
             None
-        }
+        };
+
+        Ok(peeked)
     }
 
-    fn take_match(&mut self, token_kind: TokenKind, source: &[&str]) -> Option<Token> {
-        // Skip comments
-        while self.tokens.get(self.position).is_some()
-            && self.tokens[self.position].kind == TokenKind::Comment
-        {
-            self.position += 1;
-        }
-
-        if let Some(token) = self.peek_match(token_kind, source) {
-            self.position += 1;
-            Some(token)
-        } else {
-            None
-        }
+    fn take_match(
+        &mut self,
+        token_kind: TokenKind,
+        source: &[&str],
+    ) -> Result<Option<Token>, Error> {
+        self.peek_match(token_kind, source).map(|token| {
+            if let Some(token) = token {
+                self.tokens.next();
+                Some(token)
+            } else {
+                None
+            }
+        })
     }
 
     /// Takes the next token if it matches the expected kind and source.
@@ -761,15 +782,11 @@ impl<'s> TokenStream<'s> {
     ///
     /// If `source` is empty, it only checks the token kind.
     /// If `source` is not empty, it checks if the token's source matches any of the provided strings.
-    fn expect_match(
-        &mut self,
-        token_kind: TokenKind,
-        source: &[&str],
-    ) -> Result<Token, ParserError> {
-        if let Some(token) = self.take_match(token_kind, source) {
+    fn expect_match(&mut self, token_kind: TokenKind, source: &[&str]) -> Result<Token, Error> {
+        if let Some(token) = self.take_match(token_kind, source)? {
             Ok(token)
         } else {
-            let token = self.peek().ok();
+            let token = self.peek()?;
             let found = if let Some(token) = token {
                 if token.kind == token_kind {
                     format!("found '{}'", self.source(token.location))
@@ -780,24 +797,24 @@ impl<'s> TokenStream<'s> {
                 "reached end of input".to_string()
             };
             match source {
-                [] => Err(self.error(format!("Expected {token_kind:?}, {found}"))),
-                [s] => Err(self.error(format!("Expected '{s}', {found}"))),
-                _ => Err(self.error(format!("Expected one of {source:?}, {found}"))),
+                [] => Err(self.error(format_args!("Expected {token_kind:?}, {found}"))),
+                [s] => Err(self.error(format_args!("Expected '{s}', {found}"))),
+                _ => Err(self.error(format_args!("Expected one of {source:?}, {found}"))),
             }
         }
     }
 
-    fn error(&self, message: impl ToString) -> ParserError {
-        ParserError {
-            error: message.to_string(),
-            location: self
-                .tokens
-                .get(self.position)
-                .map(|t| t.location)
-                .unwrap_or(Location {
+    fn error(&self, message: impl Display) -> Error {
+        Error {
+            error: format!("Parse error: {message}").into_boxed_str(),
+            location: if let Some(Ok(token)) = self.tokens.clone().next() {
+                token.location
+            } else {
+                Location {
                     start: self.source.len(),
                     end: self.source.len(),
-                }),
+                }
+            },
         }
     }
 
@@ -806,19 +823,21 @@ impl<'s> TokenStream<'s> {
     }
 }
 
-pub fn parse<'s>(source: &'s str, tokens: &'s [Token]) -> Result<Program, ParserError> {
-    let mut stream = TokenStream::new(source, tokens);
-
-    Program::parse(&mut stream)
-}
-
-pub fn parse_expression<'s, T>(
-    source: &'s str,
-    tokens: &'s [Token],
-) -> Result<Expression<T>, ParserError>
+pub fn parse<T>(source: &str) -> Result<Program<T>, Error>
 where
     T: TypeSet,
 {
+    let tokens = crate::lexer::tokenize(source);
+    let mut stream = TokenStream::new(source, tokens);
+
+    Program::<T>::parse(&mut stream)
+}
+
+pub fn parse_expression<T>(source: &str) -> Result<Expression<T>, Error>
+where
+    T: TypeSet,
+{
+    let tokens = crate::lexer::tokenize(source);
     let mut stream = TokenStream::new(source, tokens);
 
     Expression::<T>::parse(&mut stream)
@@ -838,16 +857,11 @@ mod tests {
     #[test]
     fn test_out_of_range_literal() {
         let source = "0x100000000";
-        let tokens = vec![Token {
-            kind: TokenKind::HexInteger,
-            location: Location {
-                start: 0,
-                end: source.len(),
-            },
-        }];
 
-        let result =
-            parse_expression::<TypeSet32>(source, &tokens).expect_err("Parsing should fail");
-        assert_eq!("Invalid hexadecimal integer literal", result.error);
+        let result = parse_expression::<TypeSet32>(source).expect_err("Parsing should fail");
+        assert_eq!(
+            "Parse error: Invalid hexadecimal integer literal",
+            result.error.as_ref()
+        );
     }
 }

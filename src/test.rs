@@ -1,8 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use crate::{codegen, error::CompileError, ir, transform_ir::transform_ir, vm::EvalContext};
-use somni_expr::TypedValue;
-use somni_parser::{lexer::tokenize, parser::parse};
+use crate::{
+    codegen,
+    error::CompileError,
+    ir,
+    transform_ir::transform_ir,
+    vm::{EvalContext, TypedValue},
+};
+use somni_parser::parser::parse;
 
 fn walk(dir: &Path, on_file: &impl Fn(&Path)) {
     for entry in std::fs::read_dir(dir).unwrap().flatten() {
@@ -55,6 +60,7 @@ pub fn run_eval_test(program: codegen::Program, path: impl AsRef<Path>) {
 
     context.add_function("add_from_rust", |a: u64, b: u64| -> i64 { (a + b) as i64 });
     context.add_function("assert", |a: bool| a); // No-op to test calling Rust functions from expressions
+    context.add_function("reverse", |s: &str| s.chars().rev().collect::<String>());
 
     for expression in &expressions {
         let expression = if let Some(e) = expression.strip_prefix('+') {
@@ -66,7 +72,7 @@ pub fn run_eval_test(program: codegen::Program, path: impl AsRef<Path>) {
             expression
         };
         println!("Running `{expression}`");
-        let value = context.eval_expression(expression);
+        let value = context.eval_expression::<TypedValue>(expression);
         if value != TypedValue::Bool(true) {
             ctx.handle_error_string(
                 "Expression did not evaluate to true",
@@ -82,8 +88,7 @@ pub fn run_compile_test(file: impl AsRef<Path>, compile_test: bool) -> Option<co
 
     // First, parse the program.
     let source = std::fs::read_to_string(ctx.file).unwrap();
-    let tokens = tokenize(&source).collect::<Result<Vec<_>, _>>().unwrap();
-    let ast = match parse(&source, &tokens) {
+    let ast = match parse(&source) {
         Ok(ast) => ast,
         Err(err) => return ctx.handle_error("Failed to parse", CompileError::new(&source, err)),
     };

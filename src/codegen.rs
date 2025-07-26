@@ -9,14 +9,15 @@ use indexmap::IndexMap;
 use crate::{
     error::CompileError,
     ir::{self, VariableIndex},
+    string_interner::{StringIndex, Strings},
+    types::{TypeExt, TypedValue, VmTypeSet},
     variable_tracker::{self, LocalVariableIndex},
 };
 
 use somni_expr::{
-    string_interner::{StringIndex, Strings},
-    ExprContext, ExpressionVisitor, FunctionCallError, Type, TypedValue,
+    ExprContext, ExpressionVisitor, FunctionCallError, Type, TypedValue as ExprTypedValue,
 };
-use somni_parser::{lexer::Location, parser::DefaultTypeSet};
+use somni_parser::Location;
 
 // This is just to keep the size of Instruction small enough. Re-evaluate this later.
 #[derive(Clone, Copy, Debug)]
@@ -284,6 +285,9 @@ pub struct Program {
     pub functions: IndexMap<StringIndex, Function>,
     pub external_functions: IndexMap<StringIndex, ExternalFunction>,
     pub debug_info: DebugInfo,
+
+    /// Type context used to evaluate initializers. VM needs to use this as the initial type context.
+    pub type_ctx: VmTypeSet,
 }
 
 impl Program {
@@ -311,39 +315,37 @@ impl Program {
 }
 
 // This enables evaluating initializer expressions
-impl ExprContext for Program {
-    fn intern_string(&mut self, s: &str) -> StringIndex {
-        self.debug_info.strings.find(s).unwrap()
+impl ExprContext<VmTypeSet> for Program {
+    fn type_context(&mut self) -> &mut VmTypeSet {
+        &mut self.type_ctx
     }
 
-    fn load_interned_string(&self, idx: StringIndex) -> &str {
-        self.debug_info.strings.lookup(idx)
-    }
-
-    fn try_load_variable(&self, variable: &str) -> Option<TypedValue> {
+    fn try_load_variable(&self, variable: &str) -> Option<ExprTypedValue<VmTypeSet>> {
         let idx = self.debug_info.strings.find(variable)?;
-        self.globals[&idx].initial_value
+        self.globals[&idx].initial_value.map(ExprTypedValue::from)
     }
 
-    fn address_of(&self, variable: &str) -> TypedValue {
+    fn address_of(&self, variable: &str) -> ExprTypedValue<VmTypeSet> {
         let idx = self.debug_info.strings.find(variable).unwrap();
         let MemoryAddress::Global(addr) = self.globals[&idx].address else {
             unreachable!();
         };
 
-        TypedValue::Int(addr as u64)
+        ExprTypedValue::Int(addr as u64)
     }
 
     fn call_function(
         &mut self,
         _function_name: &str,
-        _args: &[TypedValue],
-    ) -> Result<TypedValue, FunctionCallError> {
+        _args: &[ExprTypedValue<VmTypeSet>],
+    ) -> Result<ExprTypedValue<VmTypeSet>, FunctionCallError> {
         Err(FunctionCallError::Other("Function calls are not supported"))
     }
 }
 
 pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, CompileError<'s>> {
+    let interner = ir.strings.clone();
+    let strings = ir.strings.clone().finalize();
     let mut this = Compiler {
         program: Program {
             code: Vec::new(),
@@ -352,12 +354,12 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
             external_functions: IndexMap::new(),
             debug_info: DebugInfo {
                 source: source.to_string(),
-                strings: ir.strings.clone(),
+                strings,
                 instruction_locations: Vec::new(),
                 function_names: ir.functions.iter().map(|(name, _)| *name).collect(),
             },
+            type_ctx: VmTypeSet::new(interner),
         },
-        strings: ir.strings.clone(),
     };
 
     let mut global_addr = 0;
@@ -370,7 +372,7 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
                 initial_value: None,
             },
         );
-        global_addr += ty.size_of::<DefaultTypeSet>();
+        global_addr += ty.vm_size_of();
     }
 
     loop {
@@ -387,7 +389,7 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
                 _marker: PhantomData,
             };
             if let Ok(value) = visitor.visit_expression(&global.initializer) {
-                this.program.globals[name].initial_value = Some(value);
+                this.program.globals[name].initial_value = Some(value.into());
                 made_progress = true;
             }
         }
@@ -480,7 +482,6 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
 
 pub struct Compiler {
     program: Program,
-    strings: Strings,
 }
 
 struct FunctionCompiler<'s, 'p> {
@@ -633,7 +634,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
                 self.push_instruction(
                     location,
-                    Instruction::Copy(dst, src, ty.size_of::<DefaultTypeSet>() as u32),
+                    Instruction::Copy(dst, src, ty.vm_size_of() as u32),
                 );
             }
             ir::Ir::DerefAssign(dst, src) => {
@@ -697,7 +698,8 @@ impl<'s> FunctionCompiler<'s, '_> {
                     .address_of_variable(*rhs)
                     .expect("Variable not found in stack allocator");
 
-                let (normalized, swap) = match self.compiler.strings.lookup(*op) {
+                let (normalized, swap) = match self.compiler.program.debug_info.strings.lookup(*op)
+                {
                     ">" => ("<", true),
                     ">=" => ("<=", true),
                     other => (other, false),
@@ -752,7 +754,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                     .address_of_variable(*operand)
                     .expect("Variable not found in stack allocator");
 
-                let instruction = match self.compiler.strings.lookup(*op) {
+                let instruction = match self.compiler.program.debug_info.strings.lookup(*op) {
                     "-" => Instruction::UnaryOperator {
                         ty: self.type_of_variable(*dst).unwrap(),
                         operator: UnaryOperator::Negate,
@@ -818,9 +820,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         let ty = self
             .type_of_variable(VariableIndex::Local(var.index))
             .expect("At this point, the variable type should be known");
-        let address = self
-            .stack_allocator
-            .allocate_variable(var, ty.size_of::<DefaultTypeSet>());
+        let address = self.stack_allocator.allocate_variable(var, ty.vm_size_of());
 
         if let Some(value) = value {
             self.push_instruction(

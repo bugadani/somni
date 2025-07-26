@@ -2,6 +2,11 @@
 
 use std::collections::HashMap;
 
+use somni_expr::{
+    value::{Load, Store, ValueType},
+    OperatorError, Type, TypeSet, TypedValue,
+};
+
 /// The ID of a string in the interner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct StringIndex(pub usize);
@@ -10,6 +15,40 @@ impl StringIndex {
     /// Creates a dummy `StringIndex` with value 0.
     pub const fn dummy() -> Self {
         Self(0)
+    }
+}
+impl ValueType for StringIndex {
+    const TYPE: Type = Type::String;
+
+    type NegateOutput = Self;
+
+    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+        Ok(a == b)
+    }
+}
+impl<T> Load<T> for StringIndex
+where
+    T: TypeSet<String = StringIndex>,
+{
+    type Output<'s>
+        = Self
+    where
+        T: 's;
+
+    fn load<'s>(_ctx: &'s T, typed: &'s TypedValue<T>) -> Option<Self::Output<'s>> {
+        if let TypedValue::String(value) = typed {
+            return Some(*value);
+        }
+
+        None
+    }
+}
+impl<T> Store<T> for StringIndex
+where
+    T: TypeSet<String = StringIndex>,
+{
+    fn store(&self, _ctx: &mut T) -> TypedValue<T> {
+        TypedValue::String(*self)
     }
 }
 
@@ -21,11 +60,6 @@ pub struct Strings {
 }
 
 impl Strings {
-    /// Creates a new `Strings` instance.
-    pub fn new() -> Self {
-        Strings::default()
-    }
-
     /// Interns a string and returns its index.
     pub fn intern(&mut self, value: &str) -> StringIndex {
         let start = self.strings.len();

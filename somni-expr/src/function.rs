@@ -1,8 +1,7 @@
 use crate::{
     for_all_tuples,
-    value::ValueType,
     value::{Load, Store},
-    ExprContext, Type, TypeSet, TypedValue,
+    TypeSet, TypedValue,
 };
 
 /// An error that occurs when calling a function.
@@ -21,7 +20,7 @@ pub enum FunctionCallError {
         /// The 0-based index of the argument that has the incorrect type.
         idx: usize,
         /// The expected type of the argument.
-        expected: Type,
+        expected: &'static str,
     },
 
     /// An error occurred while calling the function.
@@ -32,59 +31,48 @@ pub enum FunctionCallError {
 pub trait DynFunction<A, T>
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
-    fn call(
-        &self,
-        ctx: &mut dyn ExprContext<T>,
-        args: &[TypedValue<T>],
-    ) -> Result<TypedValue<T>, FunctionCallError>;
+    const ARG_COUNT: usize;
+
+    fn call(&self, ctx: &mut T, args: &[TypedValue<T>])
+        -> Result<TypedValue<T>, FunctionCallError>;
 }
 
-macro_rules! ignore {
-    ($arg:tt) => {};
+macro_rules! substitute {
+    ($arg:tt, $replacement:tt) => {
+        $replacement
+    };
 }
 
 for_all_tuples! {
     ($($arg:ident),*) => {
         impl<$($arg,)* R, F, T> DynFunction<($($arg,)*), T> for F
         where
-            $($arg: ValueType + Load<T>,)*
+            $($arg: Load<T>,)*
             // This double bound on F ensures that we can work with reference types (&str), too:
             // The first one ensures type-inference matches the Load implementation we want
             // The second one ensures we don't run into "... is not generic enough" errors.
             F: Fn($($arg,)*) -> R,
             F: for<'t> Fn($($arg::Output<'t>,)*) -> R,
-            R: ValueType + Store<T>,
+            R: Store<T>,
             T: TypeSet,
-            T::Integer: ValueType,
-            T::Float: ValueType,
         {
+            const ARG_COUNT: usize = 0 $( + substitute!($arg, 1) )* ;
+
             #[allow(non_snake_case, unused)]
-            fn call(&self, ctx: &mut dyn ExprContext<T>, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> {
-                let arg_count = 0;
-                $(
-                    ignore!($arg);
-                    let arg_count = arg_count + 1;
-                )*
+            fn call(&self, ctx: &mut T, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> {
+                if args.len() != Self::ARG_COUNT {
+                    return Err(FunctionCallError::IncorrectArgumentCount { expected: Self::ARG_COUNT });
+                }
 
                 let idx = 0;
-                let mut args = args.iter().cloned();
                 $(
-                    let Some(arg) = args.next() else {
-                        return Err(FunctionCallError::IncorrectArgumentCount { expected: arg_count });
-                    };
-                    let $arg = match <$arg>::load(ctx, arg) {
-                        Some(arg) => arg,
-                        None => return Err(FunctionCallError::IncorrectArgumentType { idx, expected: $arg::TYPE }),
-                    };
+                    let $arg = <$arg>::load(ctx, &args[idx]).ok_or_else(|| {
+                        FunctionCallError::IncorrectArgumentType { idx, expected: std::any::type_name::<$arg>() }
+                    })?;
                     let idx = idx + 1;
                 )*
 
-                if args.next().is_some() {
-                    return Err(FunctionCallError::IncorrectArgumentCount { expected: arg_count });
-                }
 
                 Ok(self($($arg),*).store(ctx))
             }
@@ -95,24 +83,14 @@ for_all_tuples! {
 pub(crate) struct ExprFn<'ctx, T>
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     #[allow(clippy::type_complexity)]
-    func: Box<
-        dyn Fn(
-                &mut dyn ExprContext<T>,
-                &[TypedValue<T>],
-            ) -> Result<TypedValue<T>, FunctionCallError>
-            + 'ctx,
-    >,
+    func: Box<dyn Fn(&mut T, &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> + 'ctx>,
 }
 
 impl<'ctx, T> ExprFn<'ctx, T>
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
     pub fn new<A, F>(func: F) -> Self
     where
@@ -125,7 +103,7 @@ where
 
     pub fn call(
         &self,
-        ctx: &mut dyn ExprContext<T>,
+        ctx: &mut T,
         args: &[TypedValue<T>],
     ) -> Result<TypedValue<T>, FunctionCallError> {
         (self.func)(ctx, args)

@@ -1,51 +1,6 @@
 use std::str::CharIndices;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum ErrorKind {
-    UnexpectedCharacter,
-    UnterminatedString,
-    InvalidNumericLiteral,
-}
-
-impl std::fmt::Display for ErrorKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::UnexpectedCharacter => write!(f, "unexpected character"),
-            Self::UnterminatedString => write!(f, "unterminated string"),
-            Self::InvalidNumericLiteral => write!(f, "invalid numeric literal"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct LexerError {
-    pub location: Location,
-    pub error: ErrorKind,
-}
-
-impl std::fmt::Display for LexerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Lexer error: {}", self.error)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-pub struct Location {
-    pub start: usize,
-    pub end: usize,
-}
-
-impl Location {
-    pub const fn dummy() -> Self {
-        Location { start: 0, end: 0 }
-    }
-}
-
-impl Location {
-    pub fn extract(self, source: &str) -> &str {
-        &source[self.start..self.end]
-    }
-}
+use crate::{Error, Location};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TokenKind {
@@ -74,6 +29,7 @@ fn ident_char(c: char) -> bool {
     c.is_alphanumeric() || ['-', '_'].contains(&c)
 }
 
+#[derive(Clone)]
 struct CharProvider<'s> {
     chars: CharIndices<'s>,
 }
@@ -106,7 +62,10 @@ impl CharProvider<'_> {
     }
 }
 
-pub fn tokenize(source: &str) -> impl Iterator<Item = Result<Token, LexerError>> + '_ {
+pub(crate) trait Tokenizer: Iterator<Item = Result<Token, crate::Error>> + Clone {}
+impl<I> Tokenizer for I where I: Iterator<Item = Result<Token, crate::Error>> + Clone {}
+
+pub(crate) fn tokenize(source: &str) -> impl Tokenizer + '_ {
     let mut chars = CharProvider {
         chars: source.char_indices(),
     };
@@ -166,9 +125,9 @@ pub fn tokenize(source: &str) -> impl Iterator<Item = Result<Token, LexerError>>
                         return if has_digit {
                             Some(Ok(Token { kind, location }))
                         } else {
-                            Some(Err(LexerError {
+                            Some(Err(Error {
                                 location,
-                                error: ErrorKind::InvalidNumericLiteral,
+                                error: String::from("invalid numeric literal").into_boxed_str(),
                             }))
                         };
                     }
@@ -256,15 +215,15 @@ pub fn tokenize(source: &str) -> impl Iterator<Item = Result<Token, LexerError>>
                     }
                     location.end = source.len();
 
-                    return Some(Err(LexerError {
+                    return Some(Err(Error {
                         location,
-                        error: ErrorKind::UnterminatedString,
+                        error: String::from("unterminated string").into_boxed_str(),
                     }));
                 }
                 _ => {
-                    return Some(Err(LexerError {
+                    return Some(Err(Error {
                         location,
-                        error: ErrorKind::UnexpectedCharacter,
+                        error: String::from("unexpected character").into_boxed_str(),
                     }));
                 }
             }
@@ -278,7 +237,10 @@ pub fn tokenize(source: &str) -> impl Iterator<Item = Result<Token, LexerError>>
 mod test {
     use super::*;
 
-    fn test_tokenizer(source: &str, expectations: &[Result<(&'static str, TokenKind), ErrorKind>]) {
+    fn test_tokenizer(
+        source: &str,
+        expectations: &[Result<(&'static str, TokenKind), &'static str>],
+    ) {
         let result = tokenize(source).collect::<Vec<Result<_, _>>>();
 
         for (idx, expectation) in expectations.iter().enumerate() {
@@ -291,7 +253,7 @@ mod test {
                     assert_eq!(kind, result[idx].as_ref().unwrap().kind);
                 }
                 Err(err) => {
-                    assert_eq!(err, result[idx].as_ref().unwrap_err().error);
+                    assert_eq!(err, result[idx].as_ref().unwrap_err().error.as_ref());
                 }
             }
         }

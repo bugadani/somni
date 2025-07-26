@@ -1,20 +1,19 @@
 use std::fmt::{Debug, Display, Write as _};
 
 use indexmap::IndexMap;
-use somni_expr::{
-    string_interner::{StringIndex, StringInterner, Strings},
-    TypedValue,
-};
 
 use crate::{
     error::CompileError,
     ir,
+    string_interner::{StringIndex, StringInterner},
+    types::{TypedValue, VmTypeSet},
     variable_tracker::{LocalVariableIndex, RestorePoint, ScopeData, VariableTracker},
 };
 
 use somni_parser::{
     ast::{self, FunctionArgument},
-    lexer::{Location, Token},
+    lexer::Token,
+    Location,
 };
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -341,7 +340,7 @@ pub enum GlobalInitializer {
 }
 
 pub struct GlobalVariableInfo {
-    pub initializer: ast::Expression,
+    pub initializer: ast::Expression<VmTypeSet>,
     pub ty: Type,
 }
 
@@ -368,7 +367,7 @@ impl GlobalVariableIndex {
 pub struct Program {
     pub globals: IndexMap<StringIndex, GlobalVariableInfo>,
     pub functions: IndexMap<StringIndex, Function>,
-    pub strings: Strings,
+    pub strings: StringInterner,
 }
 
 impl Program {
@@ -391,7 +390,10 @@ impl Program {
         output
     }
 
-    pub fn compile<'s>(source: &'s str, ast: &ast::Program) -> Result<Program, CompileError<'s>> {
+    pub fn compile<'s>(
+        source: &'s str,
+        ast: &ast::Program<VmTypeSet>,
+    ) -> Result<Program, CompileError<'s>> {
         let mut strings = StringInterner::new();
         let mut functions = IndexMap::new();
         let mut globals = IndexMap::new();
@@ -473,7 +475,7 @@ impl Program {
         Ok(Program {
             globals,
             functions,
-            strings: strings.finalize(),
+            strings,
         })
     }
 }
@@ -544,7 +546,7 @@ impl Function {
 
     pub fn compile<'s>(
         source: &'s str,
-        func: &ast::Function,
+        func: &ast::Function<VmTypeSet>,
         strings: &mut StringInterner,
         globals: &IndexMap<StringIndex, GlobalVariableInfo>,
     ) -> Result<Function, CompileError<'s>> {
@@ -837,7 +839,10 @@ impl<'s> FunctionCompiler<'s, '_> {
         VariableIndex::Temporary(temp)
     }
 
-    fn compile_statement(&mut self, statement: &ast::Statement) -> Result<(), CompileError<'s>> {
+    fn compile_statement(
+        &mut self,
+        statement: &ast::Statement<VmTypeSet>,
+    ) -> Result<(), CompileError<'s>> {
         match statement {
             ast::Statement::VariableDefinition(variable_def) => {
                 self.compile_variable_definition(variable_def)
@@ -861,7 +866,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
     fn compile_variable_definition(
         &mut self,
-        variable_def: &ast::VariableDefinition,
+        variable_def: &ast::VariableDefinition<VmTypeSet>,
     ) -> Result<(), CompileError<'s>> {
         let ident = variable_def.identifier;
         let ty = variable_def.type_token.as_ref();
@@ -889,7 +894,10 @@ impl<'s> FunctionCompiler<'s, '_> {
         Ok(())
     }
 
-    fn compile_if_statement(&mut self, if_statement: &ast::If) -> Result<(), CompileError<'s>> {
+    fn compile_if_statement(
+        &mut self,
+        if_statement: &ast::If<VmTypeSet>,
+    ) -> Result<(), CompileError<'s>> {
         let rp = self.variables.create_restore_point();
 
         // Generate instructions for the condition, allocate then/else blocks and generate conditional jumps
@@ -942,7 +950,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         Ok(())
     }
 
-    fn compile_body(&mut self, body: &ast::Body) -> Result<(), CompileError<'s>> {
+    fn compile_body(&mut self, body: &ast::Body<VmTypeSet>) -> Result<(), CompileError<'s>> {
         let restore_point = self.variables.create_restore_point();
 
         for statement in body.statements.iter() {
@@ -956,7 +964,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
     fn compile_loop_statement(
         &mut self,
-        loop_statement: &ast::Loop,
+        loop_statement: &ast::Loop<VmTypeSet>,
     ) -> Result<(), CompileError<'s>> {
         let next_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
 
@@ -1031,7 +1039,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
     fn compile_return_with_value(
         &mut self,
-        ret: &ast::ReturnWithValue,
+        ret: &ast::ReturnWithValue<VmTypeSet>,
     ) -> Result<(), CompileError<'s>> {
         let rp = self.variables.create_restore_point();
         let return_value = self.compile_expression(&ret.expression)?;
@@ -1087,7 +1095,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
     fn compile_expression_statement(
         &mut self,
-        expression: &ast::Expression,
+        expression: &ast::Expression<VmTypeSet>,
         semicolon: &Token,
     ) -> Result<(), CompileError<'s>> {
         let rp = self.variables.create_restore_point();
@@ -1118,7 +1126,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
     fn compile_expression(
         &mut self,
-        expression: &ast::Expression,
+        expression: &ast::Expression<VmTypeSet>,
     ) -> Result<VariableIndex, CompileError<'s>> {
         match &expression {
             ast::Expression::Literal { value } => {
@@ -1165,7 +1173,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_literal_value(
         &mut self,
         literal_type: Type,
-        literal: &ast::Literal,
+        literal: &ast::Literal<VmTypeSet>,
     ) -> Result<Value, CompileError<'s>> {
         let value = match (literal_type, &literal.value) {
             (Type::Int, ast::LiteralValue::Integer(value)) => Value::Int(*value),
@@ -1208,7 +1216,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_unary_operator(
         &mut self,
         operator: Token,
-        operand: &ast::Expression,
+        operand: &ast::Expression<VmTypeSet>,
     ) -> Result<VariableIndex, CompileError<'s>> {
         let op = operator.source(self.source);
 
@@ -1240,7 +1248,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_binary_operator(
         &mut self,
         operator: Token,
-        operands: &[ast::Expression; 2],
+        operands: &[ast::Expression<VmTypeSet>; 2],
     ) -> Result<VariableIndex, CompileError<'s>> {
         let op = operator.source(self.source);
 
@@ -1394,7 +1402,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_function_call(
         &mut self,
         name: Token,
-        arguments: &[ast::Expression],
+        arguments: &[ast::Expression<VmTypeSet>],
     ) -> Result<VariableIndex, CompileError<'s>> {
         // Allocate a temporary variable for the result.
         let temp = self.declare_temporary(name.location, Value::Void, AllocationMethod::FirstFit);

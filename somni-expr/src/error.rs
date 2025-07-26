@@ -2,10 +2,7 @@
 
 use std::fmt::Display;
 
-use somni_parser::{
-    lexer::{LexerError, Location},
-    parser::ParserError,
-};
+use somni_parser::{Error as ParserError, Location};
 
 use crate::EvalError;
 
@@ -15,17 +12,12 @@ pub trait ErrorWithLocation: Display {
     fn location(&self) -> Location;
 }
 
-impl ErrorWithLocation for LexerError {
-    fn location(&self) -> Location {
-        self.location
-    }
-}
-
 impl ErrorWithLocation for ParserError {
     fn location(&self) -> Location {
         self.location
     }
 }
+
 impl ErrorWithLocation for EvalError {
     fn location(&self) -> Location {
         self.location

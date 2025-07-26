@@ -74,11 +74,32 @@
 //! ```
 #![warn(missing_docs)]
 
+macro_rules! for_each {
+    // Any parenthesized set of choices, allows multiple matchers in the pattern
+    ($(($pattern:tt) in [$( ($($choice:tt)*) ),*] => $code:tt;)*) => {
+        $(
+            macro_rules! inner { $pattern => $code; }
+
+            $(
+                inner!( $($choice)* );
+            )*
+        )*
+    };
+    // Single type, single matcher
+    ($($pattern:tt in [$($choice:ty),*] => $code:tt;)*) => {
+        $(
+            macro_rules! inner { $pattern => $code; }
+
+            $(
+                inner!($choice);
+            )*
+        )*
+    };
+}
+
 pub mod error;
 #[doc(hidden)]
 pub mod function;
-#[doc(hidden)]
-pub mod string_interner;
 #[doc(hidden)]
 pub mod value;
 
@@ -93,15 +114,15 @@ use std::{
 use indexmap::IndexMap;
 use somni_parser::{
     ast::{self, Expression},
-    lexer::{self, Location},
-    parser,
+    lexer,
+    parser::{self, TypeSet as ParserTypeSet},
+    Location,
 };
 
 use crate::{
     error::MarkInSource,
     function::ExprFn,
-    string_interner::{StringIndex, StringInterner},
-    value::{Load, MemoryRepr, Store, ValueType},
+    value::{Load, LoadOwned, Store, ValueType},
 };
 
 pub use somni_parser::parser::{DefaultTypeSet, TypeSet128, TypeSet32};
@@ -115,41 +136,65 @@ mod private {
 
 use private::Sealed;
 
-/// Defines numeric types in expressions.
-pub trait TypeSet: somni_parser::parser::TypeSet + PartialEq
-where
-    Self::Integer: ValueType,
-    Self::Float: ValueType,
-{
+/// Defines the backing types for Somni types.
+///
+/// The [`LoadOwned`], [`Load`] and [`Store`] traits can be used to convert between Rust and Somni types.
+pub trait TypeSet: Sized + Default + Debug + 'static {
+    /// The typeset that will be used to parse source code.
+    type Parser: ParserTypeSet<Integer = Self::Integer, Float = Self::Float>;
+
+    /// The type of unsigned integers in this type set.
+    type Integer: Copy
+        + ValueType<NegateOutput: Load<Self> + Store<Self>>
+        + Load<Self>
+        + Store<Self>
+        + Integer;
+
     /// The type of signed integers in this type set.
-    type SignedInteger: ValueType;
+    type SignedInteger: Copy
+        + ValueType<NegateOutput: Load<Self> + Store<Self>>
+        + Load<Self>
+        + Store<Self>;
+
+    /// The type of floating point numbers in this type set.
+    type Float: Copy + ValueType<NegateOutput: Load<Self> + Store<Self>> + Load<Self> + Store<Self>;
+
+    /// The type of a string in this type set.
+    type String: ValueType<NegateOutput: Load<Self> + Store<Self>> + Load<Self> + Store<Self>;
 
     /// Converts an unsigned integer into a signed integer.
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError>;
+
+    /// Loads a string.
+    fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str;
+
+    /// Stores a string.
+    fn store_string(&mut self, str: &str) -> Self::String;
 }
 
-impl TypeSet for DefaultTypeSet {
-    type SignedInteger = i64;
+for_each! {
+    (($name:ident, $signed:ty)) in [(DefaultTypeSet, i64), (TypeSet32, i32), (TypeSet128, i128)] => {
+        impl TypeSet for $name {
+            type Parser = Self;
 
-    fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
-        i64::try_from(v).map_err(|_| OperatorError::RuntimeError)
-    }
-}
+            type Integer = <Self::Parser as ParserTypeSet>::Integer;
+            type SignedInteger = $signed;
+            type Float = <Self::Parser as ParserTypeSet>::Float;
+            type String = Box<str>;
 
-impl TypeSet for TypeSet32 {
-    type SignedInteger = i32;
+            fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
+                <$signed>::try_from(v).map_err(|_| OperatorError::RuntimeError)
+            }
 
-    fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
-        i32::try_from(v).map_err(|_| OperatorError::RuntimeError)
-    }
-}
+            fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
+                str
+            }
 
-impl TypeSet for TypeSet128 {
-    type SignedInteger = i128;
-
-    fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
-        i128::try_from(v).map_err(|_| OperatorError::RuntimeError)
-    }
+            fn store_string(&mut self, str: &str) -> Self::String {
+                str.to_string().into_boxed_str()
+            }
+        }
+    };
 }
 
 #[doc(hidden)]
@@ -195,11 +240,7 @@ impl Display for OperatorError {
 
 macro_rules! dispatch_binary {
     ($method:ident) => {
-        pub(crate) fn $method(
-            ctx: &mut dyn ExprContext<T>,
-            lhs: Self,
-            rhs: Self,
-        ) -> Result<Self, OperatorError> {
+        pub(crate) fn $method(ctx: &mut T, lhs: Self, rhs: Self) -> Result<Self, OperatorError> {
             let result = match (lhs, rhs) {
                 (Self::Bool(value), Self::Bool(other)) => {
                     ValueType::$method(value, other)?.store(ctx)
@@ -244,10 +285,7 @@ macro_rules! dispatch_binary {
 
 macro_rules! dispatch_unary {
     ($method:ident) => {
-        pub(crate) fn $method(
-            ctx: &mut dyn ExprContext<T>,
-            operand: Self,
-        ) -> Result<Self, OperatorError> {
+        pub(crate) fn $method(ctx: &mut T, operand: Self) -> Result<Self, OperatorError> {
             match operand {
                 Self::Bool(value) => Ok(ValueType::$method(value)?.store(ctx)),
                 Self::Int(value) | Self::MaybeSignedInt(value) => {
@@ -265,13 +303,6 @@ macro_rules! dispatch_unary {
 impl<T> TypedValue<T>
 where
     T: TypeSet,
-    T::Integer: Load<T> + Store<T>,
-    T::Float: Load<T> + Store<T>,
-    T::SignedInteger: Load<T> + Store<T>,
-
-    <T::Integer as ValueType>::NegateOutput: Load<T> + Store<T>,
-    <T::SignedInteger as ValueType>::NegateOutput: Load<T> + Store<T>,
-    <T::Float as ValueType>::NegateOutput: Load<T> + Store<T>,
 {
     dispatch_binary!(equals);
     dispatch_binary!(less_than);
@@ -294,14 +325,9 @@ where
 pub trait ExprContext<T = DefaultTypeSet>
 where
     T: TypeSet,
-    T::Integer: ValueType,
-    T::Float: ValueType,
 {
-    /// Implements string interning.
-    fn intern_string(&mut self, s: &str) -> StringIndex;
-
-    /// Loads an interned string.
-    fn load_interned_string(&self, idx: StringIndex) -> &str;
+    /// Returns a reference to the `TypeSet`.
+    fn type_context(&mut self) -> &mut T;
 
     /// Attempts to load a variable from the context.
     fn try_load_variable(&self, variable: &str) -> Option<TypedValue<T>>;
@@ -391,13 +417,6 @@ impl<'a, C, T> ExpressionVisitor<'a, C, T>
 where
     C: ExprContext<T>,
     T: TypeSet,
-    T::Integer: Load<T> + Store<T>,
-    T::Float: Load<T> + Store<T>,
-    T::SignedInteger: Load<T> + Store<T>,
-
-    <T::Integer as ValueType>::NegateOutput: Load<T> + Store<T>,
-    <T::SignedInteger as ValueType>::NegateOutput: Load<T> + Store<T>,
-    <T::Float as ValueType>::NegateOutput: Load<T> + Store<T>,
 {
     fn visit_variable(&mut self, variable: &lexer::Token) -> Result<TypedValue<T>, EvalError> {
         let name = variable.source(self.source);
@@ -410,23 +429,21 @@ where
     /// Visits an expression and evaluates it, returning the result as a `TypedValue`.
     pub fn visit_expression(
         &mut self,
-        expression: &Expression<T>,
+        expression: &Expression<T::Parser>,
     ) -> Result<TypedValue<T>, EvalError> {
         let result = match expression {
             Expression::Variable { variable } => self.visit_variable(variable)?,
             Expression::Literal { value } => match &value.value {
                 ast::LiteralValue::Integer(value) => TypedValue::<T>::MaybeSignedInt(*value),
                 ast::LiteralValue::Float(value) => TypedValue::<T>::Float(*value),
-                ast::LiteralValue::String(value) => {
-                    TypedValue::<T>::String(self.context.intern_string(value))
-                }
+                ast::LiteralValue::String(value) => value.store(self.context.type_context()),
                 ast::LiteralValue::Boolean(value) => TypedValue::<T>::Bool(*value),
             },
             Expression::UnaryOperator { name, operand } => match name.source(self.source) {
                 "!" => {
                     let operand = self.visit_expression(operand)?;
 
-                    match TypedValue::<T>::not(self.context, operand) {
+                    match TypedValue::<T>::not(self.context.type_context(), operand) {
                         Ok(r) => r,
                         Err(error) => {
                             return Err(EvalError {
@@ -441,9 +458,11 @@ where
                 "-" => {
                     let value = self.visit_expression(operand)?;
                     let ty = value.type_of();
-                    TypedValue::<T>::negate(self.context, value).map_err(|e| EvalError {
-                        message: format!("Cannot negate {ty}: {e}").into_boxed_str(),
-                        location: operand.location(),
+                    TypedValue::<T>::negate(self.context.type_context(), value).map_err(|e| {
+                        EvalError {
+                            message: format!("Cannot negate {ty}: {e}").into_boxed_str(),
+                            location: operand.location(),
+                        }
                     })?
                 }
                 "&" => match operand.as_variable() {
@@ -488,22 +507,23 @@ where
 
                 let lhs = self.visit_expression(&operands[0])?;
                 let rhs = self.visit_expression(&operands[1])?;
+                let type_context = self.context.type_context();
                 let result = match name.source(self.source) {
-                    "+" => TypedValue::<T>::add(self.context, lhs, rhs),
-                    "-" => TypedValue::<T>::subtract(self.context, lhs, rhs),
-                    "*" => TypedValue::<T>::multiply(self.context, lhs, rhs),
-                    "/" => TypedValue::<T>::divide(self.context, lhs, rhs),
-                    "<" => TypedValue::<T>::less_than(self.context, lhs, rhs),
-                    ">" => TypedValue::<T>::less_than(self.context, rhs, lhs),
-                    "<=" => TypedValue::<T>::less_than_or_equal(self.context, lhs, rhs),
-                    ">=" => TypedValue::<T>::less_than_or_equal(self.context, rhs, lhs),
-                    "==" => TypedValue::<T>::equals(self.context, lhs, rhs),
-                    "!=" => TypedValue::<T>::not_equals(self.context, lhs, rhs),
-                    "|" => TypedValue::<T>::bitwise_or(self.context, lhs, rhs),
-                    "^" => TypedValue::<T>::bitwise_xor(self.context, lhs, rhs),
-                    "&" => TypedValue::<T>::bitwise_and(self.context, lhs, rhs),
-                    "<<" => TypedValue::<T>::shift_left(self.context, lhs, rhs),
-                    ">>" => TypedValue::<T>::shift_right(self.context, lhs, rhs),
+                    "+" => TypedValue::<T>::add(type_context, lhs, rhs),
+                    "-" => TypedValue::<T>::subtract(type_context, lhs, rhs),
+                    "*" => TypedValue::<T>::multiply(type_context, lhs, rhs),
+                    "/" => TypedValue::<T>::divide(type_context, lhs, rhs),
+                    "<" => TypedValue::<T>::less_than(type_context, lhs, rhs),
+                    ">" => TypedValue::<T>::less_than(type_context, rhs, lhs),
+                    "<=" => TypedValue::<T>::less_than_or_equal(type_context, lhs, rhs),
+                    ">=" => TypedValue::<T>::less_than_or_equal(type_context, rhs, lhs),
+                    "==" => TypedValue::<T>::equals(type_context, lhs, rhs),
+                    "!=" => TypedValue::<T>::not_equals(type_context, lhs, rhs),
+                    "|" => TypedValue::<T>::bitwise_or(type_context, lhs, rhs),
+                    "^" => TypedValue::<T>::bitwise_xor(type_context, lhs, rhs),
+                    "&" => TypedValue::<T>::bitwise_and(type_context, lhs, rhs),
+                    "<<" => TypedValue::<T>::shift_left(type_context, lhs, rhs),
+                    ">>" => TypedValue::<T>::shift_right(type_context, lhs, rhs),
 
                     other => {
                         return Err(EvalError {
@@ -593,25 +613,6 @@ pub enum Type {
     /// Represents a string value.
     String,
 }
-impl Type {
-    /// Returns the size of the type in bytes.
-    pub fn size_of<T>(&self) -> usize
-    where
-        T: TypeSet,
-        T::Integer: ValueType + MemoryRepr,
-        T::SignedInteger: ValueType + MemoryRepr,
-        T::Float: ValueType + MemoryRepr,
-    {
-        match self {
-            Type::Void => <() as MemoryRepr>::BYTES,
-            Type::Int | Type::MaybeSignedInt => <T::Integer as MemoryRepr>::BYTES,
-            Type::SignedInt => <T::SignedInteger as MemoryRepr>::BYTES,
-            Type::Float => <T::Float as MemoryRepr>::BYTES,
-            Type::Bool => <bool as MemoryRepr>::BYTES,
-            Type::String => <StringIndex as MemoryRepr>::BYTES,
-        }
-    }
-}
 
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -632,29 +633,19 @@ impl Display for Type {
 pub struct Context<'ctx, T = DefaultTypeSet>
 where
     T: TypeSet,
-    T::Integer: Load<T> + Store<T>,
-    T::Float: Load<T> + Store<T>,
-    T::SignedInteger: Load<T> + Store<T>,
 {
     variables: IndexMap<String, TypedValue<T>>,
     functions: HashMap<String, ExprFn<'ctx, T>>,
-    strings: StringInterner,
     marker: std::marker::PhantomData<T>,
+    type_context: T,
 }
 
 impl<T> ExprContext<T> for Context<'_, T>
 where
     T: TypeSet,
-    T::Integer: Load<T> + Store<T> + Integer,
-    T::Float: Load<T> + Store<T>,
-    T::SignedInteger: Load<T> + Store<T>,
 {
-    fn intern_string(&mut self, s: &str) -> StringIndex {
-        self.strings.intern(s)
-    }
-
-    fn load_interned_string(&self, idx: StringIndex) -> &str {
-        self.strings.lookup(idx)
+    fn type_context(&mut self) -> &mut T {
+        &mut self.type_context
     }
 
     fn try_load_variable(&self, variable: &str) -> Option<TypedValue<T>> {
@@ -673,7 +664,7 @@ where
     ) -> Result<TypedValue<T>, FunctionCallError> {
         match self.functions.remove_entry(function_name) {
             Some((name, func)) => {
-                let retval = func.call(self, args);
+                let retval = func.call(self.type_context(), args);
                 self.functions.insert(name, func);
 
                 retval
@@ -693,13 +684,6 @@ impl<'ctx> Context<'ctx, DefaultTypeSet> {
 impl<'ctx, T> Context<'ctx, T>
 where
     T: TypeSet,
-    T::Integer: Load<T> + Store<T> + Integer,
-    T::Float: Load<T> + Store<T>,
-    T::SignedInteger: Load<T> + Store<T>,
-
-    <T::Integer as ValueType>::NegateOutput: Load<T> + Store<T>,
-    <T::SignedInteger as ValueType>::NegateOutput: Load<T> + Store<T>,
-    <T::Float as ValueType>::NegateOutput: Load<T> + Store<T>,
 {
     /// Creates a new context. The type set must be specified when using this function.
     ///
@@ -711,24 +695,15 @@ where
         Self {
             variables: IndexMap::new(),
             functions: HashMap::new(),
-            strings: StringInterner::new(),
             marker: std::marker::PhantomData,
+            type_context: T::default(),
         }
     }
 
     fn evaluate_any_impl(&mut self, expression: &str) -> Result<TypedValue<T>, EvalError> {
         // TODO: we can allow new globals to be defined in the expression, but that would require
         // storing a copy of the original globals, so that they can be reset?
-        let tokens = match lexer::tokenize(expression).collect::<Result<Vec<_>, _>>() {
-            Ok(tokens) => tokens,
-            Err(e) => {
-                return Err(EvalError {
-                    message: format!("Syntax error: {e}").into_boxed_str(),
-                    location: e.location,
-                });
-            }
-        };
-        let ast = match parser::parse_expression(expression, &tokens) {
+        let ast = match parser::parse_expression::<T::Parser>(expression) {
             Ok(ast) => ast,
             Err(e) => {
                 return Err(EvalError {
@@ -766,17 +741,17 @@ where
     pub fn evaluate<'s, V>(
         &'s mut self,
         expression: &'s str,
-    ) -> Result<V::Output<'s>, ExpressionError<'s>>
+    ) -> Result<V::Output, ExpressionError<'s>>
     where
-        V: Load<T>,
+        V: LoadOwned<T>,
     {
         let result = self.evaluate_any(expression)?;
         let result_ty = result.type_of();
-        V::load(self, result).ok_or_else(|| ExpressionError {
+        V::load_owned(self.type_context(), &result).ok_or_else(|| ExpressionError {
             error: EvalError {
                 message: format!(
                     "Expression evaluates to {result_ty}, which cannot be converted to {}",
-                    V::TYPE
+                    std::any::type_name::<V>()
                 )
                 .into_boxed_str(),
                 location: Location::dummy(),
@@ -790,7 +765,7 @@ where
     where
         V: Store<T>,
     {
-        let stored = value.store(self);
+        let stored = value.store(self.type_context());
         self.variables.insert(name.to_string(), stored);
     }
 
@@ -862,6 +837,10 @@ mod test {
             Ok(true)
         );
         assert_eq!(ctx.evaluate::<u64>("func(20) / 5"), Ok(8));
+        assert_eq!(
+            ctx.evaluate::<TypedValue>("func(20) / 5"),
+            Ok(TypedValue::Int(8))
+        );
         assert_eq!(ctx.evaluate::<u64>("func2(20, 20) / 5"), Ok(8));
         assert_eq!(ctx.evaluate::<bool>("true & false"), Ok(false));
         assert_eq!(ctx.evaluate::<bool>("!true"), Ok(false));
@@ -869,8 +848,8 @@ mod test {
         assert_eq!(ctx.evaluate::<bool>("true ^ true"), Ok(false));
         assert_eq!(ctx.evaluate::<u64>("!0x1111"), Ok(0xFFFF_FFFF_FFFF_EEEE));
         assert_eq!(
-            ctx.evaluate::<&str>("concatenate(five(), \"six\")"),
-            Ok("fivesix")
+            ctx.evaluate::<String>("concatenate(five(), \"six\")"),
+            Ok(String::from("fivesix"))
         );
         assert_eq!(ctx.evaluate::<bool>("signed * 2 == 60"), Ok(true));
     }
@@ -918,7 +897,7 @@ Evaluation error
  ---> at line 1 column 10
   |
 1 | func(20, true)
-  |          ^^^^ func expects argument 1 to be int, got bool"#,
+  |          ^^^^ func expects argument 1 to be u64, got bool"#,
         );
     }
 }
