@@ -72,7 +72,7 @@ pub fn run_eval_test(program: codegen::Program, path: impl AsRef<Path>) {
             expression
         };
         println!("Running `{expression}`");
-        let value = context.eval_expression(expression);
+        let value = context.eval_expression::<TypedValue>(expression);
         if value != TypedValue::Bool(true) {
             ctx.handle_error_string(
                 "Expression did not evaluate to true",

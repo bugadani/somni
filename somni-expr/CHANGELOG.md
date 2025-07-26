@@ -4,6 +4,7 @@
 - The `MemoryRepr` trait has been removed.
 - TypedValue's `String` is now also generic.
 - The string interner has been removed. The expression engine uses String as storage by default.
+- Expressions can be evaluated to `TypedValue`.
 
 # [0.1.0] - 2025-07-24
 

@@ -1,7 +1,7 @@
 use crate::{
     for_all_tuples,
     value::{Load, Store},
-    Type, TypeSet, TypedValue,
+    TypeSet, TypedValue,
 };
 
 /// An error that occurs when calling a function.
@@ -20,7 +20,7 @@ pub enum FunctionCallError {
         /// The 0-based index of the argument that has the incorrect type.
         idx: usize,
         /// The expected type of the argument.
-        expected: Type,
+        expected: &'static str,
     },
 
     /// An error occurred while calling the function.
@@ -68,7 +68,7 @@ for_all_tuples! {
                 let idx = 0;
                 $(
                     let $arg = <$arg>::load(ctx, &args[idx]).ok_or_else(|| {
-                        FunctionCallError::IncorrectArgumentType { idx, expected: $arg::TYPE }
+                        FunctionCallError::IncorrectArgumentType { idx, expected: std::any::type_name::<$arg>() }
                     })?;
                     let idx = idx + 1;
                 )*

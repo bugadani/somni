@@ -306,7 +306,7 @@ where
     }
 }
 
-pub trait Load<T = DefaultTypeSet>: ValueType
+pub trait Load<T = DefaultTypeSet>
 where
     T: TypeSet,
 {
@@ -317,7 +317,7 @@ where
     fn load<'s>(_ctx: &'s T, typed: &'s TypedValue<T>) -> Option<Self::Output<'s>>;
 }
 
-pub trait LoadOwned<T = DefaultTypeSet>: ValueType
+pub trait LoadOwned<T = DefaultTypeSet>
 where
     T: TypeSet,
 {
@@ -326,7 +326,7 @@ where
     fn load(_ctx: &T, typed: &TypedValue<T>) -> Option<Self::Output>;
 }
 
-pub trait Store<T = DefaultTypeSet>: ValueType
+pub trait Store<T = DefaultTypeSet>
 where
     T: TypeSet,
 {
@@ -469,6 +469,39 @@ where
 {
     fn store(&self, _ctx: &mut T) -> TypedValue<T> {
         TypedValue::Void
+    }
+}
+
+impl<T> LoadOwned<T> for TypedValue<T>
+where
+    T: TypeSet,
+{
+    type Output = Self;
+
+    fn load(_ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
+        Some(typed.clone())
+    }
+}
+
+impl<T> Load<T> for TypedValue<T>
+where
+    T: TypeSet,
+{
+    type Output<'s>
+        = Self
+    where
+        T: 's;
+
+    fn load(ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
+        <Self as LoadOwned<T>>::load(ctx, typed)
+    }
+}
+impl<T> Store<T> for TypedValue<T>
+where
+    T: TypeSet,
+{
+    fn store(&self, _ctx: &mut T) -> TypedValue<T> {
+        self.clone()
     }
 }
 

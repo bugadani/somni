@@ -8,7 +8,7 @@ use crate::{
 
 use somni_expr::{
     error::MarkInSource,
-    value::{Load, Store, ValueType},
+    value::{Load, LoadOwned, Store, ValueType},
     DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type,
 };
 use somni_parser::{parser, Location};
@@ -75,7 +75,7 @@ somni_expr::for_all_tuples! {
     ($($arg:ident),*) => {
         impl<$($arg,)* R, F> NativeFunction<($($arg,)*)> for F
         where
-            $($arg: Load<VmTypeSet>,)*
+            $($arg: Load<VmTypeSet> + ValueType,)*
             F: Fn($($arg,)*) -> R,
             F: for<'t> Fn($($arg::Output<'t>,)*) -> R,
             F: Clone,
@@ -525,7 +525,10 @@ impl<'p> EvalContext<'p> {
     ///
     /// An expression can use globals and functions defined in the program, but it cannot
     /// call functions that are not defined in the program.
-    pub fn eval_expression(&mut self, expression: &str) -> TypedValue {
+    pub fn eval_expression<V>(&mut self, expression: &str) -> V::Output
+    where
+        V: LoadOwned<VmTypeSet>,
+    {
         if !matches!(self.state, EvalState::Idle) {
             panic!("Cannot evaluate expression while the VM is running");
         }
@@ -551,7 +554,23 @@ impl<'p> EvalContext<'p> {
             _marker: PhantomData,
         };
         // TODO: handle errors
-        visitor.visit_expression(&ast).unwrap()
+        let result = visitor.visit_expression(&ast).unwrap();
+
+        let result_ty = result.type_of();
+        V::load(self.type_context(), &result).unwrap_or_else(|| {
+            panic!(
+                "{}",
+                MarkInSource(
+                    expression,
+                    ast.location(),
+                    "Eval error",
+                    &format!(
+                        "Expression evaluates to {result_ty}, which cannot be converted to {}",
+                        std::any::type_name::<V>()
+                    ),
+                )
+            )
+        })
     }
 
     fn execute(&mut self) -> EvalEvent<TypedValue> {

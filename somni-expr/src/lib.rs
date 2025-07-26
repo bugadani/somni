@@ -764,7 +764,7 @@ where
             error: EvalError {
                 message: format!(
                     "Expression evaluates to {result_ty}, which cannot be converted to {}",
-                    V::TYPE
+                    std::any::type_name::<V>()
                 )
                 .into_boxed_str(),
                 location: Location::dummy(),
@@ -850,6 +850,10 @@ mod test {
             Ok(true)
         );
         assert_eq!(ctx.evaluate::<u64>("func(20) / 5"), Ok(8));
+        assert_eq!(
+            ctx.evaluate::<TypedValue>("func(20) / 5"),
+            Ok(TypedValue::Int(8))
+        );
         assert_eq!(ctx.evaluate::<u64>("func2(20, 20) / 5"), Ok(8));
         assert_eq!(ctx.evaluate::<bool>("true & false"), Ok(false));
         assert_eq!(ctx.evaluate::<bool>("!true"), Ok(false));
