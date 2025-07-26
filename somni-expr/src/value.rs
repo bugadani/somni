@@ -213,23 +213,17 @@ impl ValueType for bool {
     }
 }
 
-impl ValueType for &str {
-    const TYPE: Type = Type::String;
+for_each! {
+    ($string:ty) in [&str, String, Box<str>] => {
+        impl ValueType for $string {
+            const TYPE: Type = Type::String;
+            type NegateOutput = Self;
 
-    type NegateOutput = Self;
-
-    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
-        Ok(a == b)
-    }
-}
-impl ValueType for String {
-    const TYPE: Type = Type::String;
-
-    type NegateOutput = Self;
-
-    fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
-        Ok(a == b)
-    }
+            fn equals(a: Self, b: Self) -> Result<bool, OperatorError> {
+                Ok(a == b)
+            }
+        }
+    };
 }
 
 /// Represents any value in the expression language.
@@ -337,18 +331,6 @@ macro_rules! store {
                 TypedValue::$kind(*self)
             }
         }
-    };
-}
-
-macro_rules! for_each {
-    ($($pattern:tt in [$($choice:ty),*] => $code:tt;)*) => {
-        $(
-            macro_rules! inner { $pattern => $code; }
-
-            $(
-                inner!($choice);
-            )*
-        )*
     };
 }
 

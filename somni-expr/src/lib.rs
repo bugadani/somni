@@ -74,6 +74,29 @@
 //! ```
 #![warn(missing_docs)]
 
+macro_rules! for_each {
+    // Any parenthesized set of choices, allows multiple matchers in the pattern
+    ($(($pattern:tt) in [$( ($($choice:tt)*) ),*] => $code:tt;)*) => {
+        $(
+            macro_rules! inner { $pattern => $code; }
+
+            $(
+                inner!( $($choice)* );
+            )*
+        )*
+    };
+    // Single type, single matcher
+    ($($pattern:tt in [$($choice:ty),*] => $code:tt;)*) => {
+        $(
+            macro_rules! inner { $pattern => $code; }
+
+            $(
+                inner!($choice);
+            )*
+        )*
+    };
+}
+
 pub mod error;
 #[doc(hidden)]
 pub mod function;
@@ -149,67 +172,29 @@ pub trait TypeSet: Sized + Default + Debug + 'static {
     fn store_string(&mut self, str: &str) -> Self::String;
 }
 
-impl TypeSet for DefaultTypeSet {
-    type Parser = Self;
+for_each! {
+    (($name:ident, $signed:ty)) in [(DefaultTypeSet, i64), (TypeSet32, i32), (TypeSet128, i128)] => {
+        impl TypeSet for $name {
+            type Parser = Self;
 
-    type Integer = <Self::Parser as ParserTypeSet>::Integer;
-    type SignedInteger = i64;
-    type Float = <Self::Parser as ParserTypeSet>::Float;
-    type String = String;
+            type Integer = <Self::Parser as ParserTypeSet>::Integer;
+            type SignedInteger = $signed;
+            type Float = <Self::Parser as ParserTypeSet>::Float;
+            type String = Box<str>;
 
-    fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
-        i64::try_from(v).map_err(|_| OperatorError::RuntimeError)
-    }
+            fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
+                <$signed>::try_from(v).map_err(|_| OperatorError::RuntimeError)
+            }
 
-    fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
-        str
-    }
+            fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
+                str
+            }
 
-    fn store_string(&mut self, str: &str) -> Self::String {
-        str.to_string()
-    }
-}
-
-impl TypeSet for TypeSet32 {
-    type Parser = Self;
-
-    type Integer = <Self::Parser as ParserTypeSet>::Integer;
-    type SignedInteger = i32;
-    type Float = <Self::Parser as ParserTypeSet>::Float;
-    type String = String;
-
-    fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
-        i32::try_from(v).map_err(|_| OperatorError::RuntimeError)
-    }
-
-    fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
-        str
-    }
-
-    fn store_string(&mut self, str: &str) -> Self::String {
-        str.to_string()
-    }
-}
-
-impl TypeSet for TypeSet128 {
-    type Parser = Self;
-
-    type Integer = <Self::Parser as ParserTypeSet>::Integer;
-    type SignedInteger = i128;
-    type Float = <Self::Parser as ParserTypeSet>::Float;
-    type String = String;
-
-    fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
-        i128::try_from(v).map_err(|_| OperatorError::RuntimeError)
-    }
-
-    fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
-        str
-    }
-
-    fn store_string(&mut self, str: &str) -> Self::String {
-        str.to_string()
-    }
+            fn store_string(&mut self, str: &str) -> Self::String {
+                str.to_string().into_boxed_str()
+            }
+        }
+    };
 }
 
 #[doc(hidden)]
