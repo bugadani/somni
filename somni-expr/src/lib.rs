@@ -500,7 +500,7 @@ impl<T: TypeSet> StackFrame<T> {
         }
     }
 
-    fn open(&self) -> StackFrame<T> {
+    fn next_call_frame(&self) -> StackFrame<T> {
         StackFrame {
             start_addr: self.start_addr + self.variables.len(),
             variables: IndexMap::new(),
@@ -623,7 +623,7 @@ where
             .stack
             .last()
             .expect("The global scope must always be present")
-            .open();
+            .next_call_frame();
         self.stack.push(stack_frame);
 
         let mut visitor = ExpressionVisitor::<_, T> {
