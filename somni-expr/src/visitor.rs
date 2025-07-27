@@ -85,10 +85,12 @@ where
                     }
                 },
                 "*" => {
-                    return Err(EvalError {
-                        message: String::from("Dereference not supported").into_boxed_str(),
+                    let address = self.visit_expression(operand)?;
+                    self.context.at_address(address).map_err(|e| EvalError {
+                        message: format!("Failed to load variable from address: {e}")
+                            .into_boxed_str(),
                         location: operand.location(),
-                    });
+                    })?
                 }
                 _ => {
                     return Err(EvalError {

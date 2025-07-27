@@ -348,6 +348,9 @@ where
     /// Assigns a new value to a variable in the context.
     fn assign_variable(&mut self, variable: &str, value: &TypedValue<T>) -> Result<(), Box<str>>;
 
+    /// Returns a value from the given address.
+    fn at_address(&mut self, address: TypedValue<T>) -> Result<TypedValue<T>, Box<str>>;
+
     /// Assigns a new value to a variable in the context.
     fn assign_address(
         &mut self,
@@ -809,6 +812,32 @@ where
         Err(format!("Variable not found: {variable}").into_boxed_str())
     }
 
+    fn at_address(&mut self, address: TypedValue<T>) -> Result<TypedValue<T>, Box<str>> {
+        let TypedValue::Int(address) = address else {
+            return Err(format!("Expected address, got {address:?}").into_boxed_str());
+        };
+
+        let address = T::to_usize(address)
+            .map_err(|_| format!("Invalid address: {address:?}").into_boxed_str())?;
+
+        if address & GLOBAL_VARIABLE != 0 {
+            if let Some((_k, v)) = self.stack[0].variables.get_index(address) {
+                return Ok(v.clone());
+            }
+        } else {
+            for frame in self.stack.iter_mut().rev() {
+                if frame.start_addr <= address {
+                    if let Some((_k, v)) = frame.variables.get_index(address - frame.start_addr) {
+                        return Ok(v.clone());
+                    }
+                    break;
+                }
+            }
+        }
+
+        Err(format!("Not a valid memory address: {address}").into_boxed_str())
+    }
+
     fn assign_address(
         &mut self,
         address: TypedValue<T>,
@@ -828,8 +857,9 @@ where
             }
         } else {
             for frame in self.stack.iter_mut().rev() {
-                if frame.start_addr < address {
-                    if let Some((_k, v)) = frame.variables.get_index_mut(address) {
+                if frame.start_addr <= address {
+                    if let Some((_k, v)) = frame.variables.get_index_mut(address - frame.start_addr)
+                    {
                         v.clone_from(value);
                         return Ok(());
                     }
@@ -1062,7 +1092,8 @@ mod test {
                 assert_eq!(
                     value,
                     TypedValue::Bool(true),
-                    "Expression `{expression}` evaluated to {value:?}"
+                    "{}: Expression `{expression}` evaluated to {value:?}",
+                    path.display()
                 );
             }
         }
