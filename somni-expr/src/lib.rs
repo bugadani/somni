@@ -506,6 +506,13 @@ impl<T: TypeSet> StackFrame<T> {
             variables: IndexMap::new(),
         }
     }
+
+    fn lookup_by_address(&mut self, address: usize) -> Result<&mut TypedValue<T>, Box<str>> {
+        self.variables
+            .get_index_mut(address - self.start_addr)
+            .map(|(_k, v)| v)
+            .ok_or_else(|| format!("Invalid address {address}").into_boxed_str())
+    }
 }
 
 struct ProgramData<'ctx, T: TypeSet> {
@@ -772,6 +779,27 @@ where
 
         Some((index | GLOBAL_VARIABLE, value))
     }
+
+    fn lookup_address(&mut self, address: TypedValue<T>) -> Result<&mut TypedValue<T>, Box<str>> {
+        let TypedValue::Int(address) = address else {
+            return Err(format!("Expected address, got {address:?}").into_boxed_str());
+        };
+
+        let address = T::to_usize(address)
+            .map_err(|_| format!("Invalid address: {address:?}").into_boxed_str())?;
+
+        if address & GLOBAL_VARIABLE != 0 {
+            return self.stack[0].lookup_by_address(address);
+        }
+
+        for frame in self.stack.iter_mut().rev() {
+            if frame.start_addr <= address {
+                return frame.lookup_by_address(address);
+            }
+        }
+
+        Err(format!("Not a valid memory address: {address}").into_boxed_str())
+    }
 }
 
 impl<T> ExprContext<T> for Context<'_, T>
@@ -813,29 +841,7 @@ where
     }
 
     fn at_address(&mut self, address: TypedValue<T>) -> Result<TypedValue<T>, Box<str>> {
-        let TypedValue::Int(address) = address else {
-            return Err(format!("Expected address, got {address:?}").into_boxed_str());
-        };
-
-        let address = T::to_usize(address)
-            .map_err(|_| format!("Invalid address: {address:?}").into_boxed_str())?;
-
-        if address & GLOBAL_VARIABLE != 0 {
-            if let Some((_k, v)) = self.stack[0].variables.get_index(address) {
-                return Ok(v.clone());
-            }
-        } else {
-            for frame in self.stack.iter_mut().rev() {
-                if frame.start_addr <= address {
-                    if let Some((_k, v)) = frame.variables.get_index(address - frame.start_addr) {
-                        return Ok(v.clone());
-                    }
-                    break;
-                }
-            }
-        }
-
-        Err(format!("Not a valid memory address: {address}").into_boxed_str())
+        self.lookup_address(address).cloned()
     }
 
     fn assign_address(
@@ -843,32 +849,9 @@ where
         address: TypedValue<T>,
         value: &TypedValue<T>,
     ) -> Result<(), Box<str>> {
-        let TypedValue::Int(address) = address else {
-            return Err(format!("Expected address, got {address:?}").into_boxed_str());
-        };
-
-        let address = T::to_usize(address)
-            .map_err(|_| format!("Invalid address: {address:?}").into_boxed_str())?;
-
-        if address & GLOBAL_VARIABLE != 0 {
-            if let Some((_k, v)) = self.stack[0].variables.get_index_mut(address) {
-                v.clone_from(value);
-                return Ok(());
-            }
-        } else {
-            for frame in self.stack.iter_mut().rev() {
-                if frame.start_addr <= address {
-                    if let Some((_k, v)) = frame.variables.get_index_mut(address - frame.start_addr)
-                    {
-                        v.clone_from(value);
-                        return Ok(());
-                    }
-                    break;
-                }
-            }
-        }
-
-        Err(format!("Not a valid memory address: {address}").into_boxed_str())
+        let v = self.lookup_address(address)?;
+        v.clone_from(value);
+        return Ok(());
     }
 
     fn call_function(
