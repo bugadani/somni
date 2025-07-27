@@ -851,6 +851,8 @@ macro_rules! for_all_tuples {
 
 #[cfg(test)]
 mod test {
+    use std::path::Path;
+
     use super::*;
 
     fn strip_ansi(s: impl AsRef<str>) -> String {
@@ -946,6 +948,82 @@ mod test {
         assert!(ctx
             .evaluate::<bool>("multiply_with_global(\"2\") == 6")
             .is_err());
+    }
+
+    #[test]
+    fn run_eval_tests() {
+        fn filter(path: &Path) -> bool {
+            let Ok(env) = std::env::var("TEST_FILTER") else {
+                // No filter set, walk folders and somni source files.
+                return path.is_dir() || path.extension().map_or(false, |ext| ext == "sm");
+            };
+
+            Path::new(&env) == path
+        }
+
+        fn walk(dir: &Path, on_file: &impl Fn(&Path)) {
+            for entry in std::fs::read_dir(dir)
+                .unwrap_or_else(|_| panic!("Folder not found: {}", dir.display()))
+                .flatten()
+            {
+                let path = entry.path();
+
+                if !filter(&path) {
+                    continue;
+                }
+
+                if path.is_file() {
+                    on_file(&path);
+                } else {
+                    walk(&path, on_file);
+                }
+            }
+        }
+
+        fn run_eval_test(path: &Path) {
+            fn parse(source: &str) -> Context<'_> {
+                let mut context = Context::parse(&source).unwrap();
+
+                context.add_function("add_from_rust", |a: u64, b: u64| -> i64 { (a + b) as i64 });
+                context.add_function("assert", |a: bool| a); // No-op to test calling Rust functions from expressions
+                context.add_function("reverse", |s: &str| s.chars().rev().collect::<String>());
+
+                context
+            }
+
+            let source = std::fs::read_to_string(path).unwrap();
+
+            let expressions = source
+                .lines()
+                .filter_map(|line| line.trim().strip_prefix("//@"))
+                .collect::<Vec<_>>();
+
+            let mut context = parse(&source);
+
+            for expression in &expressions {
+                let expression = if let Some(e) = expression.strip_prefix('+') {
+                    // `//@+` preserves VM state (like changes to globals)
+                    e.trim()
+                } else {
+                    // `//@` resets VM state (like changes to globals)
+                    context = parse(&source);
+                    expression
+                };
+                println!("Running `{expression}`");
+                let value = context
+                    .evaluate_any(expression)
+                    .unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
+                assert_eq!(
+                    value,
+                    TypedValue::Bool(true),
+                    "Expression `{expression}` evaluated to {value:?}"
+                );
+            }
+        }
+
+        walk("../tests/eval".as_ref(), &|path| {
+            run_eval_test(path);
+        });
     }
 
     #[test]
