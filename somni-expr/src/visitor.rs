@@ -102,6 +102,39 @@ where
                 let short_circuiting = ["&&", "||"];
                 let operator = name.source(self.source);
 
+                // Special cases
+                if operator == "=" {
+                    return match &operands[0] {
+                        Expression::UnaryOperator { name, operand }
+                            if name.source(self.source) == "*" =>
+                        {
+                            let address = self.visit_expression(operand)?;
+                            let rhs = self.visit_expression(&operands[1])?;
+                            self.context
+                                .assign_address(address, &rhs)
+                                .map_err(|e| EvalError {
+                                    message: e,
+                                    location: expression.location(),
+                                })?;
+                            Ok(TypedValue::Void)
+                        }
+                        Expression::Variable { variable } => {
+                            let name = variable.source(self.source);
+                            let rhs = self.visit_expression(&operands[1])?;
+                            self.context
+                                .assign_variable(name, &rhs)
+                                .map_err(|e| EvalError {
+                                    message: e,
+                                    location: expression.location(),
+                                })?;
+                            Ok(TypedValue::Void)
+                        }
+                        _ => Err(EvalError {
+                            location: operands[0].location(),
+                            message: "Not a valid left-hand side of an assignment".into(),
+                        }),
+                    };
+                }
                 if short_circuiting.contains(&operator) {
                     let lhs = self.visit_expression(&operands[0])?;
                     return match operator {
@@ -111,10 +144,11 @@ where
                     };
                 }
 
+                // "Normal" binary operators
                 let lhs = self.visit_expression(&operands[0])?;
                 let rhs = self.visit_expression(&operands[1])?;
                 let type_context = self.context.type_context();
-                let result = match name.source(self.source) {
+                let result = match operator {
                     "+" => TypedValue::<T>::add(type_context, lhs, rhs),
                     "-" => TypedValue::<T>::subtract(type_context, lhs, rhs),
                     "*" => TypedValue::<T>::multiply(type_context, lhs, rhs),

@@ -168,6 +168,9 @@ pub trait TypeSet: Sized + Default + Debug + 'static {
     /// Converts an unsigned integer into a signed integer.
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError>;
 
+    /// Converts an unsigned integer into a Rust usize.
+    fn to_usize(v: Self::Integer) -> Result<usize, OperatorError>;
+
     /// Loads a string.
     fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str;
 
@@ -187,6 +190,10 @@ for_each! {
 
             fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
                 <$signed>::try_from(v).map_err(|_| OperatorError::RuntimeError)
+            }
+
+            fn to_usize(v: Self::Integer) -> Result<usize, OperatorError> {
+                usize::try_from(v).map_err(|_| OperatorError::RuntimeError)
             }
 
             fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
@@ -340,6 +347,13 @@ where
 
     /// Assigns a new value to a variable in the context.
     fn assign_variable(&mut self, variable: &str, value: &TypedValue<T>) -> Result<(), Box<str>>;
+
+    /// Assigns a new value to a variable in the context.
+    fn assign_address(
+        &mut self,
+        address: TypedValue<T>,
+        value: &TypedValue<T>,
+    ) -> Result<(), Box<str>>;
 
     /// Returns the address of a variable in the context.
     fn address_of(&mut self, variable: &str) -> TypedValue<T>;
@@ -793,6 +807,38 @@ where
         }
 
         Err(format!("Variable not found: {variable}").into_boxed_str())
+    }
+
+    fn assign_address(
+        &mut self,
+        address: TypedValue<T>,
+        value: &TypedValue<T>,
+    ) -> Result<(), Box<str>> {
+        let TypedValue::Int(address) = address else {
+            return Err(format!("Expected address, got {address:?}").into_boxed_str());
+        };
+
+        let address = T::to_usize(address)
+            .map_err(|_| format!("Invalid address: {address:?}").into_boxed_str())?;
+
+        if address & GLOBAL_VARIABLE != 0 {
+            if let Some((_k, v)) = self.stack[0].variables.get_index_mut(address) {
+                v.clone_from(value);
+                return Ok(());
+            }
+        } else {
+            for frame in self.stack.iter_mut().rev() {
+                if frame.start_addr < address {
+                    if let Some((_k, v)) = frame.variables.get_index_mut(address) {
+                        v.clone_from(value);
+                        return Ok(());
+                    }
+                    break;
+                }
+            }
+        }
+
+        Err(format!("Not a valid memory address: {address}").into_boxed_str())
     }
 
     fn call_function(

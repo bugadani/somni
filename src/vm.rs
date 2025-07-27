@@ -859,6 +859,14 @@ impl<'s> ExprContext<VmTypeSet> for EvalContext<'s> {
         unimplemented!()
     }
 
+    fn assign_address(
+        &mut self,
+        _address: TypedValue,
+        _value: &TypedValue,
+    ) -> Result<(), Box<str>> {
+        unimplemented!()
+    }
+
     fn try_load_variable(&mut self, name: &str) -> Option<TypedValue> {
         let name_idx = self
             .strings
