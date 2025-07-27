@@ -1,6 +1,5 @@
 use std::{
     collections::{hash_map::Entry, HashMap},
-    marker::PhantomData,
     ops::{Add, AddAssign, Sub},
 };
 
@@ -14,9 +13,7 @@ use crate::{
     variable_tracker::{self, LocalVariableIndex},
 };
 
-use somni_expr::{
-    ExprContext, ExpressionVisitor, FunctionCallError, Type, TypedValue as ExprTypedValue,
-};
+use somni_expr::{Context, Type};
 use somni_parser::Location;
 
 // This is just to keep the size of Instruction small enough. Re-evaluate this later.
@@ -314,49 +311,6 @@ impl Program {
     }
 }
 
-// This enables evaluating initializer expressions. TODO: reuse somni-expr code
-impl ExprContext<VmTypeSet> for Program {
-    fn type_context(&mut self) -> &mut VmTypeSet {
-        &mut self.type_ctx
-    }
-
-    fn try_load_variable(&mut self, variable: &str) -> Option<ExprTypedValue<VmTypeSet>> {
-        let idx = self.debug_info.strings.find(variable)?;
-        self.globals[&idx].initial_value.map(ExprTypedValue::from)
-    }
-
-    fn declare(&mut self, variable: &str, value: ExprTypedValue<VmTypeSet>) {
-        todo!()
-    }
-
-    fn assign_variable(
-        &mut self,
-        variable: &str,
-        value: &ExprTypedValue<VmTypeSet>,
-    ) -> Result<(), Box<str>> {
-        todo!()
-    }
-
-    fn address_of(&mut self, variable: &str) -> ExprTypedValue<VmTypeSet> {
-        let idx = self.debug_info.strings.find(variable).unwrap();
-        let MemoryAddress::Global(addr) = self.globals[&idx].address else {
-            unreachable!();
-        };
-
-        ExprTypedValue::Int(addr as u64)
-    }
-
-    fn call_function(
-        &mut self,
-        _function_name: &str,
-        _args: &[ExprTypedValue<VmTypeSet>],
-    ) -> Result<ExprTypedValue<VmTypeSet>, FunctionCallError> {
-        Err(FunctionCallError::Other(
-            "Function calls are not supported".into(),
-        ))
-    }
-}
-
 pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, CompileError<'s>> {
     let interner = ir.strings.clone();
     let strings = ir.strings.clone().finalize();
@@ -389,6 +343,10 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
         global_addr += ty.vm_size_of();
     }
 
+    // TODO: avoid double-parsing source
+    // TODO: change the API so that user-registered Rust functions are visible here
+    let mut eval_ctx = Context::<VmTypeSet>::parse_with_types(source).unwrap();
+
     loop {
         let mut made_progress = false;
 
@@ -397,14 +355,18 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
                 continue;
             }
 
-            let mut visitor = ExpressionVisitor {
-                context: &mut this.program,
-                source,
-                _marker: PhantomData,
-            };
-            if let Ok(value) = visitor.visit_expression(&global.initializer) {
-                this.program.globals[name].initial_value = Some(value.into());
-                made_progress = true;
+            match eval_ctx.evaluate_expr_any(source, &global.initializer) {
+                Ok(value) => {
+                    this.program.globals[name].initial_value = Some(value.into());
+                    made_progress = true;
+                }
+                Err(err) => {
+                    return Err(CompileError {
+                        source,
+                        location: err.location,
+                        error: format!("Failed to evaluate initializer: {}", err.message),
+                    });
+                }
             }
         }
 

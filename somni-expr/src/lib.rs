@@ -638,7 +638,10 @@ where
         self.evaluate_expr_any(expression, &ast)
     }
 
-    fn evaluate_expr_any(
+    /// Evaluates a parsed expression.
+    ///
+    /// The `source` should include the whole program source, from which the expression has been extracted.
+    pub fn evaluate_expr_any(
         &mut self,
         source: &str,
         ast: &Expression<T::Parser>,

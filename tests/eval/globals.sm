@@ -1,9 +1,15 @@
 //@ doubled() == 52
 //@+ n + m == 52
 //@ n + m == 42
+//@ p == 42
 
 var n: int = 10;
 var m: int = 32;
+var p: int = add_as_signed(n, m);
+
+fn add_as_signed(a: int, b: int) -> int {
+    return a + b;
+}
 
 fn double() {
     n = n * 2;

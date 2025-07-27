@@ -1,6 +1,21 @@
 Globals:
   n = global int
   m = global int
+  p = global int
+
+Function: add_as_signed
+block 0
+  var return_value: int = None
+  var a: int = None
+  var b: int = None
+  return_value = a + b
+  free(b)
+  free(a)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
 
 Function: double
 block 0
