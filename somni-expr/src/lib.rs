@@ -482,12 +482,12 @@ enum InitializerState {
     Evaluating,
 }
 
-struct Scope<T: TypeSet> {
+struct StackFrame<T: TypeSet> {
     start_addr: usize,
     variables: IndexMap<String, TypedValue<T>>,
 }
 
-impl<T: TypeSet> Scope<T> {
+impl<T: TypeSet> StackFrame<T> {
     fn declare(&mut self, variable: &str, value: TypedValue<T>) {
         self.variables.insert(variable.to_string(), value);
     }
@@ -500,8 +500,8 @@ impl<T: TypeSet> Scope<T> {
         }
     }
 
-    fn open(&self) -> Scope<T> {
-        Scope {
+    fn open(&self) -> StackFrame<T> {
+        StackFrame {
             start_addr: self.start_addr + self.variables.len(),
             variables: IndexMap::new(),
         }
@@ -525,7 +525,7 @@ where
     // Program state
     // ----
     /// Variable stack. Element 0 is the global scope.
-    stack: Vec<Scope<T>>,
+    stack: Vec<StackFrame<T>>,
     // unevaluated globals
     initializers: HashMap<&'ctx str, InitializerState>,
     type_context: T,
@@ -603,7 +603,7 @@ where
                 program_functions,
                 functions: RefCell::new(HashMap::new()),
             }),
-            stack: vec![Scope {
+            stack: vec![StackFrame {
                 start_addr: 0,
                 variables: IndexMap::new(),
             }],
