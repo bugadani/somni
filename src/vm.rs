@@ -871,6 +871,14 @@ impl<'s> ExprContext<VmTypeSet> for EvalContext<'s> {
         unimplemented!()
     }
 
+    fn open_scope(&mut self) {
+        unimplemented!()
+    }
+
+    fn close_scope(&mut self) {
+        unimplemented!()
+    }
+
     fn try_load_variable(&mut self, name: &str) -> Option<TypedValue> {
         let name_idx = self
             .strings

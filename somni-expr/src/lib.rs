@@ -115,7 +115,6 @@ use std::{
     rc::Rc,
 };
 
-use indexmap::IndexMap;
 use somni_parser::{
     ast::{self, Expression, Function, Item, Program},
     parser::{self, parse, TypeSet as ParserTypeSet},
@@ -361,6 +360,12 @@ where
     /// Returns the address of a variable in the context.
     fn address_of(&mut self, variable: &str) -> TypedValue<T>;
 
+    /// Opens a new scope in the current stack frame.
+    fn open_scope(&mut self);
+
+    /// Closes the last scope in the current stack frame.
+    fn close_scope(&mut self);
+
     /// Calls a function in the context.
     fn call_function(
         &mut self,
@@ -484,40 +489,74 @@ enum InitializerState {
 
 struct StackFrame<T: TypeSet> {
     start_addr: usize,
-    variables: IndexMap<String, TypedValue<T>>,
+    variables: Vec<TypedValue<T>>,
+    scopes: Vec<HashMap<String, usize>>,
 }
 
 impl<T: TypeSet> StackFrame<T> {
-    fn declare(&mut self, variable: &str, value: TypedValue<T>) {
-        self.variables.insert(variable.to_string(), value);
-    }
-    fn store(&mut self, variable: &str, value: &TypedValue<T>) -> bool {
-        if let Some(var) = self.variables.get_mut(variable) {
-            *var = value.clone();
-            true
-        } else {
-            false
+    fn new() -> StackFrame<T> {
+        StackFrame {
+            start_addr: 0,
+            variables: vec![],
+            scopes: vec![HashMap::new()],
         }
     }
 
     fn next_call_frame(&self) -> StackFrame<T> {
         StackFrame {
             start_addr: self.start_addr + self.variables.len(),
-            variables: IndexMap::new(),
+            variables: vec![],
+            scopes: vec![HashMap::new()],
+        }
+    }
+
+    fn declare(&mut self, variable: &str, value: TypedValue<T>) -> usize {
+        let index = self.variables.len();
+        self.variables.push(value);
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .insert(variable.to_string(), index);
+        index + self.start_addr
+    }
+
+    fn lookup_index(&self, name: &str) -> Option<usize> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(idx) = scope.get(name) {
+                return Some(*idx);
+            }
+        }
+        None
+    }
+
+    fn store(&mut self, variable: &str, value: &TypedValue<T>) -> bool {
+        if let Some(idx) = self.lookup_index(variable) {
+            self.variables.get_mut(idx).unwrap().clone_from(value);
+            true
+        } else {
+            false
         }
     }
 
     fn lookup_by_address(&mut self, address: usize) -> Result<&mut TypedValue<T>, Box<str>> {
         self.variables
-            .get_index_mut(address - self.start_addr)
-            .map(|(_k, v)| v)
+            .get_mut(address - self.start_addr)
             .ok_or_else(|| format!("Invalid address {address}").into_boxed_str())
     }
 
     fn lookup_by_name<'s>(&'s mut self, variable: &str) -> Option<(usize, &'s mut TypedValue<T>)> {
-        self.variables
-            .get_full_mut(variable)
-            .map(|(index, _k, v)| (index + self.start_addr, v))
+        let index = self.lookup_index(variable)?;
+        let address = index + self.start_addr;
+
+        Some((address, self.variables.get_mut(index).unwrap()))
+    }
+
+    fn open_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn close_scope(&mut self) {
+        self.scopes.pop().unwrap();
     }
 }
 
@@ -616,10 +655,7 @@ where
                 program_functions,
                 functions: RefCell::new(HashMap::new()),
             }),
-            stack: vec![StackFrame {
-                start_addr: 0,
-                variables: IndexMap::new(),
-            }],
+            stack: vec![StackFrame::new()],
             type_context: T::default(),
             initializers,
         }
@@ -779,9 +815,7 @@ where
             .ok()?;
 
         let global_frame = &mut self.stack[0];
-        let (index, _) = global_frame
-            .variables
-            .insert_full(variable.to_string(), value.clone());
+        let index = global_frame.declare(variable, value.clone());
 
         Some((index | GLOBAL_VARIABLE, value))
     }
@@ -891,6 +925,18 @@ where
                     .into_boxed_str(),
                 )
             })
+    }
+
+    /// Opens a new scope in the current stack frame.
+    fn open_scope(&mut self) {
+        // TODO: error handling
+        self.stack.last_mut().unwrap().open_scope();
+    }
+
+    /// Closes the last scope in the current stack frame.
+    fn close_scope(&mut self) {
+        // TODO: error handling
+        self.stack.last_mut().unwrap().close_scope();
     }
 }
 

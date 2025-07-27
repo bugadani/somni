@@ -304,12 +304,15 @@ where
     }
 
     fn visit_body(&mut self, body: &Body<T::Parser>) -> Result<StatementResult<T>, EvalError> {
+        self.context.open_scope();
         for statement in body.statements.iter() {
             if let Some(retval) = self.visit_statement(statement)? {
+                self.context.close_scope();
                 return Ok(retval);
             }
         }
 
+        self.context.close_scope();
         Ok(StatementResult::EndOfBody)
     }
 
