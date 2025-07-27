@@ -314,18 +314,30 @@ impl Program {
     }
 }
 
-// This enables evaluating initializer expressions
+// This enables evaluating initializer expressions. TODO: reuse somni-expr code
 impl ExprContext<VmTypeSet> for Program {
     fn type_context(&mut self) -> &mut VmTypeSet {
         &mut self.type_ctx
     }
 
-    fn try_load_variable(&self, variable: &str) -> Option<ExprTypedValue<VmTypeSet>> {
+    fn try_load_variable(&mut self, variable: &str) -> Option<ExprTypedValue<VmTypeSet>> {
         let idx = self.debug_info.strings.find(variable)?;
         self.globals[&idx].initial_value.map(ExprTypedValue::from)
     }
 
-    fn address_of(&self, variable: &str) -> ExprTypedValue<VmTypeSet> {
+    fn declare(&mut self, variable: &str, value: ExprTypedValue<VmTypeSet>) {
+        todo!()
+    }
+
+    fn assign_variable(
+        &mut self,
+        variable: &str,
+        value: &ExprTypedValue<VmTypeSet>,
+    ) -> Result<(), Box<str>> {
+        todo!()
+    }
+
+    fn address_of(&mut self, variable: &str) -> ExprTypedValue<VmTypeSet> {
         let idx = self.debug_info.strings.find(variable).unwrap();
         let MemoryAddress::Global(addr) = self.globals[&idx].address else {
             unreachable!();
@@ -339,7 +351,9 @@ impl ExprContext<VmTypeSet> for Program {
         _function_name: &str,
         _args: &[ExprTypedValue<VmTypeSet>],
     ) -> Result<ExprTypedValue<VmTypeSet>, FunctionCallError> {
-        Err(FunctionCallError::Other("Function calls are not supported"))
+        Err(FunctionCallError::Other(
+            "Function calls are not supported".into(),
+        ))
     }
 }
 

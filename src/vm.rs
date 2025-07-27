@@ -94,7 +94,7 @@ somni_expr::for_all_tuples! {
 
                 Ok(VmTypedValue::from(self($(
                     <$arg>::load(&ctx.type_ctx, &$arg).expect("Expect to be able to load the specified type"),
-                )*).store(&mut ctx.type_ctx)))
+                )*).store(ctx.type_context())))
             }
         }
     };
@@ -125,7 +125,7 @@ impl<'p> SomniFn<'p> {
         let expr_func = func.clone();
         Self {
             func: Box::new(move |ctx, sp| func.call_from_vm(ctx, sp)),
-            expr_func: Box::new(move |ctx, args| expr_func.call(ctx.type_context(), args)),
+            expr_func: Box::new(move |ctx, args| expr_func.call(&mut *ctx.type_context(), args)),
         }
     }
 
@@ -851,7 +851,15 @@ impl<'s> ExprContext<VmTypeSet> for EvalContext<'s> {
         &mut self.type_ctx
     }
 
-    fn try_load_variable(&self, name: &str) -> Option<TypedValue> {
+    fn declare(&mut self, _variable: &str, _value: TypedValue) {
+        unimplemented!()
+    }
+
+    fn assign_variable(&mut self, _variable: &str, _value: &TypedValue) -> Result<(), Box<str>> {
+        unimplemented!()
+    }
+
+    fn try_load_variable(&mut self, name: &str) -> Option<TypedValue> {
         let name_idx = self
             .strings
             .find(name)
@@ -888,7 +896,7 @@ impl<'s> ExprContext<VmTypeSet> for EvalContext<'s> {
         }
     }
 
-    fn address_of(&self, name: &str) -> TypedValue {
+    fn address_of(&mut self, name: &str) -> TypedValue {
         let name_idx = self
             .strings
             .find(name)

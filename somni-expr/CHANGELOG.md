@@ -5,6 +5,7 @@
 - TypedValue's `String` is now also generic.
 - The string interner has been removed. The expression engine uses `Box<str>` as storage by default.
 - Expressions can be evaluated to `TypedValue`.
+- `ExprContext::try_load_variable` now takes `&mut self`.
 
 # [0.1.0] - 2025-07-24
 
