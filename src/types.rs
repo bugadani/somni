@@ -190,6 +190,10 @@ impl TypeSet for VmTypeSet {
         i64::try_from(v).map_err(|_| OperatorError::RuntimeError)
     }
 
+    fn to_usize(v: Self::Integer) -> Result<usize, OperatorError> {
+        usize::try_from(v).map_err(|_| OperatorError::RuntimeError)
+    }
+
     fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
         self.0.lookup(*str)
     }

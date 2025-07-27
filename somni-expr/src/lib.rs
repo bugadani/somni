@@ -115,7 +115,6 @@ use std::{
     rc::Rc,
 };
 
-use indexmap::IndexMap;
 use somni_parser::{
     ast::{self, Expression, Function, Item, Program},
     parser::{self, parse, TypeSet as ParserTypeSet},
@@ -168,6 +167,9 @@ pub trait TypeSet: Sized + Default + Debug + 'static {
     /// Converts an unsigned integer into a signed integer.
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError>;
 
+    /// Converts an unsigned integer into a Rust usize.
+    fn to_usize(v: Self::Integer) -> Result<usize, OperatorError>;
+
     /// Loads a string.
     fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str;
 
@@ -187,6 +189,10 @@ for_each! {
 
             fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
                 <$signed>::try_from(v).map_err(|_| OperatorError::RuntimeError)
+            }
+
+            fn to_usize(v: Self::Integer) -> Result<usize, OperatorError> {
+                usize::try_from(v).map_err(|_| OperatorError::RuntimeError)
             }
 
             fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
@@ -341,8 +347,24 @@ where
     /// Assigns a new value to a variable in the context.
     fn assign_variable(&mut self, variable: &str, value: &TypedValue<T>) -> Result<(), Box<str>>;
 
+    /// Returns a value from the given address.
+    fn at_address(&mut self, address: TypedValue<T>) -> Result<TypedValue<T>, Box<str>>;
+
+    /// Assigns a new value to a variable in the context.
+    fn assign_address(
+        &mut self,
+        address: TypedValue<T>,
+        value: &TypedValue<T>,
+    ) -> Result<(), Box<str>>;
+
     /// Returns the address of a variable in the context.
     fn address_of(&mut self, variable: &str) -> TypedValue<T>;
+
+    /// Opens a new scope in the current stack frame.
+    fn open_scope(&mut self);
+
+    /// Closes the last scope in the current stack frame.
+    fn close_scope(&mut self);
 
     /// Calls a function in the context.
     fn call_function(
@@ -465,29 +487,76 @@ enum InitializerState {
     Evaluating,
 }
 
-struct Scope<T: TypeSet> {
+struct StackFrame<T: TypeSet> {
     start_addr: usize,
-    variables: IndexMap<String, TypedValue<T>>,
+    variables: Vec<TypedValue<T>>,
+    scopes: Vec<HashMap<String, usize>>,
 }
 
-impl<T: TypeSet> Scope<T> {
-    fn declare(&mut self, variable: &str, value: TypedValue<T>) {
-        self.variables.insert(variable.to_string(), value);
+impl<T: TypeSet> StackFrame<T> {
+    fn new() -> StackFrame<T> {
+        StackFrame {
+            start_addr: 0,
+            variables: vec![],
+            scopes: vec![HashMap::new()],
+        }
     }
+
+    fn next_call_frame(&self) -> StackFrame<T> {
+        StackFrame {
+            start_addr: self.start_addr + self.variables.len(),
+            variables: vec![],
+            scopes: vec![HashMap::new()],
+        }
+    }
+
+    fn declare(&mut self, variable: &str, value: TypedValue<T>) -> usize {
+        let index = self.variables.len();
+        self.variables.push(value);
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .insert(variable.to_string(), index);
+        index + self.start_addr
+    }
+
+    fn lookup_index(&self, name: &str) -> Option<usize> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(idx) = scope.get(name) {
+                return Some(*idx);
+            }
+        }
+        None
+    }
+
     fn store(&mut self, variable: &str, value: &TypedValue<T>) -> bool {
-        if let Some(var) = self.variables.get_mut(variable) {
-            *var = value.clone();
+        if let Some(idx) = self.lookup_index(variable) {
+            self.variables.get_mut(idx).unwrap().clone_from(value);
             true
         } else {
             false
         }
     }
 
-    fn open(&self) -> Scope<T> {
-        Scope {
-            start_addr: self.start_addr + self.variables.len(),
-            variables: IndexMap::new(),
-        }
+    fn lookup_by_address(&mut self, address: usize) -> Result<&mut TypedValue<T>, Box<str>> {
+        self.variables
+            .get_mut(address - self.start_addr)
+            .ok_or_else(|| format!("Invalid address {address}").into_boxed_str())
+    }
+
+    fn lookup_by_name<'s>(&'s mut self, variable: &str) -> Option<(usize, &'s mut TypedValue<T>)> {
+        let index = self.lookup_index(variable)?;
+        let address = index + self.start_addr;
+
+        Some((address, self.variables.get_mut(index).unwrap()))
+    }
+
+    fn open_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn close_scope(&mut self) {
+        self.scopes.pop().unwrap();
     }
 }
 
@@ -508,7 +577,7 @@ where
     // Program state
     // ----
     /// Variable stack. Element 0 is the global scope.
-    stack: Vec<Scope<T>>,
+    stack: Vec<StackFrame<T>>,
     // unevaluated globals
     initializers: HashMap<&'ctx str, InitializerState>,
     type_context: T,
@@ -586,10 +655,7 @@ where
                 program_functions,
                 functions: RefCell::new(HashMap::new()),
             }),
-            stack: vec![Scope {
-                start_addr: 0,
-                variables: IndexMap::new(),
-            }],
+            stack: vec![StackFrame::new()],
             type_context: T::default(),
             initializers,
         }
@@ -606,7 +672,7 @@ where
             .stack
             .last()
             .expect("The global scope must always be present")
-            .open();
+            .next_call_frame();
         self.stack.push(stack_frame);
 
         let mut visitor = ExpressionVisitor::<_, T> {
@@ -715,16 +781,16 @@ where
 
     fn lookup(&mut self, variable: &str) -> Option<(usize, TypedValue<T>)> {
         if self.stack.len() > 1 {
-            let frame = self.stack.last().unwrap();
-            if let Some((index, _, var)) = frame.variables.get_full(variable) {
+            let frame = self.stack.last_mut().unwrap();
+            if let Some((index, var)) = frame.lookup_by_name(variable) {
                 // Already evaluated / user provided
                 return Some((index, var.clone()));
             }
         }
 
         {
-            let global_frame = &self.stack[0];
-            if let Some((index, _, var)) = global_frame.variables.get_full(variable) {
+            let global_frame = &mut self.stack[0];
+            if let Some((index, var)) = global_frame.lookup_by_name(variable) {
                 // Already evaluated / user provided
                 return Some((index | GLOBAL_VARIABLE, var.clone()));
             }
@@ -749,11 +815,30 @@ where
             .ok()?;
 
         let global_frame = &mut self.stack[0];
-        let (index, _) = global_frame
-            .variables
-            .insert_full(variable.to_string(), value.clone());
+        let index = global_frame.declare(variable, value.clone());
 
         Some((index | GLOBAL_VARIABLE, value))
+    }
+
+    fn lookup_address(&mut self, address: TypedValue<T>) -> Result<&mut TypedValue<T>, Box<str>> {
+        let TypedValue::Int(address) = address else {
+            return Err(format!("Expected address, got {address:?}").into_boxed_str());
+        };
+
+        let address = T::to_usize(address)
+            .map_err(|_| format!("Invalid address: {address:?}").into_boxed_str())?;
+
+        if address & GLOBAL_VARIABLE != 0 {
+            return self.stack[0].lookup_by_address(address);
+        }
+
+        for frame in self.stack.iter_mut().rev() {
+            if frame.start_addr <= address {
+                return frame.lookup_by_address(address);
+            }
+        }
+
+        Err(format!("Not a valid memory address: {address}").into_boxed_str())
     }
 }
 
@@ -795,6 +880,20 @@ where
         Err(format!("Variable not found: {variable}").into_boxed_str())
     }
 
+    fn at_address(&mut self, address: TypedValue<T>) -> Result<TypedValue<T>, Box<str>> {
+        self.lookup_address(address).cloned()
+    }
+
+    fn assign_address(
+        &mut self,
+        address: TypedValue<T>,
+        value: &TypedValue<T>,
+    ) -> Result<(), Box<str>> {
+        let v = self.lookup_address(address)?;
+        v.clone_from(value);
+        return Ok(());
+    }
+
     fn call_function(
         &mut self,
         function_name: &str,
@@ -827,6 +926,18 @@ where
                 )
             })
     }
+
+    /// Opens a new scope in the current stack frame.
+    fn open_scope(&mut self) {
+        // TODO: error handling
+        self.stack.last_mut().unwrap().open_scope();
+    }
+
+    /// Closes the last scope in the current stack frame.
+    fn close_scope(&mut self) {
+        // TODO: error handling
+        self.stack.last_mut().unwrap().close_scope();
+    }
 }
 
 #[macro_export]
@@ -851,6 +962,8 @@ macro_rules! for_all_tuples {
 
 #[cfg(test)]
 mod test {
+    use std::path::Path;
+
     use super::*;
 
     fn strip_ansi(s: impl AsRef<str>) -> String {
@@ -946,6 +1059,83 @@ mod test {
         assert!(ctx
             .evaluate::<bool>("multiply_with_global(\"2\") == 6")
             .is_err());
+    }
+
+    #[test]
+    fn run_eval_tests() {
+        fn filter(path: &Path) -> bool {
+            let Ok(env) = std::env::var("TEST_FILTER") else {
+                // No filter set, walk folders and somni source files.
+                return path.is_dir() || path.extension().map_or(false, |ext| ext == "sm");
+            };
+
+            Path::new(&env) == path
+        }
+
+        fn walk(dir: &Path, on_file: &impl Fn(&Path)) {
+            for entry in std::fs::read_dir(dir)
+                .unwrap_or_else(|_| panic!("Folder not found: {}", dir.display()))
+                .flatten()
+            {
+                let path = entry.path();
+
+                if !filter(&path) {
+                    continue;
+                }
+
+                if path.is_file() {
+                    on_file(&path);
+                } else {
+                    walk(&path, on_file);
+                }
+            }
+        }
+
+        fn run_eval_test(path: &Path) {
+            fn parse(source: &str) -> Context<'_> {
+                let mut context = Context::parse(&source).unwrap();
+
+                context.add_function("add_from_rust", |a: u64, b: u64| -> i64 { (a + b) as i64 });
+                context.add_function("assert", |a: bool| a); // No-op to test calling Rust functions from expressions
+                context.add_function("reverse", |s: &str| s.chars().rev().collect::<String>());
+
+                context
+            }
+
+            let source = std::fs::read_to_string(path).unwrap();
+
+            let expressions = source
+                .lines()
+                .filter_map(|line| line.trim().strip_prefix("//@"))
+                .collect::<Vec<_>>();
+
+            let mut context = parse(&source);
+
+            for expression in &expressions {
+                let expression = if let Some(e) = expression.strip_prefix('+') {
+                    // `//@+` preserves VM state (like changes to globals)
+                    e.trim()
+                } else {
+                    // `//@` resets VM state (like changes to globals)
+                    context = parse(&source);
+                    expression
+                };
+                println!("Running `{expression}`");
+                let value = context
+                    .evaluate_any(expression)
+                    .unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
+                assert_eq!(
+                    value,
+                    TypedValue::Bool(true),
+                    "{}: Expression `{expression}` evaluated to {value:?}",
+                    path.display()
+                );
+            }
+        }
+
+        walk("../tests/eval".as_ref(), &|path| {
+            run_eval_test(path);
+        });
     }
 
     #[test]
