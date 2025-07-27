@@ -24,7 +24,7 @@ pub enum FunctionCallError {
     },
 
     /// An error occurred while calling the function.
-    Other(&'static str),
+    Other(Box<str>),
 }
 
 #[doc(hidden)]

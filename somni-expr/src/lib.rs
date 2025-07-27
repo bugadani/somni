@@ -102,20 +102,23 @@ pub mod error;
 pub mod function;
 #[doc(hidden)]
 pub mod value;
+mod visitor;
 
 pub use function::{DynFunction, FunctionCallError};
 pub use value::TypedValue;
+pub use visitor::ExpressionVisitor;
 
 use std::{
+    cell::RefCell,
     collections::HashMap,
     fmt::{Debug, Display},
+    rc::Rc,
 };
 
 use indexmap::IndexMap;
 use somni_parser::{
-    ast::{self, Expression},
-    lexer,
-    parser::{self, TypeSet as ParserTypeSet},
+    ast::{self, Expression, Function, Item, Program},
+    parser::{self, parse, TypeSet as ParserTypeSet},
     Location,
 };
 
@@ -330,10 +333,16 @@ where
     fn type_context(&mut self) -> &mut T;
 
     /// Attempts to load a variable from the context.
-    fn try_load_variable(&self, variable: &str) -> Option<TypedValue<T>>;
+    fn try_load_variable(&mut self, variable: &str) -> Option<TypedValue<T>>;
+
+    /// Declares a variable in the context.
+    fn declare(&mut self, variable: &str, value: TypedValue<T>);
+
+    /// Assigns a new value to a variable in the context.
+    fn assign_variable(&mut self, variable: &str, value: &TypedValue<T>) -> Result<(), Box<str>>;
 
     /// Returns the address of a variable in the context.
-    fn address_of(&self, variable: &str) -> TypedValue<T>;
+    fn address_of(&mut self, variable: &str) -> TypedValue<T>;
 
     /// Calls a function in the context.
     fn call_function(
@@ -341,16 +350,6 @@ where
         function_name: &str,
         args: &[TypedValue<T>],
     ) -> Result<TypedValue<T>, FunctionCallError>;
-}
-
-/// A visitor that can process an abstract syntax tree.
-pub struct ExpressionVisitor<'a, C, T = DefaultTypeSet> {
-    /// The context in which the expression is evaluated.
-    pub context: &'a mut C,
-    /// The source code from which the expression was parsed.
-    pub source: &'a str,
-    /// The types of the variables in the context.
-    pub _marker: std::marker::PhantomData<T>,
 }
 
 /// An error that occurs during evaluation of an expression.
@@ -413,188 +412,6 @@ impl Debug for ExpressionError<'_> {
     }
 }
 
-impl<'a, C, T> ExpressionVisitor<'a, C, T>
-where
-    C: ExprContext<T>,
-    T: TypeSet,
-{
-    fn visit_variable(&mut self, variable: &lexer::Token) -> Result<TypedValue<T>, EvalError> {
-        let name = variable.source(self.source);
-        self.context.try_load_variable(name).ok_or(EvalError {
-            message: format!("Variable {name} was not found").into_boxed_str(),
-            location: variable.location,
-        })
-    }
-
-    /// Visits an expression and evaluates it, returning the result as a `TypedValue`.
-    pub fn visit_expression(
-        &mut self,
-        expression: &Expression<T::Parser>,
-    ) -> Result<TypedValue<T>, EvalError> {
-        let result = match expression {
-            Expression::Variable { variable } => self.visit_variable(variable)?,
-            Expression::Literal { value } => match &value.value {
-                ast::LiteralValue::Integer(value) => TypedValue::<T>::MaybeSignedInt(*value),
-                ast::LiteralValue::Float(value) => TypedValue::<T>::Float(*value),
-                ast::LiteralValue::String(value) => value.store(self.context.type_context()),
-                ast::LiteralValue::Boolean(value) => TypedValue::<T>::Bool(*value),
-            },
-            Expression::UnaryOperator { name, operand } => match name.source(self.source) {
-                "!" => {
-                    let operand = self.visit_expression(operand)?;
-
-                    match TypedValue::<T>::not(self.context.type_context(), operand) {
-                        Ok(r) => r,
-                        Err(error) => {
-                            return Err(EvalError {
-                                message: format!("Failed to evaluate expression: {error}")
-                                    .into_boxed_str(),
-                                location: expression.location(),
-                            });
-                        }
-                    }
-                }
-
-                "-" => {
-                    let value = self.visit_expression(operand)?;
-                    let ty = value.type_of();
-                    TypedValue::<T>::negate(self.context.type_context(), value).map_err(|e| {
-                        EvalError {
-                            message: format!("Cannot negate {ty}: {e}").into_boxed_str(),
-                            location: operand.location(),
-                        }
-                    })?
-                }
-                "&" => match operand.as_variable() {
-                    Some(variable) => {
-                        let name = variable.source(self.source);
-                        self.context.address_of(name)
-                    }
-                    None => {
-                        return Err(EvalError {
-                            message: String::from("Cannot take address of non-variable expression")
-                                .into_boxed_str(),
-                            location: operand.location(),
-                        });
-                    }
-                },
-                "*" => {
-                    return Err(EvalError {
-                        message: String::from("Dereference not supported").into_boxed_str(),
-                        location: operand.location(),
-                    });
-                }
-                _ => {
-                    return Err(EvalError {
-                        message: format!("Unknown unary operator: {}", name.source(self.source))
-                            .into_boxed_str(),
-                        location: expression.location(),
-                    });
-                }
-            },
-            Expression::BinaryOperator { name, operands } => {
-                let short_circuiting = ["&&", "||"];
-                let operator = name.source(self.source);
-
-                if short_circuiting.contains(&operator) {
-                    let lhs = self.visit_expression(&operands[0])?;
-                    return match operator {
-                        "&&" if lhs == TypedValue::<T>::Bool(false) => Ok(TypedValue::Bool(false)),
-                        "||" if lhs == TypedValue::<T>::Bool(true) => Ok(TypedValue::Bool(true)),
-                        _ => self.visit_expression(&operands[1]),
-                    };
-                }
-
-                let lhs = self.visit_expression(&operands[0])?;
-                let rhs = self.visit_expression(&operands[1])?;
-                let type_context = self.context.type_context();
-                let result = match name.source(self.source) {
-                    "+" => TypedValue::<T>::add(type_context, lhs, rhs),
-                    "-" => TypedValue::<T>::subtract(type_context, lhs, rhs),
-                    "*" => TypedValue::<T>::multiply(type_context, lhs, rhs),
-                    "/" => TypedValue::<T>::divide(type_context, lhs, rhs),
-                    "<" => TypedValue::<T>::less_than(type_context, lhs, rhs),
-                    ">" => TypedValue::<T>::less_than(type_context, rhs, lhs),
-                    "<=" => TypedValue::<T>::less_than_or_equal(type_context, lhs, rhs),
-                    ">=" => TypedValue::<T>::less_than_or_equal(type_context, rhs, lhs),
-                    "==" => TypedValue::<T>::equals(type_context, lhs, rhs),
-                    "!=" => TypedValue::<T>::not_equals(type_context, lhs, rhs),
-                    "|" => TypedValue::<T>::bitwise_or(type_context, lhs, rhs),
-                    "^" => TypedValue::<T>::bitwise_xor(type_context, lhs, rhs),
-                    "&" => TypedValue::<T>::bitwise_and(type_context, lhs, rhs),
-                    "<<" => TypedValue::<T>::shift_left(type_context, lhs, rhs),
-                    ">>" => TypedValue::<T>::shift_right(type_context, lhs, rhs),
-
-                    other => {
-                        return Err(EvalError {
-                            message: format!("Unknown binary operator: {other}").into_boxed_str(),
-                            location: expression.location(),
-                        });
-                    }
-                };
-
-                match result {
-                    Ok(r) => r,
-                    Err(error) => {
-                        return Err(EvalError {
-                            message: format!("Failed to evaluate expression: {error}")
-                                .into_boxed_str(),
-                            location: expression.location(),
-                        });
-                    }
-                }
-            }
-            Expression::FunctionCall { name, arguments } => {
-                let function_name = name.source(self.source);
-                let mut args = Vec::with_capacity(arguments.len());
-                for arg in arguments {
-                    args.push(self.visit_expression(arg)?);
-                }
-
-                match self.context.call_function(function_name, &args) {
-                    Ok(result) => result,
-                    Err(FunctionCallError::IncorrectArgumentCount { expected }) => {
-                        return Err(EvalError {
-                            message: format!(
-                                "{function_name} takes {expected} arguments, {} given",
-                                args.len()
-                            )
-                            .into_boxed_str(),
-                            location: expression.location(),
-                        });
-                    }
-                    Err(FunctionCallError::IncorrectArgumentType { idx, expected }) => {
-                        return Err(EvalError {
-                            message: format!(
-                                "{function_name} expects argument {idx} to be {expected}, got {}",
-                                args[idx].type_of()
-                            )
-                            .into_boxed_str(),
-                            location: arguments[idx].location(),
-                        });
-                    }
-                    Err(FunctionCallError::FunctionNotFound) => {
-                        return Err(EvalError {
-                            message: format!("Function {function_name} is not found")
-                                .into_boxed_str(),
-                            location: expression.location(),
-                        });
-                    }
-                    Err(FunctionCallError::Other(error)) => {
-                        return Err(EvalError {
-                            message: format!("Failed to call {function_name}: {error}")
-                                .into_boxed_str(),
-                            location: expression.location(),
-                        });
-                    }
-                }
-            }
-        };
-
-        Ok(result)
-    }
-}
-
 /// A type in the Somni language.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Type {
@@ -613,6 +430,18 @@ pub enum Type {
     /// Represents a string value.
     String,
 }
+impl Type {
+    fn from_name(source: &str) -> Result<Self, Box<str>> {
+        match source {
+            "int" => Ok(Type::Int),
+            "signed" => Ok(Type::SignedInt),
+            "float" => Ok(Type::Float),
+            "bool" => Ok(Type::Bool),
+            "string" => Ok(Type::String),
+            other => Err(format!("Unknown type `{other}`").into_boxed_str()),
+        }
+    }
+}
 
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -628,50 +457,61 @@ impl Display for Type {
     }
 }
 
+/// State of an unevaluated global.
+enum InitializerState {
+    /// Untouched. Contains the item index of the global
+    Unevaluated(usize),
+    /// The global is being evaluated. This state is used to detect cycles.
+    Evaluating,
+}
+
+struct Scope<T: TypeSet> {
+    start_addr: usize,
+    variables: IndexMap<String, TypedValue<T>>,
+}
+
+impl<T: TypeSet> Scope<T> {
+    fn declare(&mut self, variable: &str, value: TypedValue<T>) {
+        self.variables.insert(variable.to_string(), value);
+    }
+    fn store(&mut self, variable: &str, value: &TypedValue<T>) -> bool {
+        if let Some(var) = self.variables.get_mut(variable) {
+            *var = value.clone();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn open(&self) -> Scope<T> {
+        Scope {
+            start_addr: self.start_addr + self.variables.len(),
+            variables: IndexMap::new(),
+        }
+    }
+}
+
+struct ProgramData<'ctx, T: TypeSet> {
+    source: &'ctx str,
+    program: Program<T::Parser>,
+    program_functions: HashMap<&'ctx str, usize>,
+    // User-registered functions
+    functions: RefCell<HashMap<&'ctx str, ExprFn<'ctx, T>>>,
+}
+
 /// The expression context, which holds variables, functions, and other state needed for evaluation.
-#[derive(Default)]
 pub struct Context<'ctx, T = DefaultTypeSet>
 where
     T: TypeSet,
 {
-    variables: IndexMap<String, TypedValue<T>>,
-    functions: HashMap<String, ExprFn<'ctx, T>>,
-    marker: std::marker::PhantomData<T>,
+    program: Rc<ProgramData<'ctx, T>>,
+    // Program state
+    // ----
+    /// Variable stack. Element 0 is the global scope.
+    stack: Vec<Scope<T>>,
+    // unevaluated globals
+    initializers: HashMap<&'ctx str, InitializerState>,
     type_context: T,
-}
-
-impl<T> ExprContext<T> for Context<'_, T>
-where
-    T: TypeSet,
-{
-    fn type_context(&mut self) -> &mut T {
-        &mut self.type_context
-    }
-
-    fn try_load_variable(&self, variable: &str) -> Option<TypedValue<T>> {
-        self.variables.get(variable).cloned()
-    }
-
-    fn address_of(&self, variable: &str) -> TypedValue<T> {
-        let index = self.variables.get_index_of(variable).unwrap();
-        TypedValue::Int(<T::Integer as Integer>::from_usize(index))
-    }
-
-    fn call_function(
-        &mut self,
-        function_name: &str,
-        args: &[TypedValue<T>],
-    ) -> Result<TypedValue<T>, FunctionCallError> {
-        match self.functions.remove_entry(function_name) {
-            Some((name, func)) => {
-                let retval = func.call(self.type_context(), args);
-                self.functions.insert(name, func);
-
-                retval
-            }
-            None => Err(FunctionCallError::FunctionNotFound),
-        }
-    }
 }
 
 impl<'ctx> Context<'ctx, DefaultTypeSet> {
@@ -679,7 +519,14 @@ impl<'ctx> Context<'ctx, DefaultTypeSet> {
     pub fn new() -> Self {
         Self::new_with_types()
     }
+
+    /// Loads the given program into a new context with [default types][DefaultTypeSet].
+    pub fn parse(source: &'ctx str) -> Result<Self, ExpressionError<'ctx>> {
+        Self::parse_with_types(source)
+    }
 }
+
+const GLOBAL_VARIABLE: usize = usize::MAX - usize::MAX / 2;
 
 impl<'ctx, T> Context<'ctx, T>
 where
@@ -692,12 +539,87 @@ where
     /// let mut ctx = Context::<TypeSet32>::new_with_types();
     /// ```
     pub fn new_with_types() -> Self {
-        Self {
-            variables: IndexMap::new(),
-            functions: HashMap::new(),
-            marker: std::marker::PhantomData,
-            type_context: T::default(),
+        Self::new_from_program("", Program { items: vec![] })
+    }
+
+    /// Parses the given program into a new context. The type set must be specified when using this function.
+    ///
+    /// ```rust
+    /// use somni_expr::{Context, TypeSet32};
+    /// let mut ctx = Context::<TypeSet32>::parse_with_types("// program source comes here").unwrap();
+    /// ```
+    pub fn parse_with_types(source: &'ctx str) -> Result<Self, ExpressionError<'ctx>> {
+        let program = parse::<T::Parser>(source).map_err(|e| ExpressionError {
+            error: EvalError {
+                message: format!("Failed to parse program: {e}").into_boxed_str(),
+                location: Location::dummy(),
+            },
+            source,
+        })?;
+
+        Ok(Self::new_from_program(source, program))
+    }
+
+    /// Loads the given program into a new context.
+    pub fn new_from_program(source: &'ctx str, program: Program<T::Parser>) -> Self {
+        let mut program_functions = HashMap::new();
+        let mut initializers = HashMap::new();
+        // Extract data for O(1) function/initializer lookup
+        for (idx, item) in program.items.iter().enumerate() {
+            match item {
+                ast::Item::Function(function) => {
+                    program_functions.insert(function.name.source(source), idx);
+                }
+                ast::Item::GlobalVariable(global_variable) => {
+                    initializers.insert(
+                        global_variable.identifier.source(source),
+                        InitializerState::Unevaluated(idx),
+                    );
+                }
+                ast::Item::ExternFunction(_) => {}
+            }
         }
+        Self {
+            program: Rc::new(ProgramData {
+                source,
+                program,
+                program_functions,
+                functions: RefCell::new(HashMap::new()),
+            }),
+            stack: vec![Scope {
+                start_addr: 0,
+                variables: IndexMap::new(),
+            }],
+            type_context: T::default(),
+            initializers,
+        }
+    }
+
+    fn evaluate_any_function_impl(
+        &mut self,
+        function_name: &Function<T::Parser>,
+        args: &[TypedValue<T>],
+    ) -> Result<TypedValue<T>, EvalError> {
+        let source = self.program.clone().source;
+
+        let stack_frame = self
+            .stack
+            .last()
+            .expect("The global scope must always be present")
+            .open();
+        self.stack.push(stack_frame);
+
+        let mut visitor = ExpressionVisitor::<_, T> {
+            context: self,
+            source,
+            _marker: std::marker::PhantomData,
+        };
+
+        let result = visitor.visit_function(function_name, args);
+
+        self.stack.pop();
+
+        result
     }
 
     fn evaluate_any_impl(&mut self, expression: &str) -> Result<TypedValue<T>, EvalError> {
@@ -713,13 +635,21 @@ where
             }
         };
 
+        self.evaluate_expr_any(expression, &ast)
+    }
+
+    fn evaluate_expr_any(
+        &mut self,
+        source: &str,
+        ast: &Expression<T::Parser>,
+    ) -> Result<TypedValue<T>, EvalError> {
         let mut visitor = ExpressionVisitor::<Self, T> {
             context: self,
-            source: expression,
+            source,
             _marker: std::marker::PhantomData,
         };
 
-        visitor.visit_expression(&ast)
+        visitor.visit_expression(ast)
     }
 
     /// Evaluates an expression and returns the result as a [`TypedValue<T>`].
@@ -761,21 +691,138 @@ where
     }
 
     /// Defines a new variable in the context.
-    pub fn add_variable<V>(&mut self, name: &str, value: V)
+    pub fn add_variable<V>(&mut self, name: &'ctx str, value: V)
     where
         V: Store<T>,
     {
         let stored = value.store(self.type_context());
-        self.variables.insert(name.to_string(), stored);
+        self.stack[0].declare(name, stored);
     }
 
     /// Adds a new function to the context.
-    pub fn add_function<F, A>(&mut self, name: &str, func: F)
+    pub fn add_function<F, A>(&mut self, name: &'ctx str, func: F)
     where
         F: DynFunction<A, T> + 'ctx,
     {
-        let func = ExprFn::new(func);
-        self.functions.insert(name.to_string(), func);
+        self.program
+            .functions
+            .borrow_mut()
+            .insert(name, ExprFn::new(func));
+    }
+
+    fn lookup(&mut self, variable: &str) -> Option<(usize, TypedValue<T>)> {
+        if self.stack.len() > 1 {
+            let frame = self.stack.last().unwrap();
+            if let Some((index, _, var)) = frame.variables.get_full(variable) {
+                // Already evaluated / user provided
+                return Some((index, var.clone()));
+            }
+        }
+
+        {
+            let global_frame = &self.stack[0];
+            if let Some((index, _, var)) = global_frame.variables.get_full(variable) {
+                // Already evaluated / user provided
+                return Some((index | GLOBAL_VARIABLE, var.clone()));
+            }
+        }
+
+        // Mark as "initializing" to detect potential cycles
+        let state = self.initializers.get_mut(variable)?;
+        let InitializerState::Unevaluated(idx) =
+            std::mem::replace(state, InitializerState::Evaluating)
+        else {
+            return None;
+        };
+
+        // Get a reference to the initializer
+        let program = self.program.clone();
+        let Some(Item::GlobalVariable(global)) = program.program.items.get(idx) else {
+            return None;
+        };
+
+        let value = self
+            .evaluate_expr_any(self.program.source, &global.initializer)
+            .ok()?;
+
+        let global_frame = &mut self.stack[0];
+        let (index, _) = global_frame
+            .variables
+            .insert_full(variable.to_string(), value.clone());
+
+        Some((index | GLOBAL_VARIABLE, value))
+    }
+}
+
+impl<T> ExprContext<T> for Context<'_, T>
+where
+    T: TypeSet,
+{
+    fn type_context(&mut self) -> &mut T {
+        &mut self.type_context
+    }
+
+    // TODO: return Result
+    fn try_load_variable(&mut self, variable: &str) -> Option<TypedValue<T>> {
+        self.lookup(variable).map(|(_idx, var)| var)
+    }
+
+    fn address_of(&mut self, variable: &str) -> TypedValue<T> {
+        let address = self
+            .lookup(variable)
+            .map(|(address, _var)| address)
+            .unwrap();
+        TypedValue::Int(<T::Integer as Integer>::from_usize(address))
+    }
+
+    /// Declares a variable in the context.
+    fn declare(&mut self, variable: &str, value: TypedValue<T>) {
+        self.stack.last_mut().unwrap().declare(variable, value);
+    }
+
+    /// Assigns a new value to a variable in the context.
+    fn assign_variable(&mut self, variable: &str, value: &TypedValue<T>) -> Result<(), Box<str>> {
+        if self.stack.last_mut().unwrap().store(variable, &value) {
+            return Ok(());
+        }
+        if self.stack[0].store(variable, &value) {
+            return Ok(());
+        }
+
+        Err(format!("Variable not found: {variable}").into_boxed_str())
+    }
+
+    fn call_function(
+        &mut self,
+        function_name: &str,
+        args: &[TypedValue<T>],
+    ) -> Result<TypedValue<T>, FunctionCallError> {
+        let program = self.program.clone();
+        let Some(fn_item) = self.program.program_functions.get(function_name) else {
+            // Call out to a Rust function
+            return match program.functions.borrow().get(function_name) {
+                Some(func) => func.call(self.type_context(), args),
+                None => Err(FunctionCallError::FunctionNotFound),
+            };
+        };
+
+        // Call a Somni function
+        let Some(ast::Item::Function(function)) = program.program.items.get(*fn_item) else {
+            return Err(FunctionCallError::FunctionNotFound);
+        };
+        self.evaluate_any_function_impl(function, args)
+            .map_err(|err| {
+                FunctionCallError::Other(
+                    format!(
+                        "{:?}",
+                        ExpressionError {
+                            source: &self.program.source,
+                            error: err,
+                        }
+                    )
+                    .into_boxed_str(),
+                )
+            })
     }
 }
 
@@ -878,6 +925,24 @@ mod test {
         assert_eq!(ctx.evaluate::<bool>("value / 5 == 6"), Ok(true));
         assert_eq!(ctx.evaluate::<u128>("func(20) / 5"), Ok(8));
         assert_eq!(ctx.evaluate::<u128>("func2(20, 20) / 5"), Ok(8));
+    }
+
+    #[test]
+    fn test_evaluate_function() {
+        // TODO: run all the VM eval tests
+        let mut ctx =
+            Context::parse("fn multiply_with_global(a: int) -> int { return a * global; }")
+                .unwrap();
+
+        ctx.add_variable::<u64>("global", 3);
+
+        assert_eq!(
+            ctx.evaluate::<bool>("multiply_with_global(2) == 6"),
+            Ok(true)
+        );
+        assert!(ctx
+            .evaluate::<bool>("multiply_with_global(\"2\") == 6")
+            .is_err());
     }
 
     #[test]
