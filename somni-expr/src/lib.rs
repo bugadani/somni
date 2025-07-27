@@ -513,6 +513,12 @@ impl<T: TypeSet> StackFrame<T> {
             .map(|(_k, v)| v)
             .ok_or_else(|| format!("Invalid address {address}").into_boxed_str())
     }
+
+    fn lookup_by_name<'s>(&'s mut self, variable: &str) -> Option<(usize, &'s mut TypedValue<T>)> {
+        self.variables
+            .get_full_mut(variable)
+            .map(|(index, _k, v)| (index + self.start_addr, v))
+    }
 }
 
 struct ProgramData<'ctx, T: TypeSet> {
@@ -739,16 +745,16 @@ where
 
     fn lookup(&mut self, variable: &str) -> Option<(usize, TypedValue<T>)> {
         if self.stack.len() > 1 {
-            let frame = self.stack.last().unwrap();
-            if let Some((index, _, var)) = frame.variables.get_full(variable) {
+            let frame = self.stack.last_mut().unwrap();
+            if let Some((index, var)) = frame.lookup_by_name(variable) {
                 // Already evaluated / user provided
                 return Some((index, var.clone()));
             }
         }
 
         {
-            let global_frame = &self.stack[0];
-            if let Some((index, _, var)) = global_frame.variables.get_full(variable) {
+            let global_frame = &mut self.stack[0];
+            if let Some((index, var)) = global_frame.lookup_by_name(variable) {
                 // Already evaluated / user provided
                 return Some((index | GLOBAL_VARIABLE, var.clone()));
             }
