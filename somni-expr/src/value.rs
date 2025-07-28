@@ -271,11 +271,11 @@ impl<T: TypeSet> Clone for TypedValue<T> {
     fn clone(&self) -> Self {
         match self {
             Self::Void => Self::Void,
-            Self::MaybeSignedInt(inner) => Self::MaybeSignedInt(inner.clone()),
-            Self::Int(inner) => Self::Int(inner.clone()),
-            Self::SignedInt(inner) => Self::SignedInt(inner.clone()),
-            Self::Float(inner) => Self::Float(inner.clone()),
-            Self::Bool(inner) => Self::Bool(inner.clone()),
+            Self::MaybeSignedInt(inner) => Self::MaybeSignedInt(*inner),
+            Self::Int(inner) => Self::Int(*inner),
+            Self::SignedInt(inner) => Self::SignedInt(*inner),
+            Self::Float(inner) => Self::Float(*inner),
+            Self::Bool(inner) => Self::Bool(*inner),
             Self::String(inner) => Self::String(inner.clone()),
         }
     }
