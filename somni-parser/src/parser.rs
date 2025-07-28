@@ -647,7 +647,7 @@ where
                 Self::parse_call(stream)
             }
             TokenKind::Symbol if stream.source(token.location) == "(" => {
-                stream.take_match(token.kind, &[]).unwrap();
+                stream.take_match(token.kind, &[])?;
                 let expr = Self::parse(stream)?;
                 stream.expect_match(TokenKind::Symbol, &[")"])?;
                 Ok(expr)
@@ -662,7 +662,7 @@ where
     }
 
     fn parse_call(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
-        let token = stream.expect_match(TokenKind::Identifier, &[]).unwrap();
+        let token = stream.expect_match(TokenKind::Identifier, &[])?;
 
         if stream.take_match(TokenKind::Symbol, &["("])?.is_none() {
             return Ok(Self::Variable { variable: token });
