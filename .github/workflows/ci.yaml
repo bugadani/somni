@@ -40,5 +40,6 @@ jobs:
       - name: Build and Check
         shell: bash
         run: |
+          echo "::add-matcher::.github/rust-matchers.json"
           cargo clippy
           cargo +${{ matrix.toolchain }} xtest
