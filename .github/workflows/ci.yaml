@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+  merge_group:
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Cancel any currently running workflows from the same PR, branch, or
+# tag when a new workflow is triggered.
+#
+# https://stackoverflow.com/a/66336834
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain:
+          - "stable"
+          - "nightly"
+          - "1.82.0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: clippy
+
+      - name: Build and Check
+        shell: bash
+        run: |
+          cargo clippy
+          cargo +${{ matrix.toolchain }} xtest
