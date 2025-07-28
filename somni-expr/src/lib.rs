@@ -1,8 +1,12 @@
 //! # Somni expression evaluation Library
 //!
-//! This library provides tools for evaluating expressions.
+//! This crate implements the expression evaluation subset of the Somnni language and VM. The crate
+//! can be used by itself, to evaluate simple expressions or even to run complete Somni programs, although
+//! slower than the Somni VM would.
 //!
 //! ## Overview
+//!
+//! Expressions are a subset of the Somni language:
 //!
 //! The expression language includes:
 //!
@@ -13,6 +17,7 @@
 //!
 //! The expression language does not include:
 //!
+//! - Declaring new variables. You can assign to existing variables.
 //! - Control flow (if, loops, etc.)
 //! - Complex data structures (arrays, objects, etc.)
 //! - Defining functions and variables (these are provided by the context)
@@ -21,6 +26,7 @@
 //!
 //! The following binary operators are supported, in order of precedence:
 //!
+//! - `=`: assign a value to an existing variable
 //! - `||`: logical OR, short-circuiting
 //! - `&&`: logical AND, short-circuiting
 //! - `<`, `<=`, `>`, `>=`, `==`, `!=`: comparison operators
@@ -32,6 +38,8 @@
 //! - `*`, `/`: multiplication and division
 //!
 //! Unary operators include:
+//! - `&`: taking the address of a variable
+//! - `*`: dereferencing an address to a variable
 //! - `!`: logical NOT
 //! - `-`: negation
 //!
@@ -49,6 +57,8 @@
 //! these types. You can use other type sets like [`TypeSet32`] or [`TypeSet128`] to use
 //! 32-bit or 128-bit integers and floats. You need to specify the type set when creating
 //! the context.
+//!
+//! Numeric integer literals can be either signed or unsigned integers. Their type is inferred from the usage.
 //!
 //! ## Usage
 //!
@@ -71,6 +81,20 @@
 //! let result = context.evaluate::<u64>("add_one(x + floor(1.2))");
 //!
 //! assert_eq!(result, Ok(44));
+//! ```
+//!
+//! The context may also include a complete Somni program. The program may use the entirety
+//! of the Somni language, not just the expression language.
+//!
+//! ```rust
+//! use somni_expr::Context;
+//!
+//! let mut context = Context::parse("fn double(x: int) -> int { return x * 2; }").unwrap();
+//!
+//! // Evaluate an expression by calling the function defined by the program:
+//! let result = context.evaluate::<u64>("double(4)");
+//!
+//! assert_eq!(result, Ok(8));
 //! ```
 #![warn(missing_docs)]
 
@@ -688,74 +712,85 @@ where
         result
     }
 
-    fn evaluate_any_impl(&mut self, expression: &str) -> Result<TypedValue<T>, EvalError> {
-        // TODO: we can allow new globals to be defined in the expression, but that would require
-        // storing a copy of the original globals, so that they can be reset?
-        let ast = match parser::parse_expression::<T::Parser>(expression) {
-            Ok(ast) => ast,
-            Err(e) => {
-                return Err(EvalError {
+    /// Parses and evaluates an expression and returns the result as a specific value type.
+    ///
+    /// This function will attempt to convert the result of the expression to the specified type `V`.
+    /// If the conversion fails, it will return an `ExpressionError`.
+    ///
+    /// ```rust
+    /// use somni_expr::{Context, TypedValue};
+    ///
+    /// let mut context = Context::new();
+    ///
+    /// assert_eq!(context.evaluate::<u64>("1 + 2"), Ok(3));
+    /// assert_eq!(context.evaluate::<TypedValue>("1 + 2"), Ok(TypedValue::Int(3)));
+    /// ```
+    pub fn evaluate<'s, V>(&'s mut self, source: &'s str) -> Result<V::Output, ExpressionError<'s>>
+    where
+        V: LoadOwned<T>,
+    {
+        let expression =
+            parser::parse_expression::<T::Parser>(source).map_err(|e| ExpressionError {
+                error: EvalError {
                     message: format!("Parser error: {e}").into_boxed_str(),
                     location: e.location,
-                });
-            }
-        };
+                },
+                source,
+            })?;
 
-        self.evaluate_expr_any(expression, &ast)
+        self.evaluate_parsed::<V>(source, &expression)
     }
 
-    /// Evaluates a parsed expression.
+    /// Evaluates a pre-parsed expression and returns the result as a specific value type.
     ///
-    /// The `source` should include the whole program source, from which the expression has been extracted.
-    pub fn evaluate_expr_any(
+    /// This function will attempt to convert the result of the expression to the specified type `V`.
+    /// If the conversion fails, it will return an `ExpressionError`.
+    ///
+    /// ```rust
+    /// use somni_expr::{Context, TypedValue};
+    ///
+    /// let mut context = Context::new();
+    ///
+    /// let source = "1 + 2";
+    /// let expr = somni_parser::parser::parse_expression(source).unwrap();
+    ///
+    /// assert_eq!(context.evaluate_parsed::<u64>(source, &expr), Ok(3));
+    /// assert_eq!(context.evaluate_parsed::<TypedValue>(source, &expr), Ok(TypedValue::Int(3)));
+    /// ```
+    pub fn evaluate_parsed<'s, V>(
+        &'s mut self,
+        source: &'s str,
+        expression: &Expression<T::Parser>,
+    ) -> Result<V::Output, ExpressionError<'s>>
+    where
+        V: LoadOwned<T>,
+    {
+        self.evaluate_impl::<V>(source, expression)
+            .map_err(|error| ExpressionError { error, source })
+    }
+
+    fn evaluate_impl<V>(
         &mut self,
         source: &str,
-        ast: &Expression<T::Parser>,
-    ) -> Result<TypedValue<T>, EvalError> {
+        expression: &Expression<T::Parser>,
+    ) -> Result<V::Output, EvalError>
+    where
+        V: LoadOwned<T>,
+    {
         let mut visitor = ExpressionVisitor::<Self, T> {
             context: self,
             source,
             _marker: std::marker::PhantomData,
         };
-
-        visitor.visit_expression(ast)
-    }
-
-    /// Evaluates an expression and returns the result as a [`TypedValue<T>`].
-    pub fn evaluate_any<'s>(
-        &mut self,
-        expression: &'s str,
-    ) -> Result<TypedValue<T>, ExpressionError<'s>> {
-        self.evaluate_any_impl(expression)
-            .map_err(|error| ExpressionError {
-                error,
-                source: expression,
-            })
-    }
-
-    /// Evaluates an expression and returns the result as a specific value type.
-    ///
-    /// This function will attempt to convert the result of the expression to the specified type `V`.
-    /// If the conversion fails, it will return an `ExpressionError`.
-    pub fn evaluate<'s, V>(
-        &'s mut self,
-        expression: &'s str,
-    ) -> Result<V::Output, ExpressionError<'s>>
-    where
-        V: LoadOwned<T>,
-    {
-        let result = self.evaluate_any(expression)?;
+        let result = visitor.visit_expression(expression)?;
         let result_ty = result.type_of();
-        V::load_owned(self.type_context(), &result).ok_or_else(|| ExpressionError {
-            error: EvalError {
-                message: format!(
-                    "Expression evaluates to {result_ty}, which cannot be converted to {}",
-                    std::any::type_name::<V>()
-                )
-                .into_boxed_str(),
-                location: Location::dummy(),
-            },
-            source: expression,
+        V::load_owned(self.type_context(), &result).ok_or_else(|| EvalError {
+            message: format!(
+                "Expression evaluates to {result_ty}, which cannot be converted to {}",
+                std::any::type_name::<V>()
+            )
+            .into_boxed_str(),
+            location: expression.location(),
         })
     }
 
@@ -811,7 +846,7 @@ where
         };
 
         let value = self
-            .evaluate_expr_any(self.program.source, &global.initializer)
+            .evaluate_parsed::<TypedValue<T>>(self.program.source, &global.initializer)
             .ok()?;
 
         let global_frame = &mut self.stack[0];
@@ -1018,6 +1053,16 @@ mod test {
     }
 
     #[test]
+    fn test_context_is_mutable() {
+        let mut ctx = Context::new();
+
+        ctx.add_variable::<u64>("value", 30);
+
+        ctx.evaluate::<()>("value = 5").unwrap();
+        assert_eq!(ctx.evaluate::<bool>("value == 5"), Ok(true));
+    }
+
+    #[test]
     fn test_evaluating_exprs_with_u32() {
         let mut ctx = Context::<TypeSet32>::new_with_types();
 
@@ -1122,7 +1167,7 @@ mod test {
                 };
                 println!("Running `{expression}`");
                 let value = context
-                    .evaluate_any(expression)
+                    .evaluate::<TypedValue>(expression)
                     .unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
                 assert_eq!(
                     value,

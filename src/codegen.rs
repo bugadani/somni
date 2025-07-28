@@ -13,7 +13,7 @@ use crate::{
     variable_tracker::{self, LocalVariableIndex},
 };
 
-use somni_expr::{Context, Type};
+use somni_expr::{Context, Type, TypedValue as ExprTypedValue};
 use somni_parser::Location;
 
 // This is just to keep the size of Instruction small enough. Re-evaluate this later.
@@ -355,12 +355,14 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
                 continue;
             }
 
-            match eval_ctx.evaluate_expr_any(source, &global.initializer) {
+            match eval_ctx.evaluate_parsed::<ExprTypedValue<VmTypeSet>>(source, &global.initializer)
+            {
                 Ok(value) => {
                     this.program.globals[name].initial_value = Some(value.into());
                     made_progress = true;
                 }
                 Err(err) => {
+                    let err = err.into_inner();
                     return Err(CompileError {
                         source,
                         location: err.location,
