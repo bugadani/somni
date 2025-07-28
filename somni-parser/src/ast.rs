@@ -90,9 +90,9 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            opening_brace: self.opening_brace.clone(),
+            opening_brace: self.opening_brace,
             statements: self.statements.clone(),
-            closing_brace: self.closing_brace.clone(),
+            closing_brace: self.closing_brace,
         }
     }
 }
@@ -129,12 +129,12 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            decl_token: self.decl_token.clone(),
-            identifier: self.identifier.clone(),
-            type_token: self.type_token.clone(),
-            equals_token: self.equals_token.clone(),
+            decl_token: self.decl_token,
+            identifier: self.identifier,
+            type_token: self.type_token,
+            equals_token: self.equals_token,
             initializer: self.initializer.clone(),
-            semicolon: self.semicolon.clone(),
+            semicolon: self.semicolon,
         }
     }
 }
@@ -166,9 +166,9 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            return_token: self.return_token.clone(),
+            return_token: self.return_token,
             expression: self.expression.clone(),
-            semicolon: self.semicolon.clone(),
+            semicolon: self.semicolon,
         }
     }
 }
@@ -215,7 +215,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            if_token: self.if_token.clone(),
+            if_token: self.if_token,
             condition: self.condition.clone(),
             body: self.body.clone(),
             else_branch: self.else_branch.clone(),
@@ -238,7 +238,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            loop_token: self.loop_token.clone(),
+            loop_token: self.loop_token,
             body: self.body.clone(),
         }
     }
@@ -292,7 +292,7 @@ where
                 semicolon,
             } => Self::Expression {
                 expression: expression.clone(),
-                semicolon: semicolon.clone(),
+                semicolon: *semicolon,
             },
         }
     }
@@ -313,7 +313,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            else_token: self.else_token.clone(),
+            else_token: self.else_token,
             else_body: self.else_body.clone(),
         }
     }
@@ -351,21 +351,21 @@ where
     fn clone(&self) -> Self {
         match self {
             Self::Variable { variable } => Self::Variable {
-                variable: variable.clone(),
+                variable: *variable,
             },
             Self::Literal { value } => Self::Literal {
                 value: value.clone(),
             },
             Self::UnaryOperator { name, operand } => Self::UnaryOperator {
-                name: name.clone(),
+                name: *name,
                 operand: operand.clone(),
             },
             Self::BinaryOperator { name, operands } => Self::BinaryOperator {
-                name: name.clone(),
+                name: *name,
                 operands: operands.clone(),
             },
             Self::FunctionCall { name, arguments } => Self::FunctionCall {
-                name: name.clone(),
+                name: *name,
                 arguments: arguments.clone(),
             },
         }
@@ -434,7 +434,7 @@ where
     fn clone(&self) -> Self {
         Self {
             value: self.value.clone(),
-            location: self.location.clone(),
+            location: self.location,
         }
     }
 }
@@ -456,10 +456,10 @@ where
 {
     fn clone(&self) -> Self {
         match self {
-            Self::Integer(arg0) => Self::Integer(arg0.clone()),
-            Self::Float(arg0) => Self::Float(arg0.clone()),
+            Self::Integer(arg0) => Self::Integer(*arg0),
+            Self::Float(arg0) => Self::Float(*arg0),
             Self::String(arg0) => Self::String(arg0.clone()),
-            Self::Boolean(arg0) => Self::Boolean(arg0.clone()),
+            Self::Boolean(arg0) => Self::Boolean(*arg0),
         }
     }
 }

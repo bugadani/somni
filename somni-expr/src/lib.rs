@@ -592,6 +592,12 @@ struct ProgramData<'ctx, T: TypeSet> {
     functions: RefCell<HashMap<&'ctx str, ExprFn<'ctx, T>>>,
 }
 
+impl<'ctx> Default for Context<'ctx, DefaultTypeSet> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The expression context, which holds variables, functions, and other state needed for evaluation.
 pub struct Context<'ctx, T = DefaultTypeSet>
 where
@@ -905,10 +911,10 @@ where
 
     /// Assigns a new value to a variable in the context.
     fn assign_variable(&mut self, variable: &str, value: &TypedValue<T>) -> Result<(), Box<str>> {
-        if self.stack.last_mut().unwrap().store(variable, &value) {
+        if self.stack.last_mut().unwrap().store(variable, value) {
             return Ok(());
         }
-        if self.stack[0].store(variable, &value) {
+        if self.stack[0].store(variable, value) {
             return Ok(());
         }
 
@@ -926,7 +932,7 @@ where
     ) -> Result<(), Box<str>> {
         let v = self.lookup_address(address)?;
         v.clone_from(value);
-        return Ok(());
+        Ok(())
     }
 
     fn call_function(
@@ -953,7 +959,7 @@ where
                     format!(
                         "{:?}",
                         ExpressionError {
-                            source: &self.program.source,
+                            source: self.program.source,
                             error: err,
                         }
                     )

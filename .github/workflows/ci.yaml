@@ -4,6 +4,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   push:
+    branches:
+      - main
   merge_group:
 
 env:
@@ -40,5 +42,6 @@ jobs:
       - name: Build and Check
         shell: bash
         run: |
+          echo "::add-matcher::.github/rust-matchers.json"
           cargo clippy
           cargo +${{ matrix.toolchain }} xtest
