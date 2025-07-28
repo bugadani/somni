@@ -1,8 +1,4 @@
-use crate::{
-    for_all_tuples,
-    value::{Load, Store},
-    TypeSet, TypedValue,
-};
+use crate::{for_all_tuples, value::LoadStore, TypeSet, TypedValue};
 
 /// An error that occurs when calling a function.
 pub enum FunctionCallError {
@@ -32,8 +28,6 @@ pub trait DynFunction<A, T>
 where
     T: TypeSet,
 {
-    const ARG_COUNT: usize;
-
     fn call(&self, ctx: &mut T, args: &[TypedValue<T>])
         -> Result<TypedValue<T>, FunctionCallError>;
 }
@@ -48,21 +42,22 @@ for_all_tuples! {
     ($($arg:ident),*) => {
         impl<$($arg,)* R, F, T> DynFunction<($($arg,)*), T> for F
         where
-            $($arg: Load<T>,)*
+            $($arg: LoadStore<T>,)*
             // This double bound on F ensures that we can work with reference types (&str), too:
             // The first one ensures type-inference matches the Load implementation we want
             // The second one ensures we don't run into "... is not generic enough" errors.
             F: Fn($($arg,)*) -> R,
             F: for<'t> Fn($($arg::Output<'t>,)*) -> R,
-            R: Store<T>,
+            R: LoadStore<T>,
             T: TypeSet,
         {
-            const ARG_COUNT: usize = 0 $( + substitute!($arg, 1) )* ;
 
             #[allow(non_snake_case, unused)]
             fn call(&self, ctx: &mut T, args: &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> {
-                if args.len() != Self::ARG_COUNT {
-                    return Err(FunctionCallError::IncorrectArgumentCount { expected: Self::ARG_COUNT });
+                const ARG_COUNT: usize = 0 $( + substitute!($arg, 1) )* ;
+
+                if args.len() != ARG_COUNT {
+                    return Err(FunctionCallError::IncorrectArgumentCount { expected: ARG_COUNT });
                 }
 
                 let idx = 0;
@@ -80,18 +75,12 @@ for_all_tuples! {
     };
 }
 
-pub(crate) struct ExprFn<'ctx, T>
-where
-    T: TypeSet,
-{
+pub(crate) struct ExprFn<'ctx, T: TypeSet> {
     #[allow(clippy::type_complexity)]
     func: Box<dyn Fn(&mut T, &[TypedValue<T>]) -> Result<TypedValue<T>, FunctionCallError> + 'ctx>,
 }
 
-impl<'ctx, T> ExprFn<'ctx, T>
-where
-    T: TypeSet,
-{
+impl<'ctx, T: TypeSet> ExprFn<'ctx, T> {
     pub fn new<A, F>(func: F) -> Self
     where
         F: DynFunction<A, T> + 'ctx,

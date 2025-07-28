@@ -148,7 +148,7 @@ use somni_parser::{
 use crate::{
     error::MarkInSource,
     function::ExprFn,
-    value::{Load, LoadOwned, Store, ValueType},
+    value::{LoadOwned, LoadStore, ValueType},
 };
 
 pub use somni_parser::parser::{DefaultTypeSet, TypeSet128, TypeSet32};
@@ -164,29 +164,22 @@ use private::Sealed;
 
 /// Defines the backing types for Somni types.
 ///
-/// The [`LoadOwned`], [`Load`] and [`Store`] traits can be used to convert between Rust and Somni types.
+/// The [`LoadStore`] and [`LoadOwned`] traits can be used to convert between Rust and Somni types.
 pub trait TypeSet: Sized + Default + Debug + 'static {
     /// The typeset that will be used to parse source code.
     type Parser: ParserTypeSet<Integer = Self::Integer, Float = Self::Float>;
 
     /// The type of unsigned integers in this type set.
-    type Integer: Copy
-        + ValueType<NegateOutput: Load<Self> + Store<Self>>
-        + Load<Self>
-        + Store<Self>
-        + Integer;
+    type Integer: Copy + ValueType<NegateOutput: LoadStore<Self>> + LoadStore<Self> + Integer;
 
     /// The type of signed integers in this type set.
-    type SignedInteger: Copy
-        + ValueType<NegateOutput: Load<Self> + Store<Self>>
-        + Load<Self>
-        + Store<Self>;
+    type SignedInteger: Copy + ValueType<NegateOutput: LoadStore<Self>> + LoadStore<Self>;
 
     /// The type of floating point numbers in this type set.
-    type Float: Copy + ValueType<NegateOutput: Load<Self> + Store<Self>> + Load<Self> + Store<Self>;
+    type Float: Copy + ValueType<NegateOutput: LoadStore<Self>> + LoadStore<Self>;
 
     /// The type of a string in this type set.
-    type String: ValueType<NegateOutput: Load<Self> + Store<Self>> + Load<Self> + Store<Self>;
+    type String: ValueType<NegateOutput: LoadStore<Self>> + LoadStore<Self>;
 
     /// Converts an unsigned integer into a signed integer.
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError>;
@@ -705,7 +698,7 @@ where
             .next_call_frame();
         self.stack.push(stack_frame);
 
-        let mut visitor = ExpressionVisitor::<_, T> {
+        let mut visitor = ExpressionVisitor::<Self, T> {
             context: self,
             source,
             _marker: std::marker::PhantomData,
@@ -801,15 +794,45 @@ where
     }
 
     /// Defines a new variable in the context.
+    ///
+    /// The variable can be any type from the current [`TypeSet`], even [`TypedValue`].
+    ///
+    /// The variable will act as a global variable in the context of the program. Its
+    /// value can be changed by expressions.
+    ///
+    /// ```rust
+    /// use somni_expr::{Context, TypedValue};
+    ///
+    /// let mut context = Context::new();
+    ///
+    /// // Variable does not exist, it can't be assigned:
+    /// assert!(context.evaluate::<()>("counter = 0").is_err());
+    ///
+    /// context.add_variable::<u64>("counter", 0);
+    ///
+    /// // Variable exists now, so we can use it:
+    /// assert_eq!(context.evaluate::<()>("counter = counter + 1"), Ok(()));
+    /// assert_eq!(context.evaluate::<u64>("counter"), Ok(1));
+    /// ```
     pub fn add_variable<V>(&mut self, name: &'ctx str, value: V)
     where
-        V: Store<T>,
+        V: LoadStore<T>,
     {
         let stored = value.store(self.type_context());
         self.stack[0].declare(name, stored);
     }
 
     /// Adds a new function to the context.
+    ///
+    /// ```rust
+    /// use somni_expr::{Context, TypedValue};
+    ///
+    /// let mut context = Context::new();
+    ///
+    /// context.add_function("plus_one", |x: u64| x + 1);
+    ///
+    /// assert_eq!(context.evaluate::<u64>("plus_one(2)"), Ok(3));
+    /// ```
     pub fn add_function<F, A>(&mut self, name: &'ctx str, func: F)
     where
         F: DynFunction<A, T> + 'ctx,

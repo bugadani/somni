@@ -7,7 +7,9 @@ use somni_parser::{
     Location,
 };
 
-use crate::{value::Store, EvalError, ExprContext, FunctionCallError, Type, TypeSet, TypedValue};
+use crate::{
+    value::LoadStore, EvalError, ExprContext, FunctionCallError, Type, TypeSet, TypedValue,
+};
 
 /// A visitor that can process an abstract syntax tree.
 pub struct ExpressionVisitor<'a, C, T = DefaultTypeSet> {
@@ -364,20 +366,19 @@ where
 
         let condition = self.typecheck(condition, Type::Bool, if_statement.condition.location())?;
 
-        let retval = if condition == TypedValue::Bool(true) {
-            match self.visit_body(&if_statement.body)? {
-                StatementResult::EndOfBody => None,
-                other => Some(other),
-            }
+        let body = if condition == TypedValue::Bool(true) {
+            &if_statement.body
         } else if let Some(ref else_branch) = if_statement.else_branch {
-            match self.visit_body(&else_branch.else_body)? {
-                StatementResult::EndOfBody => None,
-                other => Some(other),
-            }
+            &else_branch.else_body
         } else {
-            None
+            // Condition is false, but there is no `else`
+            return Ok(None);
         };
 
+        let retval = match self.visit_body(body)? {
+            StatementResult::EndOfBody => None,
+            other => Some(other),
+        };
         Ok(retval)
     }
 

@@ -583,7 +583,6 @@ name = "somni-expr"
 version = "0.2.0"
 dependencies = [
  "ansi-parser",
- "indexmap",
  "pretty_assertions",
  "somni-parser",
 ]

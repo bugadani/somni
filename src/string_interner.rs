@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use somni_expr::{
-    value::{Load, Store, ValueType},
+    value::{LoadStore, ValueType},
     OperatorError, Type, TypeSet, TypedValue,
 };
 
@@ -26,7 +26,7 @@ impl ValueType for StringIndex {
         Ok(a == b)
     }
 }
-impl<T> Load<T> for StringIndex
+impl<T> LoadStore<T> for StringIndex
 where
     T: TypeSet<String = StringIndex>,
 {
@@ -42,11 +42,7 @@ where
 
         None
     }
-}
-impl<T> Store<T> for StringIndex
-where
-    T: TypeSet<String = StringIndex>,
-{
+
     fn store(&self, _ctx: &mut T) -> TypedValue<T> {
         TypedValue::String(*self)
     }

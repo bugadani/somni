@@ -8,7 +8,7 @@ use crate::{
 
 use somni_expr::{
     error::MarkInSource,
-    value::{Load, LoadOwned, Store, ValueType},
+    value::{LoadOwned, LoadStore, ValueType},
     DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type,
 };
 use somni_parser::{parser, Location};
@@ -75,11 +75,11 @@ somni_expr::for_all_tuples! {
     ($($arg:ident),*) => {
         impl<$($arg,)* R, F> NativeFunction<($($arg,)*)> for F
         where
-            $($arg: Load<VmTypeSet> + ValueType,)*
+            $($arg: LoadStore<VmTypeSet> + ValueType,)*
             F: Fn($($arg,)*) -> R,
             F: for<'t> Fn($($arg::Output<'t>,)*) -> R,
             F: Clone,
-            R: ValueType + Store<VmTypeSet>,
+            R: ValueType + LoadStore<VmTypeSet>,
         {
             #[allow(non_snake_case)]
             fn call_from_vm(&self, ctx: &mut EvalContext<'_>, sp: MemoryAddress) -> Result<VmTypedValue, EvalEvent<TypedValue>> {
