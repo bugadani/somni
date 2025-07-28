@@ -926,7 +926,7 @@ where
     ) -> Result<(), Box<str>> {
         let v = self.lookup_address(address)?;
         v.clone_from(value);
-        return Ok(());
+        Ok(())
     }
 
     fn call_function(
