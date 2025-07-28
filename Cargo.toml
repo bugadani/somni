@@ -1,6 +1,6 @@
 [package]
 name = "somni"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.82.0"
 description = "Somni scripting language and VM"
@@ -15,6 +15,10 @@ name = "benchmark"
 harness = false
 
 [workspace.dependencies]
+somni-parser = { version = "0.2",path = "somni-parser" }
+somni-expr = { version = "0.2",path = "somni-expr" }
+
+
 indexmap = "2"
 criterion = "0.6"
 ansi-parser = "0.9"
@@ -22,8 +26,8 @@ pretty_assertions = "1.4"
 
 [dependencies]
 indexmap.workspace = true
-somni-parser = { version = "0.1.0", path = "somni-parser" }
-somni-expr = { version = "0.1.0",path = "somni-expr" }
+somni-parser.workspace = true
+somni-expr.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

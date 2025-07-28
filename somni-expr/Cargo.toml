@@ -1,6 +1,6 @@
 [package]
 name = "somni-expr"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.82.0"
 description = "An expression evaluation library"
@@ -10,7 +10,7 @@ repository = "https://github.com/bugadani/somni"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-somni-parser = { version = "0.1.0",path = "../somni-parser" }
+somni-parser.workspace = true
 indexmap.workspace = true
 
 [dev-dependencies]

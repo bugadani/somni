@@ -568,7 +568,7 @@ dependencies = [
 
 [[package]]
 name = "somni"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ansi-parser",
  "criterion",
@@ -580,7 +580,7 @@ dependencies = [
 
 [[package]]
 name = "somni-expr"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ansi-parser",
  "indexmap",
@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "somni-parser"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "stable_deref_trait"
