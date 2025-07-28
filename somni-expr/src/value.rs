@@ -232,6 +232,8 @@ pub enum TypedValue<T: TypeSet = DefaultTypeSet> {
     /// Represents no value.
     Void,
     /// Represents an integer that may be signed or unsigned.
+    ///
+    /// MaybeSignedInt can compare equal with Int and SignedInt.
     MaybeSignedInt(T::Integer),
     /// Represents an unsigned integer.
     Int(T::Integer),
@@ -248,9 +250,15 @@ pub enum TypedValue<T: TypeSet = DefaultTypeSet> {
 impl<T: TypeSet> PartialEq for TypedValue<T> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::MaybeSignedInt(lhs), Self::MaybeSignedInt(rhs)) => lhs == rhs,
-            (Self::Int(lhs), Self::Int(rhs)) => lhs == rhs,
+            (Self::MaybeSignedInt(lhs), Self::MaybeSignedInt(rhs) | Self::Int(rhs)) => lhs == rhs,
+            (Self::Int(lhs), Self::MaybeSignedInt(rhs) | Self::Int(rhs)) => lhs == rhs,
             (Self::SignedInt(lhs), Self::SignedInt(rhs)) => lhs == rhs,
+            (Self::SignedInt(lhs), Self::MaybeSignedInt(rhs)) => {
+                T::to_signed(*rhs).map(|rhs| rhs == *lhs).unwrap_or(false)
+            }
+            (Self::MaybeSignedInt(lhs), Self::SignedInt(rhs)) => {
+                T::to_signed(*lhs).map(|lhs| lhs == *rhs).unwrap_or(false)
+            }
             (Self::Float(lhs), Self::Float(rhs)) => lhs == rhs,
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs == rhs,
             (Self::String(lhs), Self::String(rhs)) => lhs == rhs,

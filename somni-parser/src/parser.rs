@@ -26,7 +26,7 @@
 //!            | 'while' expression body
 //!            | expression ';'
 //!
-//! expression -> binary1 ;
+//! expression -> binary0 ;
 //! binary0 -> binary1 ( '=' binary1 )? ;
 //! binary1 -> binary2 ( '||' binary2 )* ;
 //! binary2 -> binary3 ( '&&' binary3 )* ;
