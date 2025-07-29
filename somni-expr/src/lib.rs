@@ -122,7 +122,6 @@ macro_rules! for_each {
 }
 
 pub mod error;
-#[doc(hidden)]
 pub mod function;
 #[doc(hidden)]
 pub mod value;

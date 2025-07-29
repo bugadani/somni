@@ -1,3 +1,5 @@
+//! Support for native Rust functions.
+
 use crate::{for_all_tuples, value::LoadStore, TypeSet, TypedValue};
 
 /// An error that occurs when calling a function.
@@ -23,11 +25,18 @@ pub enum FunctionCallError {
     Other(Box<str>),
 }
 
-#[doc(hidden)]
+/// Functions and closures that implement this trait can be registered as functions to be called by expressions.
 pub trait DynFunction<A, T>
 where
     T: TypeSet,
 {
+    /// Call the function with the specified arguments.
+    ///
+    /// # Errors
+    ///
+    /// This functions returns an error if:
+    /// - The number of arguments is incorrect
+    /// - The types of arguments are incorrect
     fn call(&self, ctx: &mut T, args: &[TypedValue<T>])
         -> Result<TypedValue<T>, FunctionCallError>;
 }
