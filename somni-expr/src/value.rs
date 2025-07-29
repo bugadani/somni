@@ -1,58 +1,78 @@
+//! Types and operations.
+
 use somni_parser::parser::DefaultTypeSet;
 
 use crate::{OperatorError, Type, TypeSet};
 
-#[doc(hidden)]
+/// A Rust type that is used as the storage for a Somni type.
 pub trait ValueType: Sized + Clone + PartialEq + std::fmt::Debug {
+    /// The Somni type this Rust type is used for.
     const TYPE: Type;
 
+    /// The type of the result of the unary `-` operator.
     type NegateOutput: ValueType;
 
+    /// Implements the `==` operator.
     fn equals(_a: Self, _b: Self) -> Result<bool, OperatorError> {
         unimplemented!("Operation not supported")
     }
+    /// Implements the `<` operator.
     fn less_than(_a: Self, _b: Self) -> Result<bool, OperatorError> {
         unimplemented!("Operation not supported")
     }
 
+    /// Implements the `<=` operator.
     fn less_than_or_equal(a: Self, b: Self) -> Result<bool, OperatorError> {
         let less = Self::less_than(a.clone(), b.clone())?;
         Ok(less || Self::equals(a, b)?)
     }
+
+    /// Implements the `!=` operator.
     fn not_equals(a: Self, b: Self) -> Result<bool, OperatorError> {
         let equals = Self::equals(a, b)?;
         Ok(!equals)
     }
+    /// Implements the `|` operator.
     fn bitwise_or(_a: Self, _b: Self) -> Result<Self, OperatorError> {
         unimplemented!("Operation not supported")
     }
+    /// Implements the `^` operator.
     fn bitwise_xor(_a: Self, _b: Self) -> Result<Self, OperatorError> {
         unimplemented!("Operation not supported")
     }
+    /// Implements the `&` operator.
     fn bitwise_and(_a: Self, _b: Self) -> Result<Self, OperatorError> {
         unimplemented!("Operation not supported")
     }
+    /// Implements the `<<` operator.
     fn shift_left(_a: Self, _b: Self) -> Result<Self, OperatorError> {
         unimplemented!("Operation not supported")
     }
+    /// Implements the `>>` operator.
     fn shift_right(_a: Self, _b: Self) -> Result<Self, OperatorError> {
         unimplemented!("Operation not supported")
     }
+    /// Implements the `+` operator.
     fn add(_a: Self, _b: Self) -> Result<Self, OperatorError> {
         unimplemented!("Operation not supported")
     }
+    /// Implements the binary `-` operator.
     fn subtract(_a: Self, _b: Self) -> Result<Self, OperatorError> {
         unimplemented!("Operation not supported")
     }
+    /// Implements the binary `*` operator.
     fn multiply(_a: Self, _b: Self) -> Result<Self, OperatorError> {
         unimplemented!("Operation not supported")
     }
+    /// Implements the binary `/` operator.
     fn divide(_a: Self, _b: Self) -> Result<Self, OperatorError> {
         unimplemented!("Operation not supported")
     }
+    /// Implements the unary `!` operator.
     fn not(_a: Self) -> Result<Self, OperatorError> {
         unimplemented!("Operation not supported")
     }
+    /// Implements the unary `-` operator.
     fn negate(_a: Self) -> Result<Self::NegateOutput, OperatorError> {
         unimplemented!("Operation not supported")
     }
@@ -298,6 +318,7 @@ impl<T: TypeSet> TypedValue<T> {
 
 /// Loads an owned Rust value from a TypedValue.
 pub trait LoadOwned<T: TypeSet = DefaultTypeSet> {
+    /// The type of the result.
     type Output;
 
     /// Loads an owned value from the given type context.
@@ -306,6 +327,7 @@ pub trait LoadOwned<T: TypeSet = DefaultTypeSet> {
 
 /// Converts between a borrowed Rust value and a TypedValue.
 pub trait LoadStore<T: TypeSet = DefaultTypeSet> {
+    /// The type of the result.
     type Output<'s>
     where
         T: 's;
