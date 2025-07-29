@@ -893,7 +893,7 @@ where
             .map_err(|_| format!("Invalid address: {address:?}").into_boxed_str())?;
 
         if address & GLOBAL_VARIABLE != 0 {
-            return self.stack[0].lookup_by_address(address);
+            return self.stack[0].lookup_by_address(address & !GLOBAL_VARIABLE);
         }
 
         for frame in self.stack.iter_mut().rev() {
@@ -1079,6 +1079,7 @@ mod test {
             Ok(String::from("fivesix"))
         );
         assert_eq!(ctx.evaluate::<bool>("signed * 2 == 60"), Ok(true));
+        assert_eq!(ctx.evaluate::<i64>("*&signed"), Ok(30));
     }
 
     #[test]
