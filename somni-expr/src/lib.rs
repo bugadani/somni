@@ -644,7 +644,7 @@ where
         let program = parse::<T::Parser>(source).map_err(|e| ExpressionError {
             error: EvalError {
                 message: format!("Failed to parse program: {e}").into_boxed_str(),
-                location: Location::dummy(),
+                location: e.location,
             },
             source,
         })?;
