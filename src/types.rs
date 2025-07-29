@@ -194,6 +194,10 @@ impl TypeSet for VmTypeSet {
         usize::try_from(v).map_err(|_| OperatorError::RuntimeError)
     }
 
+    fn int_from_usize(v: usize) -> Self::Integer {
+        Self::Integer::try_from(v).unwrap()
+    }
+
     fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
         self.0.lookup(*str)
     }

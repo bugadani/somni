@@ -153,15 +153,6 @@ use crate::{
 
 pub use somni_parser::parser::{DefaultTypeSet, TypeSet128, TypeSet32};
 
-mod private {
-    pub trait Sealed {}
-    impl Sealed for u32 {}
-    impl Sealed for u64 {}
-    impl Sealed for u128 {}
-}
-
-use private::Sealed;
-
 /// Defines the backing types for Somni types.
 ///
 /// The [`LoadStore`] and [`LoadOwned`] traits can be used to convert between Rust and Somni types.
@@ -170,7 +161,7 @@ pub trait TypeSet: Sized + Default + Debug + 'static {
     type Parser: ParserTypeSet<Integer = Self::Integer, Float = Self::Float>;
 
     /// The type of unsigned integers in this type set.
-    type Integer: Copy + ValueType<NegateOutput: LoadStore<Self>> + LoadStore<Self> + Integer;
+    type Integer: Copy + ValueType<NegateOutput: LoadStore<Self>> + LoadStore<Self>;
 
     /// The type of signed integers in this type set.
     type SignedInteger: Copy + ValueType<NegateOutput: LoadStore<Self>> + LoadStore<Self>;
@@ -186,6 +177,9 @@ pub trait TypeSet: Sized + Default + Debug + 'static {
 
     /// Converts an unsigned integer into a Rust usize.
     fn to_usize(v: Self::Integer) -> Result<usize, OperatorError>;
+
+    /// Converts the given Rust usize to an integer.
+    fn int_from_usize(v: usize) -> Self::Integer;
 
     /// Loads a string.
     fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str;
@@ -212,6 +206,10 @@ for_each! {
                 usize::try_from(v).map_err(|_| OperatorError::RuntimeError)
             }
 
+            fn int_from_usize(v: usize) -> Self::Integer {
+                Self::Integer::try_from(v).unwrap()
+            }
+
             fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
                 str
             }
@@ -221,27 +219,6 @@ for_each! {
             }
         }
     };
-}
-
-#[doc(hidden)]
-pub trait Integer: ValueType + Sealed {
-    fn from_usize(value: usize) -> Self;
-}
-
-impl Integer for u32 {
-    fn from_usize(value: usize) -> Self {
-        u32::try_from(value).unwrap()
-    }
-}
-impl Integer for u64 {
-    fn from_usize(value: usize) -> Self {
-        u64::try_from(value).unwrap()
-    }
-}
-impl Integer for u128 {
-    fn from_usize(value: usize) -> Self {
-        u128::try_from(value).unwrap()
-    }
 }
 
 /// Represents an error that can occur during operator evaluation.
@@ -924,7 +901,7 @@ where
             .lookup(variable)
             .map(|(address, _var)| address)
             .unwrap();
-        TypedValue::Int(<T::Integer as Integer>::from_usize(address))
+        TypedValue::Int(T::int_from_usize(address))
     }
 
     /// Declares a variable in the context.
