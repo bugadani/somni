@@ -408,14 +408,6 @@ where
             }
         }
     }
-
-    pub fn as_variable(&self) -> Option<Token> {
-        if let Expression::Variable { variable } = self {
-            Some(*variable)
-        } else {
-            None
-        }
-    }
 }
 
 #[derive(Debug)]

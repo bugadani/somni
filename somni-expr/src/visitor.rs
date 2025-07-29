@@ -73,19 +73,19 @@ where
                         }
                     })?
                 }
-                "&" => match operand.as_variable() {
-                    Some(variable) => {
-                        let name = variable.source(self.source);
-                        self.context.address_of(name)
-                    }
-                    None => {
+
+                "&" => {
+                    let Expression::Variable { variable } = operand.as_ref() else {
                         return Err(EvalError {
                             message: String::from("Cannot take address of non-variable expression")
                                 .into_boxed_str(),
                             location: operand.location(),
                         });
-                    }
-                },
+                    };
+
+                    let name = variable.source(self.source);
+                    self.context.address_of(name)
+                }
                 "*" => {
                     let address = self.visit_expression(operand)?;
                     self.context.at_address(address).map_err(|e| EvalError {
