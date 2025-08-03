@@ -1095,7 +1095,6 @@ mod test {
 
     #[test]
     fn test_evaluate_function() {
-        // TODO: run all the VM eval tests
         let mut ctx =
             Context::parse("fn multiply_with_global(a: int) -> int { return a * global; }")
                 .unwrap();
