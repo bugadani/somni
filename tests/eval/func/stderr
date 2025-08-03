@@ -1,0 +1,17 @@
+Failed to call main: Runtime error
+ ---> at line 1 column 2
+  |
+1 |  main()
+  |  ^^^^ while evaluating main
+ ---> at line 4 column 5
+  |
+4 |     fun1();
+  |     ^^^^ while evaluating fun1
+ ---> at line 9 column 5
+  |
+9 |     fun2();
+  |     ^^^^ while evaluating fun2
+  ---> at line 16 column 15
+   |
+16 |     var c = a + b;
+   |               ^ Failed to apply operator: RuntimeError

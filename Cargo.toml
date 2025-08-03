@@ -18,20 +18,19 @@ harness = false
 somni-parser = { version = "0.2",path = "somni-parser" }
 somni-expr = { version = "0.2",path = "somni-expr" }
 
-
 indexmap = "2"
 criterion = "0.6"
 ansi-parser = "0.9"
 pretty_assertions = "1.4"
 
 [dependencies]
+ansi-parser.workspace = true # FIXME this is needed by a hack to obtain nested errors
 indexmap.workspace = true
 somni-parser.workspace = true
 somni-expr.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
-ansi-parser.workspace = true
 pretty_assertions.workspace = true
 
 [profile.release]

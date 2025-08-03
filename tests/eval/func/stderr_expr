@@ -1,0 +1,17 @@
+Evaluation error
+ ---> at line 1 column 2
+  |
+1 |  main()
+  |  ^^^^ Failed to call main: Evaluation error
+ ---> at line 4 column 5
+  |
+4 |     fun1();
+  |     ^^^^ Failed to call fun1: Evaluation error
+ ---> at line 9 column 5
+  |
+9 |     fun2();
+  |     ^^^^ Failed to call fun2: Evaluation error
+  ---> at line 16 column 13
+   |
+16 |     var c = a + b;
+   |             ^^^^^ Failed to evaluate expression: Runtime error

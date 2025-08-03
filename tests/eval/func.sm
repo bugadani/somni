@@ -1,0 +1,18 @@
+//@ main()
+
+fn main() -> bool {
+    fun1();
+    return true;
+}
+
+fn fun1() {
+    fun2();
+}
+
+fn fun2() -> int {
+    // Trigger a runtime error with an overflow
+    var a = 0xFFFFFFFFFFFFFFFF;
+    var b = 1;
+    var c = a + b;
+    return c;
+}

@@ -1,0 +1,48 @@
+Globals:
+
+Function: main
+block 0
+  var return_value: bool = Some(Bool(true))
+  var temp2: int = None
+  var temp3: int = None
+  var temp4: void = None
+  temp4 = call fun1()
+  free(temp4)
+  free(temp3)
+  free(temp2)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+
+Function: fun1
+block 0
+  var return_value: void = None
+  var temp2: int = None
+  var temp3: int = None
+  var temp4: int = None
+  temp4 = call fun2()
+  free(temp4)
+  free(temp3)
+  free(temp2)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+
+Function: fun2
+block 0
+  var return_value: int = None
+  var a: int = Some(MaybeSignedInt(18446744073709551615))
+  var b: int = Some(MaybeSignedInt(1))
+  return_value = a + b
+  free(b)
+  free(a)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+

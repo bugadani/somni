@@ -13,3 +13,18 @@ pub mod vm;
 fn test_parser() {
     test::run_parser_tests("tests/parser/");
 }
+
+fn strip_ansi(s: impl AsRef<str>) -> String {
+    use ansi_parser::AnsiParser;
+    fn text_block(output: ansi_parser::Output<'_>) -> Option<&str> {
+        match output {
+            ansi_parser::Output::TextBlock(text) => Some(text),
+            _ => None,
+        }
+    }
+
+    s.as_ref()
+        .ansi_parse()
+        .filter_map(text_block)
+        .collect::<String>()
+}

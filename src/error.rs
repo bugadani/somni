@@ -32,7 +32,7 @@ impl Debug for CompileError<'_> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test::strip_ansi;
+    use crate::strip_ansi;
 
     #[test]
     fn test_error() {

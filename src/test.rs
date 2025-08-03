@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::{
     codegen,
     error::CompileError,
-    ir,
+    ir, strip_ansi,
     transform_ir::transform_ir,
     vm::{EvalContext, TypedValue},
 };
@@ -27,19 +27,19 @@ fn walk(dir: &Path, on_file: &impl Fn(&Path)) {
 
 pub fn run_parser_tests(dir: impl AsRef<Path>) {
     walk(dir.as_ref(), &|path| {
-        run_compile_test(path, false);
+        run_compile_test(path, false, false);
     });
 }
 
 pub fn run_compile_tests(dir: impl AsRef<Path>) {
     walk(dir.as_ref(), &|path| {
-        run_compile_test(path, true);
+        run_compile_test(path, true, false);
     });
 }
 
 pub fn run_eval_tests(dir: impl AsRef<Path>) {
     walk(dir.as_ref(), &|path| {
-        if let Some(program) = run_compile_test(&path, true) {
+        if let Some(program) = run_compile_test(&path, true, true) {
             run_eval_test(program, path);
         }
     });
@@ -73,16 +73,27 @@ pub fn run_eval_test(program: codegen::Program, path: impl AsRef<Path>) {
         };
         println!("Running `{expression}`");
         let value = context.eval_expression::<TypedValue>(expression);
-        if value != TypedValue::Bool(true) {
-            ctx.handle_error_string(
-                "Expression did not evaluate to true",
-                format!("Expression `{expression}` evaluated to {value:?}"),
-            );
+        match value {
+            Ok(TypedValue::Bool(true)) => {}
+            Ok(not_true) => {
+                ctx.handle_error_string(
+                    "Expression did not evaluate to true",
+                    format!("Expression `{expression}` evaluated to {not_true:?}"),
+                );
+            }
+            Err(e) => ctx.handle_error_string(
+                &format!("Failed to evaluate `{expression}`"),
+                e.as_str().to_string(),
+            ),
         }
     }
 }
 
-pub fn run_compile_test(file: impl AsRef<Path>, compile_test: bool) -> Option<codegen::Program> {
+pub fn run_compile_test(
+    file: impl AsRef<Path>,
+    compile_test: bool,
+    eval_test: bool,
+) -> Option<codegen::Program> {
     println!("Compiling: {}", file.as_ref().display());
     let ctx = TestContext::from_path(file.as_ref());
 
@@ -121,7 +132,7 @@ pub fn run_compile_test(file: impl AsRef<Path>, compile_test: bool) -> Option<co
         program = Some(p);
     }
 
-    if ctx.fail_expected() {
+    if ctx.fail_expected() && !eval_test {
         panic!(
             "Expected {} to fail, but it compiled successfully.",
             ctx.file.display()
@@ -184,21 +195,6 @@ impl<'a> TestContext<'a> {
 fn write_out_file(name: &Path, content: String) {
     _ = std::fs::create_dir_all(&name.parent().unwrap()).unwrap();
     std::fs::write(name, content).unwrap();
-}
-
-pub fn strip_ansi(s: impl AsRef<str>) -> String {
-    use ansi_parser::AnsiParser;
-    fn text_block(output: ansi_parser::Output<'_>) -> Option<&str> {
-        match output {
-            ansi_parser::Output::TextBlock(text) => Some(text),
-            _ => None,
-        }
-    }
-
-    s.as_ref()
-        .ansi_parse()
-        .filter_map(text_block)
-        .collect::<String>()
 }
 
 fn filter(path: &Path) -> bool {

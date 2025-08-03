@@ -1151,6 +1151,10 @@ mod test {
                 context
             }
 
+            let test_name = path.file_stem().unwrap();
+            let parent = path.parent().unwrap().canonicalize().unwrap();
+            let vm_error = parent.join(test_name).join("stderr");
+            let expr_error = parent.join(test_name).join("stderr_expr");
             let source = std::fs::read_to_string(path).unwrap();
 
             let expressions = source
@@ -1159,6 +1163,10 @@ mod test {
                 .collect::<Vec<_>>();
 
             let mut context = parse(&source);
+            let fail_expected = std::fs::exists(&expr_error).unwrap_or(false)
+                || std::fs::exists(&vm_error).unwrap_or(false);
+
+            let blessed = std::env::var("BLESS").as_deref() == Ok("1");
 
             for expression in &expressions {
                 let expression = if let Some(e) = expression.strip_prefix('+') {
@@ -1170,15 +1178,30 @@ mod test {
                     expression
                 };
                 println!("Running `{expression}`");
-                let value = context
-                    .evaluate::<TypedValue>(expression)
-                    .unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
-                assert_eq!(
-                    value,
-                    TypedValue::Bool(true),
-                    "{}: Expression `{expression}` evaluated to {value:?}",
-                    path.display()
-                );
+                match context.evaluate::<TypedValue>(expression) {
+                    Ok(_) if fail_expected => {
+                        panic!(
+                            "Expected {} to fail evaluating, but it succeeded",
+                            path.display()
+                        )
+                    }
+                    Ok(value) => assert_eq!(
+                        value,
+                        TypedValue::Bool(true),
+                        "{}: Expression `{expression}` evaluated to {value:?}",
+                        path.display()
+                    ),
+                    Err(e) if fail_expected => {
+                        let error = strip_ansi(format!("{e:?}"));
+                        if blessed {
+                            std::fs::write(&expr_error, error).unwrap();
+                        } else {
+                            let expected_error = std::fs::read_to_string(&expr_error).unwrap();
+                            pretty_assertions::assert_eq!(strip_ansi(expected_error), error);
+                        }
+                    }
+                    Err(e) => panic!("{}: {e:?}", path.display()),
+                };
             }
         }
 

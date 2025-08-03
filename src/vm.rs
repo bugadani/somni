@@ -3,6 +3,7 @@ use std::{collections::HashMap, marker::PhantomData, ops::Range};
 use crate::{
     codegen::{self, CodeAddress, Function, Instruction, MemoryAddress},
     string_interner::{StringIndex, Strings},
+    strip_ansi,
     types::{MemoryRepr, TypeExt, TypedValue as VmTypedValue, VmTypeSet},
 };
 
@@ -21,6 +22,10 @@ pub struct EvalError(Box<str>);
 impl EvalError {
     pub fn mark<'a>(&'a self, context: &'a EvalContext, message: &'a str) -> MarkInSource<'a> {
         MarkInSource(context.source, context.current_location(), message, &self.0)
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_ref()
     }
 }
 
@@ -525,7 +530,7 @@ impl<'p> EvalContext<'p> {
     ///
     /// An expression can use globals and functions defined in the program, but it cannot
     /// call functions that are not defined in the program.
-    pub fn eval_expression<V>(&mut self, expression: &str) -> V::Output
+    pub fn eval_expression<V>(&mut self, expression: &str) -> Result<V::Output, EvalError>
     where
         V: LoadOwned<VmTypeSet>,
     {
@@ -536,17 +541,18 @@ impl<'p> EvalContext<'p> {
         // TODO: we can allow new globals to be defined in the expression, but that would require
         // storing a copy of the original globals, so that they can be reset?
 
-        let ast = parser::parse_expression(expression).unwrap_or_else(|e| {
-            panic!(
-                "{}",
+        let ast = parser::parse_expression(expression).map_err(|e| {
+            EvalError(
                 MarkInSource(
                     expression,
                     e.location,
                     "Failed to parse expression",
                     &e.error,
                 )
+                .to_string()
+                .into_boxed_str(),
             )
-        });
+        })?;
 
         let mut visitor = ExpressionVisitor {
             context: self,
@@ -554,12 +560,40 @@ impl<'p> EvalContext<'p> {
             _marker: PhantomData,
         };
         // TODO: handle errors
-        let result = visitor.visit_expression(&ast).unwrap();
+        let result = match visitor.visit_expression(&ast) {
+            Ok(result) => result,
+            Err(e) => {
+                // Bad way to extract the error message, but we lost structure.
+                let mut error = strip_ansi(e.message.lines().last().unwrap())
+                    .trim_start_matches([' ', '^', '|'])
+                    .to_string();
+
+                self.backtrace(|name, pc| {
+                    println!("{name}");
+                    error = MarkInSource(
+                        self.source,
+                        self.program.debug_info.instruction_locations[pc],
+                        &format!("while evaluating {name}"),
+                        &error,
+                    )
+                    .to_string();
+                });
+                return Err(EvalError(
+                    MarkInSource(
+                        expression,
+                        ast.location(),
+                        e.message.lines().next().unwrap(),
+                        &format!("{error}"),
+                    )
+                    .to_string()
+                    .into_boxed_str(),
+                ));
+            }
+        };
 
         let result_ty = result.type_of();
-        V::load_owned(self.type_context(), &result).unwrap_or_else(|| {
-            panic!(
-                "{}",
+        let result = V::load_owned(self.type_context(), &result).ok_or_else(|| {
+            EvalError(
                 MarkInSource(
                     expression,
                     ast.location(),
@@ -569,8 +603,12 @@ impl<'p> EvalContext<'p> {
                         std::any::type_name::<V>()
                     ),
                 )
+                .to_string()
+                .into_boxed_str(),
             )
-        })
+        })?;
+
+        Ok(result)
     }
 
     fn execute(&mut self) -> EvalEvent<TypedValue> {
@@ -776,7 +814,7 @@ impl<'p> EvalContext<'p> {
         Ok(())
     }
 
-    pub fn print_backtrace(&self) {
+    fn backtrace(&self, mut f: impl FnMut(&str, usize)) {
         let mut fns = self
             .program
             .functions
@@ -786,34 +824,32 @@ impl<'p> EvalContext<'p> {
 
         fns.sort_by_key(|(e, _f)| *e);
 
-        let mut prev_sp = self.memory.sp;
-        let mut i = 0;
-        while prev_sp != 0 {
-            i += 1;
-            let pc = self
-                .load::<u64>(MemoryAddress::Global(prev_sp - 16))
-                .unwrap();
-            let sp = self
-                .load::<u64>(MemoryAddress::Global(prev_sp - 8))
-                .unwrap();
-
-            let name = if sp == 0 {
-                self.string(self.outer_function_name)
-            } else {
-                let mut name = None;
-                for (ep, func) in fns.iter().copied() {
-                    if ep > pc as usize {
-                        break;
-                    }
-                    name = Some(func);
+        let mut sp = self.memory.sp;
+        let mut pc = self.program_counter.0;
+        while sp != 0 {
+            let mut name = None;
+            for (entry_point, func) in fns.iter().copied() {
+                if entry_point > pc as usize {
+                    break;
                 }
+                name = Some(func);
+            }
 
-                name.map(|idx| self.string(idx)).unwrap_or("<unknown>")
-            };
+            f(name.map(|idx| self.string(idx)).unwrap_or("<unknown>"), pc);
 
-            println!("Frame {i}: {name}");
-            prev_sp = sp as usize;
+            let next_pc = self.load::<u64>(MemoryAddress::Global(sp - 16)).unwrap();
+            let next_sp = self.load::<u64>(MemoryAddress::Global(sp - 8)).unwrap();
+            sp = next_sp as usize;
+            pc = next_pc as usize;
         }
+    }
+
+    pub fn print_backtrace(&self) {
+        let mut n = 0;
+        self.backtrace(move |function, _| {
+            n += 1;
+            println!("Frame {n}: {function}");
+        });
     }
 
     fn call_function(
@@ -904,14 +940,10 @@ impl<'s> ExprContext<VmTypeSet> for EvalContext<'s> {
         args: &[TypedValue],
     ) -> Result<TypedValue, FunctionCallError> {
         match self.call(function_name, args) {
-            EvalEvent::UnknownFunctionCall(fn_name) => {
-                println!("unknown function call {:?}", self.string(fn_name));
-                self.print_backtrace();
-                todo!();
-            }
-            EvalEvent::Error(e) => {
-                panic!("{}", e.mark(self, "Runtime error"))
-            }
+            EvalEvent::UnknownFunctionCall(_fn_name) => Err(FunctionCallError::FunctionNotFound),
+            EvalEvent::Error(e) => Err(FunctionCallError::Other(
+                e.mark(self, "Runtime error").to_string().into_boxed_str(),
+            )),
             EvalEvent::Complete(value) => Ok(value),
         }
     }

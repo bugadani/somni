@@ -1,0 +1,12 @@
+Function main(...) -> bool (stack: 17)
+  0000: load Local(0) = Bool(true)
+  0001: call fun1(..) with sp=Local(17)
+  0002: return
+Function fun1(...) -> void (stack: 24)
+  0003: call fun2(..) with sp=Local(16)
+  0004: return
+Function fun2(...) -> int (stack: 24)
+  0005: load Local(8) = MaybeSignedInt(18446744073709551615)
+  0006: load Local(16) = MaybeSignedInt(1)
+  0007: Local(0) = Local(8) + Local(16) (int)
+  0008: return
