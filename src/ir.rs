@@ -1529,7 +1529,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_free_scope(&mut self, body: &ast::Body<VmTypeSet>) -> Result<(), CompileError<'s>> {
         let next_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
 
-        // Compile the body of the loop.
+        // Compile the body of the scope.
         let body_block = self.blocks.allocate_block(next_block);
 
         self.blocks.set_terminator(Termination::Jump {
