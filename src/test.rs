@@ -181,8 +181,8 @@ impl<'a> TestContext<'a> {
         } else if self.fail_expected() {
             let expected_error = std::fs::read_to_string(&self.stderr()).unwrap();
             pretty_assertions::assert_eq!(
-                error.trim(),
                 expected_error.trim(),
+                error.trim(),
                 "Error did not match expected error. {}",
                 self.file.display()
             );
