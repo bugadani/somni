@@ -874,12 +874,165 @@ Program {
                             },
                         ),
                         ImplicitReturn(
+                            FunctionCall {
+                                name: Token {
+                                    kind: Identifier,
+                                    location: Location {
+                                        start: 558,
+                                        end: 575,
+                                    },
+                                },
+                                arguments: [
+                                    Variable {
+                                        variable: Token {
+                                            kind: Identifier,
+                                            location: Location {
+                                                start: 576,
+                                                end: 577,
+                                            },
+                                        },
+                                    },
+                                ],
+                            },
+                        ),
+                    ],
+                    closing_brace: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 579,
+                            end: 580,
+                        },
+                    },
+                },
+            },
+        ),
+        Function(
+            Function {
+                fn_token: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 582,
+                        end: 584,
+                    },
+                },
+                name: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 585,
+                        end: 602,
+                    },
+                },
+                opening_paren: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 602,
+                        end: 603,
+                    },
+                },
+                arguments: [
+                    FunctionArgument {
+                        name: Token {
+                            kind: Identifier,
+                            location: Location {
+                                start: 603,
+                                end: 604,
+                            },
+                        },
+                        colon: Token {
+                            kind: Symbol,
+                            location: Location {
+                                start: 604,
+                                end: 605,
+                            },
+                        },
+                        reference_token: None,
+                        arg_type: TypeHint {
+                            type_name: Token {
+                                kind: Identifier,
+                                location: Location {
+                                    start: 606,
+                                    end: 609,
+                                },
+                            },
+                        },
+                    },
+                ],
+                closing_paren: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 609,
+                        end: 610,
+                    },
+                },
+                return_decl: Some(
+                    ReturnDecl {
+                        return_token: Token {
+                            kind: Symbol,
+                            location: Location {
+                                start: 611,
+                                end: 613,
+                            },
+                        },
+                        return_type: TypeHint {
+                            type_name: Token {
+                                kind: Identifier,
+                                location: Location {
+                                    start: 614,
+                                    end: 617,
+                                },
+                            },
+                        },
+                    },
+                ),
+                body: Body {
+                    opening_brace: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 618,
+                            end: 619,
+                        },
+                    },
+                    statements: [
+                        Scope(
+                            Body {
+                                opening_brace: Token {
+                                    kind: Symbol,
+                                    location: Location {
+                                        start: 624,
+                                        end: 625,
+                                    },
+                                },
+                                statements: [
+                                    ImplicitReturn(
+                                        Literal {
+                                            value: Literal {
+                                                value: Integer(
+                                                    356,
+                                                ),
+                                                location: Location {
+                                                    start: 634,
+                                                    end: 637,
+                                                },
+                                            },
+                                        },
+                                    ),
+                                ],
+                                closing_brace: Token {
+                                    kind: Symbol,
+                                    location: Location {
+                                        start: 642,
+                                        end: 643,
+                                    },
+                                },
+                            },
+                        ),
+                        ImplicitReturn(
                             Variable {
                                 variable: Token {
                                     kind: Identifier,
                                     location: Location {
-                                        start: 558,
-                                        end: 559,
+                                        start: 648,
+                                        end: 649,
                                     },
                                 },
                             },
@@ -888,8 +1041,8 @@ Program {
                     closing_brace: Token {
                         kind: Symbol,
                         location: Location {
-                            start: 560,
-                            end: 561,
+                            start: 650,
+                            end: 651,
                         },
                     },
                 },

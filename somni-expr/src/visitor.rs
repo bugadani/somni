@@ -313,7 +313,9 @@ where
         }
 
         let retval = match self.visit_body(&function.body)? {
-            StatementResult::Return(typed_value) => typed_value,
+            StatementResult::Return(typed_value) | StatementResult::ImplicitReturn(typed_value) => {
+                typed_value
+            }
             StatementResult::EndOfBody => TypedValue::Void,
             StatementResult::LoopBreak | StatementResult::LoopContinue => todo!(),
         };
@@ -331,7 +333,14 @@ where
         for statement in body.statements.iter() {
             if let Some(retval) = self.visit_statement(statement)? {
                 body_result = retval;
-                break;
+                match body_result {
+                    StatementResult::ImplicitReturn(_) => {}
+                    _ => break,
+                }
+            } else if let StatementResult::ImplicitReturn(_) = body_result {
+                // Reset result if we have statements after implicit returns.
+                // FIXME: This is a hack to handle return values from blocks that shouldn't be returned.
+                body_result = StatementResult::EndOfBody;
             }
         }
 
@@ -353,7 +362,7 @@ where
             Statement::ImplicitReturn(expression) => {
                 return self
                     .visit_right_hand_expression(expression)
-                    .map(StatementResult::Return)
+                    .map(StatementResult::ImplicitReturn)
                     .map(Some);
             }
             Statement::EmptyReturn(_) => {
@@ -423,7 +432,9 @@ where
             match self.visit_body(&loop_statement.body)? {
                 ret @ StatementResult::Return(_) => return Ok(Some(ret)),
                 StatementResult::LoopBreak => return Ok(None),
-                StatementResult::LoopContinue | StatementResult::EndOfBody => {}
+                StatementResult::LoopContinue
+                | StatementResult::EndOfBody
+                | StatementResult::ImplicitReturn(_) => {}
             }
         }
     }
@@ -431,6 +442,7 @@ where
 
 enum StatementResult<T: TypeSet> {
     Return(TypedValue<T>),
+    ImplicitReturn(TypedValue<T>),
     LoopBreak,
     LoopContinue,
     EndOfBody,
