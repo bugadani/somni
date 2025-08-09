@@ -884,7 +884,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         let variable = self.declare_variable(name, var_ty, ident.location, false)?;
 
         let rp = self.variables.create_restore_point();
-        let expr_result = self.compile_expression(initializer)?;
+        let expr_result = self.compile_right_hand_expression(initializer)?;
         self.blocks.push_instruction(
             ident.location,
             Ir::Assign(VariableIndex::Local(variable), expr_result),
@@ -901,7 +901,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         let rp = self.variables.create_restore_point();
 
         // Generate instructions for the condition, allocate then/else blocks and generate conditional jumps
-        let condition = self.compile_expression(&if_statement.condition)?;
+        let condition = self.compile_right_hand_expression(&if_statement.condition)?;
 
         // Allocate the next block, which is the block that will be executed after the branches.
         // Point to the return block by default.
@@ -1042,7 +1042,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         ret: &ast::ReturnWithValue<VmTypeSet>,
     ) -> Result<(), CompileError<'s>> {
         let rp = self.variables.create_restore_point();
-        let return_value = self.compile_expression(&ret.expression)?;
+        let return_value = self.compile_right_hand_expression(&ret.expression)?;
 
         // Store variable in the return variable.
         self.blocks.push_instruction(
@@ -1129,7 +1129,59 @@ impl<'s> FunctionCompiler<'s, '_> {
         expression: &ast::Expression<VmTypeSet>,
     ) -> Result<VariableIndex, CompileError<'s>> {
         match &expression {
-            ast::Expression::Literal { value } => {
+            ast::Expression::Assignment {
+                left_expr,
+                operator,
+                right_expr,
+            } => {
+                let rp = self.variables.create_restore_point();
+
+                let left;
+                // Compile the right operand.
+                let right = self.compile_right_hand_expression(right_expr)?;
+
+                let instruction = match left_expr {
+                    ast::LeftHandExpression::Deref { operator: _, name } => {
+                        left = self.compile_right_hand_expression(
+                            &ast::RightHandExpression::Variable { variable: *name },
+                        )?;
+                        Ir::DerefAssign(left, right)
+                    }
+                    ast::LeftHandExpression::Name { variable } => {
+                        left = self.compile_right_hand_expression(
+                            &ast::RightHandExpression::Variable {
+                                variable: *variable,
+                            },
+                        )?;
+                        Ir::Assign(left, right)
+                    }
+                };
+
+                // Generate the instruction for the assignment.
+                self.blocks.push_instruction(operator.location, instruction);
+
+                self.rollback_scope(operator.location, rp);
+
+                // Allocate a temporary variable. For assignments this is not used, but
+                // we still need to return something.
+                Ok(self.declare_temporary(
+                    operator.location,
+                    Value::Void,
+                    AllocationMethod::FirstFit,
+                ))
+            }
+            ast::Expression::Expression { expression } => {
+                self.compile_right_hand_expression(expression)
+            }
+        }
+    }
+
+    fn compile_right_hand_expression(
+        &mut self,
+        expression: &ast::RightHandExpression<VmTypeSet>,
+    ) -> Result<VariableIndex, CompileError<'s>> {
+        match &expression {
+            ast::RightHandExpression::Literal { value } => {
                 let val_type = match value.value {
                     ast::LiteralValue::Integer(_) => Type::MaybeSignedInt,
                     ast::LiteralValue::Float(_) => Type::Float,
@@ -1146,7 +1198,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
                 Ok(temp)
             }
-            ast::Expression::Variable { variable } => {
+            ast::RightHandExpression::Variable { variable } => {
                 let name = variable.source(self.source);
                 match self.find_variable_by_name(name) {
                     // If the variable is already declared, we can just return it.
@@ -1158,13 +1210,13 @@ impl<'s> FunctionCompiler<'s, '_> {
                     }),
                 }
             }
-            ast::Expression::UnaryOperator { name, operand } => {
+            ast::RightHandExpression::UnaryOperator { name, operand } => {
                 self.compile_unary_operator(*name, operand)
             }
-            ast::Expression::BinaryOperator { name, operands } => {
+            ast::RightHandExpression::BinaryOperator { name, operands } => {
                 self.compile_binary_operator(*name, operands)
             }
-            ast::Expression::FunctionCall { name, arguments } => {
+            ast::RightHandExpression::FunctionCall { name, arguments } => {
                 self.compile_function_call(*name, arguments)
             }
         }
@@ -1216,7 +1268,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_unary_operator(
         &mut self,
         operator: Token,
-        operand: &ast::Expression<VmTypeSet>,
+        operand: &ast::RightHandExpression<VmTypeSet>,
     ) -> Result<VariableIndex, CompileError<'s>> {
         let op = operator.source(self.source);
 
@@ -1227,7 +1279,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         let rp = self.variables.create_restore_point();
 
         // Compile the left and right operands.
-        let operand_result = self.compile_expression(operand)?;
+        let operand_result = self.compile_right_hand_expression(operand)?;
 
         if let VariableIndex::Local(local_idx) = operand_result {
             if op == "&" {
@@ -1248,7 +1300,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_binary_operator(
         &mut self,
         operator: Token,
-        operands: &[ast::Expression<VmTypeSet>; 2],
+        operands: &[ast::RightHandExpression<VmTypeSet>; 2],
     ) -> Result<VariableIndex, CompileError<'s>> {
         let op = operator.source(self.source);
 
@@ -1259,7 +1311,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                 AllocationMethod::FirstFit,
             );
 
-            let condition = self.compile_expression(&operands[0])?;
+            let condition = self.compile_right_hand_expression(&operands[0])?;
 
             // Allocate the next block, which is the block that will be executed after the branches.
             // Point to the return block by default.
@@ -1272,7 +1324,7 @@ impl<'s> FunctionCompiler<'s, '_> {
             let then_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
             self.blocks.select_block(then_block);
             let rp = self.variables.create_restore_point();
-            let rhs = self.compile_expression(&operands[1])?;
+            let rhs = self.compile_right_hand_expression(&operands[1])?;
             self.blocks
                 .push_instruction(operator.location, Ir::Assign(temp, rhs));
             self.free_if_temporary(operands[1].location(), rhs);
@@ -1305,7 +1357,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                 AllocationMethod::FirstFit,
             );
 
-            let condition = self.compile_expression(&operands[0])?;
+            let condition = self.compile_right_hand_expression(&operands[0])?;
 
             // Allocate the next block, which is the block that will be executed after the branches.
             // Point to the return block by default.
@@ -1318,7 +1370,7 @@ impl<'s> FunctionCompiler<'s, '_> {
             let else_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
             self.blocks.select_block(else_block);
             let rp = self.variables.create_restore_point();
-            let rhs = self.compile_expression(&operands[1])?;
+            let rhs = self.compile_right_hand_expression(&operands[1])?;
             self.blocks
                 .push_instruction(operator.location, Ir::Assign(temp, rhs));
             self.free_if_temporary(operands[1].location(), rhs);
@@ -1344,45 +1396,10 @@ impl<'s> FunctionCompiler<'s, '_> {
             self.free_if_temporary(operands[0].location(), condition);
 
             Ok(temp)
-        } else if op == "=" {
-            let rp = self.variables.create_restore_point();
-
-            let left;
-            // Compile the right operand.
-            let right = self.compile_expression(&operands[1])?;
-
-            let instruction = match &operands[0] {
-                ast::Expression::UnaryOperator { name, operand }
-                    if name.source(self.source) == "*" =>
-                {
-                    left = self.compile_expression(operand)?;
-                    Ir::DerefAssign(left, right)
-                }
-                ast::Expression::Variable { .. } => {
-                    left = self.compile_expression(&operands[0])?;
-                    Ir::Assign(left, right)
-                }
-                _ => {
-                    return Err(CompileError {
-                        source: self.source,
-                        location: operands[0].location(),
-                        error: "Not a valid left-hand side of an assignment".to_string(),
-                    });
-                }
-            };
-
-            // Generate the instruction for the assignment.
-            self.blocks.push_instruction(operator.location, instruction);
-
-            self.rollback_scope(operator.location, rp);
-
-            // Allocate a temporary variable. For assignments this is not used, but
-            // we still need to return something.
-            Ok(self.declare_temporary(operator.location, Value::Void, AllocationMethod::FirstFit))
         } else {
             // Compile the left and right operands.
-            let left = self.compile_expression(&operands[0])?;
-            let right = self.compile_expression(&operands[1])?;
+            let left = self.compile_right_hand_expression(&operands[0])?;
+            let right = self.compile_right_hand_expression(&operands[1])?;
 
             // Allocate a temporary variable for the result.
             let temp =
@@ -1402,7 +1419,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_function_call(
         &mut self,
         name: Token,
-        arguments: &[ast::Expression<VmTypeSet>],
+        arguments: &[ast::RightHandExpression<VmTypeSet>],
     ) -> Result<VariableIndex, CompileError<'s>> {
         // Allocate a temporary variable for the result.
         let temp = self.declare_temporary(name.location, Value::Void, AllocationMethod::FirstFit);
@@ -1411,7 +1428,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         // Compile the arguments.
         let arguments = arguments
             .iter()
-            .map(|arg| self.compile_expression(arg))
+            .map(|arg| self.compile_right_hand_expression(arg))
             .collect::<Result<Vec<_>, _>>()?;
         let function_name = name.source(self.source);
         let function_index = self.strings.intern(function_name);

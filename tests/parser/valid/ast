@@ -39,14 +39,16 @@ Program {
                         end: 17,
                     },
                 },
-                initializer: Literal {
-                    value: Literal {
-                        value: Integer(
-                            42,
-                        ),
-                        location: Location {
-                            start: 18,
-                            end: 20,
+                initializer: Expression {
+                    expression: Literal {
+                        value: Literal {
+                            value: Integer(
+                                42,
+                            ),
+                            location: Location {
+                                start: 18,
+                                end: 20,
+                            },
                         },
                     },
                 },
@@ -98,14 +100,16 @@ Program {
                         end: 43,
                     },
                 },
-                initializer: Literal {
-                    value: Literal {
-                        value: Integer(
-                            100,
-                        ),
-                        location: Location {
-                            start: 44,
-                            end: 47,
+                initializer: Expression {
+                    expression: Literal {
+                        value: Literal {
+                            value: Integer(
+                                100,
+                            ),
+                            location: Location {
+                                start: 44,
+                                end: 47,
+                            },
                         },
                     },
                 },
@@ -157,14 +161,16 @@ Program {
                         end: 80,
                     },
                 },
-                initializer: Literal {
-                    value: Literal {
-                        value: Integer(
-                            100,
-                        ),
-                        location: Location {
-                            start: 81,
-                            end: 84,
+                initializer: Expression {
+                    expression: Literal {
+                        value: Literal {
+                            value: Integer(
+                                100,
+                            ),
+                            location: Location {
+                                start: 81,
+                                end: 84,
+                            },
                         },
                     },
                 },
@@ -216,22 +222,24 @@ Program {
                         end: 126,
                     },
                 },
-                initializer: UnaryOperator {
-                    name: Token {
-                        kind: Symbol,
-                        location: Location {
-                            start: 127,
-                            end: 128,
-                        },
-                    },
-                    operand: Literal {
-                        value: Literal {
-                            value: Integer(
-                                100,
-                            ),
+                initializer: Expression {
+                    expression: UnaryOperator {
+                        name: Token {
+                            kind: Symbol,
                             location: Location {
-                                start: 128,
-                                end: 131,
+                                start: 127,
+                                end: 128,
+                            },
+                        },
+                        operand: Literal {
+                            value: Literal {
+                                value: Integer(
+                                    100,
+                                ),
+                                location: Location {
+                                    start: 128,
+                                    end: 131,
+                                },
                             },
                         },
                     },

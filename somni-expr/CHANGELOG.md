@@ -11,6 +11,7 @@
 - Added `Context::evaluate_parsed` to evaluate pre-parsed expressions.
 - Removed `Context::evaluate_expr_any` and `evaluate_any`. You can specify `evaluate` (and `evaluate_parsed`) to return `TypedValue`.
 - Merged the `Load` and `Store` traits into `LoadStore`.
+- Added `ExpressionVisitor::visit_right_hand_expression`.
 
 # [0.1.0] - 2025-07-24
 

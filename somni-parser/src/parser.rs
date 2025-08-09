@@ -9,7 +9,7 @@
 //! extern_fn -> 'extern' 'fn' identifier '(' function_argument ( ',' function_argument )* ','? ')' return_decl? ;
 //! global -> 'var' identifier ':' type '=' static_initializer ';' ;
 //!
-//! static_initializer -> expression ; // The language does not currently support function calls.
+//! static_initializer -> right_hand_expression ; // The language does not currently support function calls.
 //!
 //! function -> 'fn' identifier '(' function_argument ( ',' function_argument )* ','? ')' return_decl? body ;
 //! function_argument -> identifier ':' '&'? type ;
@@ -17,18 +17,20 @@
 //! type -> identifier ;
 //!
 //! body -> '{' statement* '}' ;
-//! statement -> 'var' identifier (':' type)? '=' expression ';'
-//!            | 'return' expression? ';'
+//! statement -> 'var' identifier (':' type)? '=' right_hand_expression ';'
+//!            | 'return' right_hand_expression? ';'
 //!            | 'break' ';'
 //!            | 'continue' ';'
-//!            | 'if' expression body ( 'else' body )?
+//!            | 'if' right_hand_expression body ( 'else' body )?
 //!            | 'loop' body
-//!            | 'while' expression body
+//!            | 'while' right_hand_expression body
 //!            | expression ';'
 //!
-//! expression -> binary0 ;
-//! binary0 -> binary1 ( '=' binary1 )? ;
-//! binary1 -> binary2 ( '||' binary2 )* ;
+//! expression -> (left_hand_expression '=')? right_hand_expression ;
+//!
+//! left_hand_expression -> ( '*' )? identifier ; // Should be a valid expression, too.
+//!
+//! right_hand_expression -> binary2 ( '||' binary2 )* ;
 //! binary2 -> binary3 ( '&&' binary3 )* ;
 //! binary3 -> binary4 ( ( '<' | '<=' | '>' | '>=' | '==' | '!=' ) binary4 )* ;
 //! binary4 -> binary5 ( '|' binary5 )* ;
@@ -38,8 +40,8 @@
 //! binary8 -> binary9 ( ( '+' | '-' ) binary9 )* ;
 //! binary9 -> unary ( ( '*' | '/' ) unary )* ;
 //! unary -> ('!' | '-' | '&' | '*' )* primary | call ;
-//! primary -> ( literal | identifier ( '(' call_arguments ')' )? ) | '(' expression ')' ;
-//! call_arguments -> expression ( ',' expression )* ','? ;
+//! primary -> ( literal | identifier ( '(' call_arguments ')' )? ) | '(' right_hand_expression ')' ;
+//! call_arguments -> right_hand_expression ( ',' right_hand_expression )* ','? ;
 //! literal -> NUMBER | STRING | 'true' | 'false' ;
 //! ```
 //!
@@ -54,8 +56,9 @@ use std::{
 use crate::{
     ast::{
         Body, Break, Continue, Else, EmptyReturn, Expression, ExternalFunction, Function,
-        FunctionArgument, GlobalVariable, If, Item, Literal, LiteralValue, Loop, Program,
-        ReturnDecl, ReturnWithValue, Statement, TypeHint, VariableDefinition,
+        FunctionArgument, GlobalVariable, If, Item, LeftHandExpression, Literal, LiteralValue,
+        Loop, Program, ReturnDecl, ReturnWithValue, RightHandExpression, Statement, TypeHint,
+        VariableDefinition,
     },
     lexer::{Token, TokenKind, Tokenizer},
     parser::private::Sealed,
@@ -190,7 +193,9 @@ where
         let colon = stream.expect_match(TokenKind::Symbol, &[":"])?;
         let type_token = TypeHint::parse(stream)?;
         let equals_token = stream.expect_match(TokenKind::Symbol, &["="])?;
-        let initializer = Expression::parse(stream)?;
+        let initializer = Expression::Expression {
+            expression: RightHandExpression::parse(stream)?,
+        };
         let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
 
         Ok(Some(GlobalVariable {
@@ -367,7 +372,7 @@ where
                 }));
             }
 
-            let expr = Expression::parse(stream)?;
+            let expr = RightHandExpression::parse(stream)?;
             let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
             return Ok(Statement::Return(ReturnWithValue {
                 return_token,
@@ -386,7 +391,7 @@ where
             };
 
             let equals_token = stream.expect_match(TokenKind::Symbol, &["="])?;
-            let expression = Expression::parse(stream)?;
+            let expression = RightHandExpression::parse(stream)?;
             let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
 
             return Ok(Statement::VariableDefinition(VariableDefinition {
@@ -400,7 +405,7 @@ where
         }
 
         if let Some(if_token) = stream.take_match(TokenKind::Identifier, &["if"])? {
-            let condition = Expression::parse(stream)?;
+            let condition = RightHandExpression::parse(stream)?;
             let body = Body::parse(stream)?;
 
             let else_branch =
@@ -430,7 +435,7 @@ where
 
         if let Some(while_token) = stream.take_match(TokenKind::Identifier, &["while"])? {
             // Desugar while into loop { if condition { loop_body; } else { break; } }
-            let condition = Expression::parse(stream)?;
+            let condition = RightHandExpression::parse(stream)?;
             let body = Body::parse(stream)?;
             return Ok(Statement::Loop(Loop {
                 loop_token: while_token,
@@ -558,9 +563,45 @@ fn unescape(s: &str) -> Result<String, usize> {
     Ok(result)
 }
 
-enum Associativity {
-    Left,
-    None,
+impl LeftHandExpression {
+    fn parse<T: TypeSet>(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
+        const UNARY_OPERATORS: &[&str] = &["*"];
+        let expr = if let Some(operator) = stream.take_match(TokenKind::Symbol, UNARY_OPERATORS)? {
+            Self::Deref {
+                operator,
+                name: Self::parse_name::<T>(stream)?,
+            }
+        } else {
+            Self::Name {
+                variable: Self::parse_name::<T>(stream)?,
+            }
+        };
+
+        Ok(expr)
+    }
+
+    fn parse_name<T: TypeSet>(
+        stream: &mut TokenStream<'_, impl Tokenizer>,
+    ) -> Result<Token, Error> {
+        let token = stream.peek_expect()?;
+        match token.kind {
+            TokenKind::Identifier => {
+                // true, false?
+                match Literal::<T>::parse(stream) {
+                    Ok(_) => Err(Error {
+                        error: "Parse error: Literals are not valid on the left-hand side"
+                            .to_string()
+                            .into_boxed_str(),
+                        location: token.location,
+                    }),
+                    _ => stream
+                        .take_match(TokenKind::Identifier, &[])
+                        .map(|v| v.unwrap()),
+                }
+            }
+            _ => Err(stream.error("Expected variable name or deref operator")),
+        }
+    }
 }
 
 impl<T> Expression<T>
@@ -568,20 +609,46 @@ where
     T: TypeSet,
 {
     fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
+        let save = stream.clone();
+
+        let expression = RightHandExpression::<T>::parse(stream)?;
+
+        if let Ok(Some(operator)) = stream.take_match(TokenKind::Symbol, &["="]) {
+            // Re-parse as an assignment
+            *stream = save;
+            let left_expr = LeftHandExpression::parse::<T>(stream)?;
+            stream.expect_match(TokenKind::Symbol, &["="])?;
+            let right_expr = RightHandExpression::parse(stream)?;
+
+            Ok(Self::Assignment {
+                left_expr,
+                operator,
+                right_expr,
+            })
+        } else {
+            Ok(Self::Expression { expression })
+        }
+    }
+}
+
+impl<T> RightHandExpression<T>
+where
+    T: TypeSet,
+{
+    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         // We define the binary operators from the lowest precedence to the highest.
         // Each recursive call to `parse_binary` will handle one level of precedence, and pass
         // the rest to the inner calls of `parse_binary`.
-        let operators: &[(Associativity, &[&str])] = &[
-            (Associativity::None, &["="]),
-            (Associativity::Left, &["||"]),
-            (Associativity::Left, &["&&"]),
-            (Associativity::Left, &["<", "<=", ">", ">=", "==", "!="]),
-            (Associativity::Left, &["|"]),
-            (Associativity::Left, &["^"]),
-            (Associativity::Left, &["&"]),
-            (Associativity::Left, &["<<", ">>"]),
-            (Associativity::Left, &["+", "-"]),
-            (Associativity::Left, &["*", "/"]),
+        let operators: &[&[&str]] = &[
+            &["||"],
+            &["&&"],
+            &["<", "<=", ">", ">=", "==", "!="],
+            &["|"],
+            &["^"],
+            &["&"],
+            &["<<", ">>"],
+            &["+", "-"],
+            &["*", "/"],
         ];
 
         Self::parse_binary(stream, operators)
@@ -589,9 +656,9 @@ where
 
     fn parse_binary(
         stream: &mut TokenStream<'_, impl Tokenizer>,
-        binary_operators: &[(Associativity, &[&str])],
+        binary_operators: &[&[&str]],
     ) -> Result<Self, Error> {
-        let Some(((associativity, current), higher)) = binary_operators.split_first() else {
+        let Some((current, higher)) = binary_operators.split_first() else {
             unreachable!("At least one operator set is expected");
         };
 
@@ -612,10 +679,6 @@ where
                 name: operator,
                 operands: Box::new([expr, rhs]),
             };
-
-            if matches!(associativity, Associativity::None) {
-                break;
-            }
         }
 
         Ok(expr)
@@ -686,6 +749,7 @@ where
     }
 }
 
+#[derive(Clone)]
 struct TokenStream<'s, I>
 where
     I: Tokenizer,

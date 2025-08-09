@@ -61,15 +61,17 @@ Program {
                     },
                     statements: [
                         Expression {
-                            expression: FunctionCall {
-                                name: Token {
-                                    kind: Identifier,
-                                    location: Location {
-                                        start: 36,
-                                        end: 40,
+                            expression: Expression {
+                                expression: FunctionCall {
+                                    name: Token {
+                                        kind: Identifier,
+                                        location: Location {
+                                            start: 36,
+                                            end: 40,
+                                        },
                                     },
+                                    arguments: [],
                                 },
-                                arguments: [],
                             },
                             semicolon: Token {
                                 kind: Symbol,
@@ -161,15 +163,17 @@ Program {
                     },
                     statements: [
                         Expression {
-                            expression: FunctionCall {
-                                name: Token {
-                                    kind: Identifier,
-                                    location: Location {
-                                        start: 80,
-                                        end: 84,
+                            expression: Expression {
+                                expression: FunctionCall {
+                                    name: Token {
+                                        kind: Identifier,
+                                        location: Location {
+                                            start: 80,
+                                            end: 84,
+                                        },
                                     },
+                                    arguments: [],
                                 },
-                                arguments: [],
                             },
                             semicolon: Token {
                                 kind: Symbol,

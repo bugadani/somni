@@ -39,14 +39,16 @@ Program {
                         end: 40,
                     },
                 },
-                initializer: Literal {
-                    value: Literal {
-                        value: Integer(
-                            0,
-                        ),
-                        location: Location {
-                            start: 41,
-                            end: 42,
+                initializer: Expression {
+                    expression: Literal {
+                        value: Literal {
+                            value: Integer(
+                                0,
+                            ),
+                            location: Location {
+                                start: 41,
+                                end: 42,
+                            },
                         },
                     },
                 },
@@ -120,37 +122,39 @@ Program {
                     },
                     statements: [
                         Expression {
-                            expression: BinaryOperator {
-                                name: Token {
-                                    kind: Symbol,
-                                    location: Location {
-                                        start: 72,
-                                        end: 74,
+                            expression: Expression {
+                                expression: BinaryOperator {
+                                    name: Token {
+                                        kind: Symbol,
+                                        location: Location {
+                                            start: 72,
+                                            end: 74,
+                                        },
                                     },
+                                    operands: [
+                                        Literal {
+                                            value: Literal {
+                                                value: Boolean(
+                                                    true,
+                                                ),
+                                                location: Location {
+                                                    start: 67,
+                                                    end: 71,
+                                                },
+                                            },
+                                        },
+                                        FunctionCall {
+                                            name: Token {
+                                                kind: Identifier,
+                                                location: Location {
+                                                    start: 75,
+                                                    end: 84,
+                                                },
+                                            },
+                                            arguments: [],
+                                        },
+                                    ],
                                 },
-                                operands: [
-                                    Literal {
-                                        value: Literal {
-                                            value: Boolean(
-                                                true,
-                                            ),
-                                            location: Location {
-                                                start: 67,
-                                                end: 71,
-                                            },
-                                        },
-                                    },
-                                    FunctionCall {
-                                        name: Token {
-                                            kind: Identifier,
-                                            location: Location {
-                                                start: 75,
-                                                end: 84,
-                                            },
-                                        },
-                                        arguments: [],
-                                    },
-                                ],
                             },
                             semicolon: Token {
                                 kind: Symbol,
@@ -161,37 +165,39 @@ Program {
                             },
                         },
                         Expression {
-                            expression: BinaryOperator {
-                                name: Token {
-                                    kind: Symbol,
-                                    location: Location {
-                                        start: 98,
-                                        end: 100,
+                            expression: Expression {
+                                expression: BinaryOperator {
+                                    name: Token {
+                                        kind: Symbol,
+                                        location: Location {
+                                            start: 98,
+                                            end: 100,
+                                        },
                                     },
+                                    operands: [
+                                        Literal {
+                                            value: Literal {
+                                                value: Boolean(
+                                                    false,
+                                                ),
+                                                location: Location {
+                                                    start: 92,
+                                                    end: 97,
+                                                },
+                                            },
+                                        },
+                                        FunctionCall {
+                                            name: Token {
+                                                kind: Identifier,
+                                                location: Location {
+                                                    start: 101,
+                                                    end: 110,
+                                                },
+                                            },
+                                            arguments: [],
+                                        },
+                                    ],
                                 },
-                                operands: [
-                                    Literal {
-                                        value: Literal {
-                                            value: Boolean(
-                                                false,
-                                            ),
-                                            location: Location {
-                                                start: 92,
-                                                end: 97,
-                                            },
-                                        },
-                                    },
-                                    FunctionCall {
-                                        name: Token {
-                                            kind: Identifier,
-                                            location: Location {
-                                                start: 101,
-                                                end: 110,
-                                            },
-                                        },
-                                        arguments: [],
-                                    },
-                                ],
                             },
                             semicolon: Token {
                                 kind: Symbol,
@@ -202,37 +208,39 @@ Program {
                             },
                         },
                         Expression {
-                            expression: BinaryOperator {
-                                name: Token {
-                                    kind: Symbol,
-                                    location: Location {
-                                        start: 124,
-                                        end: 126,
+                            expression: Expression {
+                                expression: BinaryOperator {
+                                    name: Token {
+                                        kind: Symbol,
+                                        location: Location {
+                                            start: 124,
+                                            end: 126,
+                                        },
                                     },
+                                    operands: [
+                                        Literal {
+                                            value: Literal {
+                                                value: Boolean(
+                                                    false,
+                                                ),
+                                                location: Location {
+                                                    start: 118,
+                                                    end: 123,
+                                                },
+                                            },
+                                        },
+                                        FunctionCall {
+                                            name: Token {
+                                                kind: Identifier,
+                                                location: Location {
+                                                    start: 127,
+                                                    end: 136,
+                                                },
+                                            },
+                                            arguments: [],
+                                        },
+                                    ],
                                 },
-                                operands: [
-                                    Literal {
-                                        value: Literal {
-                                            value: Boolean(
-                                                false,
-                                            ),
-                                            location: Location {
-                                                start: 118,
-                                                end: 123,
-                                            },
-                                        },
-                                    },
-                                    FunctionCall {
-                                        name: Token {
-                                            kind: Identifier,
-                                            location: Location {
-                                                start: 127,
-                                                end: 136,
-                                            },
-                                        },
-                                        arguments: [],
-                                    },
-                                ],
                             },
                             semicolon: Token {
                                 kind: Symbol,
@@ -243,37 +251,39 @@ Program {
                             },
                         },
                         Expression {
-                            expression: BinaryOperator {
-                                name: Token {
-                                    kind: Symbol,
-                                    location: Location {
-                                        start: 149,
-                                        end: 151,
+                            expression: Expression {
+                                expression: BinaryOperator {
+                                    name: Token {
+                                        kind: Symbol,
+                                        location: Location {
+                                            start: 149,
+                                            end: 151,
+                                        },
                                     },
+                                    operands: [
+                                        Literal {
+                                            value: Literal {
+                                                value: Boolean(
+                                                    true,
+                                                ),
+                                                location: Location {
+                                                    start: 144,
+                                                    end: 148,
+                                                },
+                                            },
+                                        },
+                                        FunctionCall {
+                                            name: Token {
+                                                kind: Identifier,
+                                                location: Location {
+                                                    start: 152,
+                                                    end: 161,
+                                                },
+                                            },
+                                            arguments: [],
+                                        },
+                                    ],
                                 },
-                                operands: [
-                                    Literal {
-                                        value: Literal {
-                                            value: Boolean(
-                                                true,
-                                            ),
-                                            location: Location {
-                                                start: 144,
-                                                end: 148,
-                                            },
-                                        },
-                                    },
-                                    FunctionCall {
-                                        name: Token {
-                                            kind: Identifier,
-                                            location: Location {
-                                                start: 152,
-                                                end: 161,
-                                            },
-                                        },
-                                        arguments: [],
-                                    },
-                                ],
                             },
                             semicolon: Token {
                                 kind: Symbol,
@@ -382,56 +392,54 @@ Program {
                     },
                     statements: [
                         Expression {
-                            expression: BinaryOperator {
-                                name: Token {
+                            expression: Assignment {
+                                left_expr: Name {
+                                    variable: Token {
+                                        kind: Identifier,
+                                        location: Location {
+                                            start: 223,
+                                            end: 235,
+                                        },
+                                    },
+                                },
+                                operator: Token {
                                     kind: Symbol,
                                     location: Location {
                                         start: 236,
                                         end: 237,
                                     },
                                 },
-                                operands: [
-                                    Variable {
-                                        variable: Token {
-                                            kind: Identifier,
-                                            location: Location {
-                                                start: 223,
-                                                end: 235,
-                                            },
+                                right_expr: BinaryOperator {
+                                    name: Token {
+                                        kind: Symbol,
+                                        location: Location {
+                                            start: 251,
+                                            end: 252,
                                         },
                                     },
-                                    BinaryOperator {
-                                        name: Token {
-                                            kind: Symbol,
-                                            location: Location {
-                                                start: 251,
-                                                end: 252,
+                                    operands: [
+                                        Variable {
+                                            variable: Token {
+                                                kind: Identifier,
+                                                location: Location {
+                                                    start: 238,
+                                                    end: 250,
+                                                },
                                             },
                                         },
-                                        operands: [
-                                            Variable {
-                                                variable: Token {
-                                                    kind: Identifier,
-                                                    location: Location {
-                                                        start: 238,
-                                                        end: 250,
-                                                    },
+                                        Literal {
+                                            value: Literal {
+                                                value: Integer(
+                                                    1,
+                                                ),
+                                                location: Location {
+                                                    start: 253,
+                                                    end: 254,
                                                 },
                                             },
-                                            Literal {
-                                                value: Literal {
-                                                    value: Integer(
-                                                        1,
-                                                    ),
-                                                    location: Location {
-                                                        start: 253,
-                                                        end: 254,
-                                                    },
-                                                },
-                                            },
-                                        ],
-                                    },
-                                ],
+                                        },
+                                    ],
+                                },
                             },
                             semicolon: Token {
                                 kind: Symbol,

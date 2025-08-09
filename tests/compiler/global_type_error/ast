@@ -39,14 +39,16 @@ Program {
                         end: 15,
                     },
                 },
-                initializer: Literal {
-                    value: Literal {
-                        value: Integer(
-                            10,
-                        ),
-                        location: Location {
-                            start: 16,
-                            end: 18,
+                initializer: Expression {
+                    expression: Literal {
+                        value: Literal {
+                            value: Integer(
+                                10,
+                            ),
+                            location: Location {
+                                start: 16,
+                                end: 18,
+                            },
                         },
                     },
                 },

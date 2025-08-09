@@ -1,0 +1,5 @@
+Compile error
+ ---> at line 2 column 5
+  |
+2 |     !a = 2;
+  |     ^ Parse error: Expected variable name or deref operator
