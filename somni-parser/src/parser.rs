@@ -19,8 +19,8 @@
 //! body -> '{' statement* '}' ;
 //! statement -> 'var' identifier (':' type)? '=' expression ';'
 //!            | 'return' expression? ';'
-//!            | 'break' expression? ';'
-//!            | 'continue' expression? ';'
+//!            | 'break' ';'
+//!            | 'continue' ';'
 //!            | 'if' expression body ( 'else' body )?
 //!            | 'loop' body
 //!            | 'while' expression body
