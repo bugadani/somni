@@ -273,6 +273,7 @@ where
         expression: Expression<T>,
         semicolon: Token,
     },
+    ImplicitReturn(RightHandExpression<T>),
 }
 
 impl<T> Clone for Statement<T>
@@ -296,6 +297,7 @@ where
                 expression: expression.clone(),
                 semicolon: *semicolon,
             },
+            Statement::ImplicitReturn(expression) => Self::ImplicitReturn(expression.clone()),
         }
     }
 }

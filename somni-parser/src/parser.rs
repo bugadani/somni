@@ -16,16 +16,17 @@
 //! return_decl -> '->' type ;
 //! type -> identifier ;
 //!
-//! body -> '{' statement* '}' ;
-//! statement -> 'var' identifier (':' type)? '=' right_hand_expression ';'
-//!            | 'return' right_hand_expression? ';'
-//!            | 'break' ';'
-//!            | 'continue' ';'
-//!            | 'if' right_hand_expression body ( 'else' body )?
-//!            | 'loop' body
-//!            | 'while' right_hand_expression body
-//!            | body
-//!            | expression ';'
+//! body -> '{' statement '}' ;
+//! statement -> 'var' identifier (':' type)? '=' right_hand_expression ';' (statement)?
+//!            | 'return' right_hand_expression? ';' (statement)?
+//!            | 'break' ';' (statement)?
+//!            | 'continue' ';' (statement)?
+//!            | 'if' right_hand_expression body ( 'else' body )? (statement)?
+//!            | 'loop' body (statement)?
+//!            | 'while' right_hand_expression body (statement)?
+//!            | body (statement)?
+//!            | expression ';' (statement)?
+//!            | right_hand_expression // implicit return statmenet
 //!
 //! expression -> (left_hand_expression '=')? right_hand_expression ;
 //!
@@ -52,6 +53,7 @@
 use std::{
     fmt::{Debug, Display},
     num::{ParseFloatError, ParseIntError},
+    ops::ControlFlow,
 };
 
 use crate::{
@@ -333,7 +335,14 @@ where
 
         let mut body = Vec::new();
         while Statement::<T>::matches(stream)? {
-            body.push(Statement::parse(stream)?);
+            let (statement, stop) = match Statement::parse(stream)? {
+                ControlFlow::Continue(statement) => (statement, false),
+                ControlFlow::Break(statement) => (statement, true),
+            };
+            body.push(statement);
+            if stop {
+                break;
+            }
         }
 
         let closing_brace = stream.expect_match(TokenKind::Symbol, &["}"])?;
@@ -364,22 +373,29 @@ where
             .map(|t| t.is_none())
     }
 
-    fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
+    fn parse(
+        stream: &mut TokenStream<'_, impl Tokenizer>,
+    ) -> Result<ControlFlow<Self, Self>, Error> {
         if let Some(return_token) = stream.take_match(TokenKind::Identifier, &["return"])? {
-            if let Some(semicolon) = stream.take_match(TokenKind::Symbol, &[";"])? {
-                return Ok(Statement::EmptyReturn(EmptyReturn {
-                    return_token,
-                    semicolon,
-                }));
-            }
+            let return_kind =
+                if let Some(semicolon) = stream.take_match(TokenKind::Symbol, &[";"])? {
+                    // Continue, parsing unreachable code is allowed
+                    Statement::EmptyReturn(EmptyReturn {
+                        return_token,
+                        semicolon,
+                    })
+                } else {
+                    let expr = RightHandExpression::parse(stream)?;
+                    let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
+                    Statement::Return(ReturnWithValue {
+                        return_token,
+                        expression: expr,
+                        semicolon,
+                    })
+                };
 
-            let expr = RightHandExpression::parse(stream)?;
-            let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
-            return Ok(Statement::Return(ReturnWithValue {
-                return_token,
-                expression: expr,
-                semicolon,
-            }));
+            // Continue, parsing unreachable code is allowed
+            return Ok(ControlFlow::Continue(return_kind));
         }
 
         if let Some(decl_token) = stream.take_match(TokenKind::Identifier, &["var"])? {
@@ -395,14 +411,16 @@ where
             let expression = RightHandExpression::parse(stream)?;
             let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
 
-            return Ok(Statement::VariableDefinition(VariableDefinition {
-                decl_token,
-                identifier,
-                type_token,
-                equals_token,
-                initializer: expression,
-                semicolon,
-            }));
+            return Ok(ControlFlow::Continue(Statement::VariableDefinition(
+                VariableDefinition {
+                    decl_token,
+                    identifier,
+                    type_token,
+                    equals_token,
+                    initializer: expression,
+                    semicolon,
+                },
+            )));
         }
 
         if let Some(if_token) = stream.take_match(TokenKind::Identifier, &["if"])? {
@@ -421,24 +439,27 @@ where
                     None
                 };
 
-            return Ok(Statement::If(If {
+            return Ok(ControlFlow::Continue(Statement::If(If {
                 if_token,
                 condition,
                 body,
                 else_branch,
-            }));
+            })));
         }
 
         if let Some(loop_token) = stream.take_match(TokenKind::Identifier, &["loop"])? {
             let body = Body::parse(stream)?;
-            return Ok(Statement::Loop(Loop { loop_token, body }));
+            return Ok(ControlFlow::Continue(Statement::Loop(Loop {
+                loop_token,
+                body,
+            })));
         }
 
         if let Some(while_token) = stream.take_match(TokenKind::Identifier, &["while"])? {
             // Desugar while into loop { if condition { loop_body; } else { break; } }
             let condition = RightHandExpression::parse(stream)?;
             let body = Body::parse(stream)?;
-            return Ok(Statement::Loop(Loop {
+            return Ok(ControlFlow::Continue(Statement::Loop(Loop {
                 loop_token: while_token,
                 body: Body {
                     opening_brace: body.opening_brace,
@@ -460,34 +481,47 @@ where
                         }),
                     })],
                 },
-            }));
+            })));
         }
 
         if let Some(break_token) = stream.take_match(TokenKind::Identifier, &["break"])? {
             let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
-            return Ok(Statement::Break(Break {
+            // Continue, unreachable code is allowed
+            return Ok(ControlFlow::Continue(Statement::Break(Break {
                 break_token,
                 semicolon,
-            }));
+            })));
         }
         if let Some(continue_token) = stream.take_match(TokenKind::Identifier, &["continue"])? {
             let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
-            return Ok(Statement::Continue(Continue {
+            // Continue, unreachable code is allowed
+            return Ok(ControlFlow::Continue(Statement::Continue(Continue {
                 continue_token,
                 semicolon,
-            }));
+            })));
         }
 
         if let Ok(Some(_)) = stream.peek_match(TokenKind::Symbol, &["{"]) {
-            return Ok(Statement::Scope(Body::parse(stream)?));
+            return Ok(ControlFlow::Continue(Statement::Scope(Body::parse(
+                stream,
+            )?)));
         }
 
+        let save = stream.clone();
         let expression = Expression::parse(stream)?;
-        let semicolon = stream.expect_match(TokenKind::Symbol, &[";"])?;
-        Ok(Statement::Expression {
-            expression,
-            semicolon,
-        })
+        match stream.take_match(TokenKind::Symbol, &[";"])? {
+            Some(semicolon) => Ok(ControlFlow::Continue(Statement::Expression {
+                expression,
+                semicolon,
+            })),
+            None => {
+                // No semicolon, re-parse as a right-hand expression
+                *stream = save;
+                let expression = RightHandExpression::parse(stream)?;
+
+                Ok(ControlFlow::Break(Statement::ImplicitReturn(expression)))
+            }
+        }
     }
 }
 

@@ -350,6 +350,12 @@ where
                     .map(StatementResult::Return)
                     .map(Some);
             }
+            Statement::ImplicitReturn(expression) => {
+                return self
+                    .visit_right_hand_expression(expression)
+                    .map(StatementResult::Return)
+                    .map(Some);
+            }
             Statement::EmptyReturn(_) => {
                 return Ok(Some(StatementResult::Return(TypedValue::Void)));
             }

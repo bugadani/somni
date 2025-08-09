@@ -862,6 +862,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                 expression,
                 semicolon,
             } => self.compile_expression_statement(expression, semicolon),
+            ast::Statement::ImplicitReturn(expression) => self.compile_implicit_return(expression),
         }
     }
 
@@ -1054,6 +1055,31 @@ impl<'s> FunctionCompiler<'s, '_> {
         self.rollback_scope(ret.semicolon.location, rp);
 
         self.compile_return(ret.return_token)
+    }
+
+    fn compile_implicit_return(
+        &mut self,
+        expression: &ast::RightHandExpression<VmTypeSet>,
+    ) -> Result<(), CompileError<'s>> {
+        let rp = self.variables.create_restore_point();
+        let return_value = self.compile_right_hand_expression(expression)?;
+
+        // Store variable in the return variable.
+        self.blocks.push_instruction(
+            expression.location(),
+            Ir::Assign(VariableIndex::RETURN_VALUE, return_value),
+        );
+
+        self.rollback_scope(expression.location(), rp);
+
+        // compile_return() but we have no return token
+        self.compile_cleanup_block(
+            RestorePoint::RETURN_FROM_FN,
+            BlockIndex::RETURN_BLOCK,
+            expression.location(),
+        )?;
+
+        Ok(())
     }
 
     fn compile_empty_return(&mut self, ret: &ast::EmptyReturn) -> Result<(), CompileError<'s>> {

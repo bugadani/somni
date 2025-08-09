@@ -873,29 +873,13 @@ Program {
                                 },
                             },
                         ),
-                        Return(
-                            ReturnWithValue {
-                                return_token: Token {
+                        ImplicitReturn(
+                            Variable {
+                                variable: Token {
                                     kind: Identifier,
                                     location: Location {
                                         start: 558,
-                                        end: 564,
-                                    },
-                                },
-                                expression: Variable {
-                                    variable: Token {
-                                        kind: Identifier,
-                                        location: Location {
-                                            start: 565,
-                                            end: 566,
-                                        },
-                                    },
-                                },
-                                semicolon: Token {
-                                    kind: Symbol,
-                                    location: Location {
-                                        start: 566,
-                                        end: 567,
+                                        end: 559,
                                     },
                                 },
                             },
@@ -904,8 +888,8 @@ Program {
                     closing_brace: Token {
                         kind: Symbol,
                         location: Location {
-                            start: 568,
-                            end: 569,
+                            start: 560,
+                            end: 561,
                         },
                     },
                 },

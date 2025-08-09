@@ -2,4 +2,4 @@ Compile error
  ---> at line 2 column 11
   |
 2 |     const M: int = 32;
-  |           ^ Parse error: Expected ';', found Identifier
+  |           ^ Parse error: Expected '}', found Identifier
