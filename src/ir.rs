@@ -1536,6 +1536,7 @@ impl<'s> FunctionCompiler<'s, '_> {
             source_location: body.opening_brace.location,
             to: body_block,
         });
+        self.blocks.select_block(body_block);
         self.compile_body(body)?;
 
         self.blocks.set_terminator(Termination::Jump {

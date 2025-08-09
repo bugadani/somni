@@ -100,7 +100,7 @@ Function: free_scope
 block 0
   var return_value: int = None
   var a: int = Some(MaybeSignedInt(0))
-  -> block 2
+  -> block 3
 
 block 1
   -> return
@@ -110,4 +110,7 @@ block 2
   free(a)
   free(return_value)
   -> block 1
+
+block 3
+  -> block 2
 
