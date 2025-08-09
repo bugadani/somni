@@ -337,7 +337,7 @@ where
                     StatementResult::ImplicitReturn(_) => {}
                     _ => break,
                 }
-            } else if let StatementResult::ImplicitReturn(_) = body_result {
+            } else {
                 // Reset result if we have statements after implicit returns.
                 // FIXME: This is a hack to handle return values from blocks that shouldn't be returned.
                 body_result = StatementResult::EndOfBody;
