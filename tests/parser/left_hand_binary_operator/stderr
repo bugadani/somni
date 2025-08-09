@@ -1,0 +1,5 @@
+Compile error
+ ---> at line 2 column 7
+  |
+2 |     a + b = 2;
+  |       ^ Parse error: Expected '=', found '+'

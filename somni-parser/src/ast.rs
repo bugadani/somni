@@ -119,7 +119,7 @@ where
     pub identifier: Token,
     pub type_token: Option<TypeHint>,
     pub equals_token: Token,
-    pub initializer: Expression<T>,
+    pub initializer: RightHandExpression<T>,
     pub semicolon: Token,
 }
 
@@ -156,7 +156,7 @@ where
     T: TypeSet,
 {
     pub return_token: Token,
-    pub expression: Expression<T>,
+    pub expression: RightHandExpression<T>,
     pub semicolon: Token,
 }
 
@@ -204,7 +204,7 @@ where
     T: TypeSet,
 {
     pub if_token: Token,
-    pub condition: Expression<T>,
+    pub condition: RightHandExpression<T>,
     pub body: Body<T>,
     pub else_branch: Option<Else<T>>,
 }
@@ -324,6 +324,86 @@ pub enum Expression<T>
 where
     T: TypeSet,
 {
+    Assignment {
+        left_expr: LeftHandExpression,
+        operator: Token,
+        right_expr: RightHandExpression<T>,
+    },
+    Expression {
+        expression: RightHandExpression<T>,
+    },
+}
+impl<T> Clone for Expression<T>
+where
+    T: TypeSet,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Expression::Assignment {
+                left_expr,
+                operator,
+                right_expr,
+            } => Self::Assignment {
+                left_expr: *left_expr,
+                operator: *operator,
+                right_expr: right_expr.clone(),
+            },
+            Expression::Expression { expression } => Self::Expression {
+                expression: expression.clone(),
+            },
+        }
+    }
+}
+impl<T> Expression<T>
+where
+    T: TypeSet,
+{
+    pub fn location(&self) -> Location {
+        match self {
+            Expression::Expression { expression } => expression.location(),
+            Expression::Assignment {
+                left_expr,
+                operator: _,
+                right_expr,
+            } => {
+                let mut location = left_expr.location();
+
+                location.start = location.start.min(right_expr.location().start);
+                location.end = location.end.max(right_expr.location().end);
+
+                location
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum LeftHandExpression {
+    Name { variable: Token },
+    Deref { operator: Token, name: Token },
+}
+
+impl LeftHandExpression {
+    pub fn location(&self) -> Location {
+        match self {
+            LeftHandExpression::Name { variable } => variable.location,
+            LeftHandExpression::Deref { operator, name } => {
+                let mut location = operator.location;
+
+                location.start = location.start.min(name.location.start);
+                location.end = location.end.max(name.location.end);
+
+                location
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum RightHandExpression<T>
+where
+    T: TypeSet,
+{
     Variable {
         variable: Token,
     },
@@ -344,7 +424,7 @@ where
     },
 }
 
-impl<T> Clone for Expression<T>
+impl<T> Clone for RightHandExpression<T>
 where
     T: TypeSet,
 {
@@ -371,15 +451,15 @@ where
         }
     }
 }
-impl<T> Expression<T>
+impl<T> RightHandExpression<T>
 where
     T: TypeSet,
 {
     pub fn location(&self) -> Location {
         match self {
-            Expression::Variable { variable } => variable.location,
-            Expression::Literal { value } => value.location,
-            Expression::FunctionCall { name, arguments } => {
+            RightHandExpression::Variable { variable } => variable.location,
+            RightHandExpression::Literal { value } => value.location,
+            RightHandExpression::FunctionCall { name, arguments } => {
                 let mut location = name.location;
                 for arg in arguments {
                     location.start = location.start.min(arg.location().start);
@@ -387,7 +467,7 @@ where
                 }
                 location
             }
-            Expression::UnaryOperator { name, operand: rhs } => {
+            RightHandExpression::UnaryOperator { name, operand: rhs } => {
                 let mut location = name.location;
 
                 location.start = location.start.min(rhs.location().start);
@@ -395,7 +475,7 @@ where
 
                 location
             }
-            Expression::BinaryOperator {
+            RightHandExpression::BinaryOperator {
                 name,
                 operands: arguments,
             } => {

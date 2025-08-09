@@ -1,6 +1,7 @@
 use somni_parser::{
     ast::{
-        Body, Expression, Function, If, LiteralValue, Loop, Statement, TypeHint, VariableDefinition,
+        Body, Expression, Function, If, LeftHandExpression, LiteralValue, Loop,
+        RightHandExpression, Statement, TypeHint, VariableDefinition,
     },
     lexer,
     parser::DefaultTypeSet,
@@ -40,117 +41,135 @@ where
         expression: &Expression<T::Parser>,
     ) -> Result<TypedValue<T>, EvalError> {
         let result = match expression {
-            Expression::Variable { variable } => self.visit_variable(variable)?,
-            Expression::Literal { value } => match &value.value {
+            Expression::Expression { expression } => {
+                self.visit_right_hand_expression(expression)?
+            }
+            Expression::Assignment {
+                left_expr,
+                operator: _,
+                right_expr,
+            } => {
+                let rhs = self.visit_right_hand_expression(right_expr)?;
+                let assign_result = match left_expr {
+                    LeftHandExpression::Deref { name, .. } => {
+                        let address =
+                            self.visit_right_hand_expression(&RightHandExpression::Variable {
+                                variable: *name,
+                            })?;
+                        self.context.assign_address(address, &rhs)
+                    }
+                    LeftHandExpression::Name { variable } => {
+                        let name = variable.source(self.source);
+                        self.context.assign_variable(name, &rhs)
+                    }
+                };
+
+                if let Err(error) = assign_result {
+                    return Err(EvalError {
+                        message: error,
+                        location: expression.location(),
+                    });
+                }
+
+                TypedValue::Void
+            }
+        };
+
+        Ok(result)
+    }
+
+    /// Visits an expression and evaluates it, returning the result as a `TypedValue`.
+    pub fn visit_right_hand_expression(
+        &mut self,
+        expression: &RightHandExpression<T::Parser>,
+    ) -> Result<TypedValue<T>, EvalError> {
+        let result = match expression {
+            RightHandExpression::Variable { variable } => self.visit_variable(variable)?,
+            RightHandExpression::Literal { value } => match &value.value {
                 LiteralValue::Integer(value) => TypedValue::<T>::MaybeSignedInt(*value),
                 LiteralValue::Float(value) => TypedValue::<T>::Float(*value),
                 LiteralValue::String(value) => value.store(self.context.type_context()),
                 LiteralValue::Boolean(value) => TypedValue::<T>::Bool(*value),
             },
-            Expression::UnaryOperator { name, operand } => match name.source(self.source) {
-                "!" => {
-                    let operand = self.visit_expression(operand)?;
+            RightHandExpression::UnaryOperator { name, operand } => {
+                match name.source(self.source) {
+                    "!" => {
+                        let operand = self.visit_right_hand_expression(operand)?;
 
-                    match TypedValue::<T>::not(self.context.type_context(), operand) {
-                        Ok(r) => r,
-                        Err(error) => {
-                            return Err(EvalError {
-                                message: format!("Failed to evaluate expression: {error}")
-                                    .into_boxed_str(),
-                                location: expression.location(),
-                            });
+                        match TypedValue::<T>::not(self.context.type_context(), operand) {
+                            Ok(r) => r,
+                            Err(error) => {
+                                return Err(EvalError {
+                                    message: format!("Failed to evaluate expression: {error}")
+                                        .into_boxed_str(),
+                                    location: expression.location(),
+                                });
+                            }
                         }
                     }
-                }
 
-                "-" => {
-                    let value = self.visit_expression(operand)?;
-                    let ty = value.type_of();
-                    TypedValue::<T>::negate(self.context.type_context(), value).map_err(|e| {
-                        EvalError {
-                            message: format!("Cannot negate {ty}: {e}").into_boxed_str(),
-                            location: operand.location(),
-                        }
-                    })?
-                }
+                    "-" => {
+                        let value = self.visit_right_hand_expression(operand)?;
+                        let ty = value.type_of();
+                        TypedValue::<T>::negate(self.context.type_context(), value).map_err(
+                            |e| EvalError {
+                                message: format!("Cannot negate {ty}: {e}").into_boxed_str(),
+                                location: operand.location(),
+                            },
+                        )?
+                    }
 
-                "&" => {
-                    let Expression::Variable { variable } = operand.as_ref() else {
-                        return Err(EvalError {
-                            message: String::from("Cannot take address of non-variable expression")
+                    "&" => {
+                        let RightHandExpression::Variable { variable } = operand.as_ref() else {
+                            return Err(EvalError {
+                                message: String::from(
+                                    "Cannot take address of non-variable expression",
+                                )
+                                .into_boxed_str(),
+                                location: operand.location(),
+                            });
+                        };
+
+                        let name = variable.source(self.source);
+                        self.context.address_of(name)
+                    }
+                    "*" => {
+                        let address = self.visit_right_hand_expression(operand)?;
+                        self.context.at_address(address).map_err(|e| EvalError {
+                            message: format!("Failed to load variable from address: {e}")
                                 .into_boxed_str(),
                             location: operand.location(),
+                        })?
+                    }
+                    _ => {
+                        return Err(EvalError {
+                            message: format!(
+                                "Unknown unary operator: {}",
+                                name.source(self.source)
+                            )
+                            .into_boxed_str(),
+                            location: expression.location(),
                         });
-                    };
-
-                    let name = variable.source(self.source);
-                    self.context.address_of(name)
+                    }
                 }
-                "*" => {
-                    let address = self.visit_expression(operand)?;
-                    self.context.at_address(address).map_err(|e| EvalError {
-                        message: format!("Failed to load variable from address: {e}")
-                            .into_boxed_str(),
-                        location: operand.location(),
-                    })?
-                }
-                _ => {
-                    return Err(EvalError {
-                        message: format!("Unknown unary operator: {}", name.source(self.source))
-                            .into_boxed_str(),
-                        location: expression.location(),
-                    });
-                }
-            },
-            Expression::BinaryOperator { name, operands } => {
+            }
+            RightHandExpression::BinaryOperator { name, operands } => {
                 let short_circuiting = ["&&", "||"];
                 let operator = name.source(self.source);
 
                 // Special cases
-                if operator == "=" {
-                    return match &operands[0] {
-                        Expression::UnaryOperator { name, operand }
-                            if name.source(self.source) == "*" =>
-                        {
-                            let address = self.visit_expression(operand)?;
-                            let rhs = self.visit_expression(&operands[1])?;
-                            self.context
-                                .assign_address(address, &rhs)
-                                .map_err(|e| EvalError {
-                                    message: e,
-                                    location: expression.location(),
-                                })?;
-                            Ok(TypedValue::Void)
-                        }
-                        Expression::Variable { variable } => {
-                            let name = variable.source(self.source);
-                            let rhs = self.visit_expression(&operands[1])?;
-                            self.context
-                                .assign_variable(name, &rhs)
-                                .map_err(|e| EvalError {
-                                    message: e,
-                                    location: expression.location(),
-                                })?;
-                            Ok(TypedValue::Void)
-                        }
-                        _ => Err(EvalError {
-                            location: operands[0].location(),
-                            message: "Not a valid left-hand side of an assignment".into(),
-                        }),
-                    };
-                }
                 if short_circuiting.contains(&operator) {
-                    let lhs = self.visit_expression(&operands[0])?;
+                    let lhs = self.visit_right_hand_expression(&operands[0])?;
                     return match operator {
                         "&&" if lhs == TypedValue::<T>::Bool(false) => Ok(TypedValue::Bool(false)),
                         "||" if lhs == TypedValue::<T>::Bool(true) => Ok(TypedValue::Bool(true)),
-                        _ => self.visit_expression(&operands[1]),
+                        _ => self.visit_right_hand_expression(&operands[1]),
                     };
                 }
 
                 // "Normal" binary operators
-                let lhs = self.visit_expression(&operands[0])?;
-                let rhs = self.visit_expression(&operands[1])?;
+                let lhs = self.visit_right_hand_expression(&operands[0])?;
+                let rhs = self.visit_right_hand_expression(&operands[1])?;
                 let type_context = self.context.type_context();
                 let result = match operator {
                     "+" => TypedValue::<T>::add(type_context, lhs, rhs),
@@ -188,11 +207,11 @@ where
                     }
                 }
             }
-            Expression::FunctionCall { name, arguments } => {
+            RightHandExpression::FunctionCall { name, arguments } => {
                 let function_name = name.source(self.source);
                 let mut args = Vec::with_capacity(arguments.len());
                 for arg in arguments {
-                    args.push(self.visit_expression(arg)?);
+                    args.push(self.visit_right_hand_expression(arg)?);
                 }
 
                 match self.context.call_function(function_name, &args) {
@@ -325,7 +344,7 @@ where
         match statement {
             Statement::Return(return_with_value) => {
                 return self
-                    .visit_expression(&return_with_value.expression)
+                    .visit_right_hand_expression(&return_with_value.expression)
                     .map(StatementResult::Return)
                     .map(Some);
             }
@@ -349,7 +368,7 @@ where
 
     fn visit_declaration(&mut self, decl: &VariableDefinition<T::Parser>) -> Result<(), EvalError> {
         let name = decl.identifier.source(self.source);
-        let value = self.visit_expression(&decl.initializer)?;
+        let value = self.visit_right_hand_expression(&decl.initializer)?;
 
         let value = self.typecheck_with_hint(value, decl.type_token)?;
 
@@ -362,7 +381,7 @@ where
         &mut self,
         if_statement: &If<T::Parser>,
     ) -> Result<Option<StatementResult<T>>, EvalError> {
-        let condition = self.visit_expression(&if_statement.condition)?;
+        let condition = self.visit_right_hand_expression(&if_statement.condition)?;
 
         let condition = self.typecheck(condition, Type::Bool, if_statement.condition.location())?;
 

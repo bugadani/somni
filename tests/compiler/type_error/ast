@@ -289,25 +289,27 @@ Program {
                             },
                         ),
                         Expression {
-                            expression: FunctionCall {
-                                name: Token {
-                                    kind: Identifier,
-                                    location: Location {
-                                        start: 93,
-                                        end: 94,
-                                    },
-                                },
-                                arguments: [
-                                    Variable {
-                                        variable: Token {
-                                            kind: Identifier,
-                                            location: Location {
-                                                start: 95,
-                                                end: 96,
-                                            },
+                            expression: Expression {
+                                expression: FunctionCall {
+                                    name: Token {
+                                        kind: Identifier,
+                                        location: Location {
+                                            start: 93,
+                                            end: 94,
                                         },
                                     },
-                                ],
+                                    arguments: [
+                                        Variable {
+                                            variable: Token {
+                                                kind: Identifier,
+                                                location: Location {
+                                                    start: 95,
+                                                    end: 96,
+                                                },
+                                            },
+                                        },
+                                    ],
+                                },
                             },
                             semicolon: Token {
                                 kind: Symbol,

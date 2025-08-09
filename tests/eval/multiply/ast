@@ -374,54 +374,52 @@ Program {
                                                                     },
                                                                     statements: [
                                                                         Expression {
-                                                                            expression: BinaryOperator {
-                                                                                name: Token {
+                                                                            expression: Assignment {
+                                                                                left_expr: Name {
+                                                                                    variable: Token {
+                                                                                        kind: Identifier,
+                                                                                        location: Location {
+                                                                                            start: 270,
+                                                                                            end: 273,
+                                                                                        },
+                                                                                    },
+                                                                                },
+                                                                                operator: Token {
                                                                                     kind: Symbol,
                                                                                     location: Location {
                                                                                         start: 274,
                                                                                         end: 275,
                                                                                     },
                                                                                 },
-                                                                                operands: [
-                                                                                    Variable {
-                                                                                        variable: Token {
-                                                                                            kind: Identifier,
-                                                                                            location: Location {
-                                                                                                start: 270,
-                                                                                                end: 273,
-                                                                                            },
+                                                                                right_expr: BinaryOperator {
+                                                                                    name: Token {
+                                                                                        kind: Symbol,
+                                                                                        location: Location {
+                                                                                            start: 280,
+                                                                                            end: 281,
                                                                                         },
                                                                                     },
-                                                                                    BinaryOperator {
-                                                                                        name: Token {
-                                                                                            kind: Symbol,
-                                                                                            location: Location {
-                                                                                                start: 280,
-                                                                                                end: 281,
+                                                                                    operands: [
+                                                                                        Variable {
+                                                                                            variable: Token {
+                                                                                                kind: Identifier,
+                                                                                                location: Location {
+                                                                                                    start: 276,
+                                                                                                    end: 279,
+                                                                                                },
                                                                                             },
                                                                                         },
-                                                                                        operands: [
-                                                                                            Variable {
-                                                                                                variable: Token {
-                                                                                                    kind: Identifier,
-                                                                                                    location: Location {
-                                                                                                        start: 276,
-                                                                                                        end: 279,
-                                                                                                    },
+                                                                                        Variable {
+                                                                                            variable: Token {
+                                                                                                kind: Identifier,
+                                                                                                location: Location {
+                                                                                                    start: 282,
+                                                                                                    end: 288,
                                                                                                 },
                                                                                             },
-                                                                                            Variable {
-                                                                                                variable: Token {
-                                                                                                    kind: Identifier,
-                                                                                                    location: Location {
-                                                                                                        start: 282,
-                                                                                                        end: 288,
-                                                                                                    },
-                                                                                                },
-                                                                                            },
-                                                                                        ],
-                                                                                    },
-                                                                                ],
+                                                                                        },
+                                                                                    ],
+                                                                                },
                                                                             },
                                                                             semicolon: Token {
                                                                                 kind: Symbol,
@@ -432,56 +430,54 @@ Program {
                                                                             },
                                                                         },
                                                                         Expression {
-                                                                            expression: BinaryOperator {
-                                                                                name: Token {
+                                                                            expression: Assignment {
+                                                                                left_expr: Name {
+                                                                                    variable: Token {
+                                                                                        kind: Identifier,
+                                                                                        location: Location {
+                                                                                            start: 302,
+                                                                                            end: 303,
+                                                                                        },
+                                                                                    },
+                                                                                },
+                                                                                operator: Token {
                                                                                     kind: Symbol,
                                                                                     location: Location {
                                                                                         start: 304,
                                                                                         end: 305,
                                                                                     },
                                                                                 },
-                                                                                operands: [
-                                                                                    Variable {
-                                                                                        variable: Token {
-                                                                                            kind: Identifier,
-                                                                                            location: Location {
-                                                                                                start: 302,
-                                                                                                end: 303,
-                                                                                            },
+                                                                                right_expr: BinaryOperator {
+                                                                                    name: Token {
+                                                                                        kind: Symbol,
+                                                                                        location: Location {
+                                                                                            start: 308,
+                                                                                            end: 309,
                                                                                         },
                                                                                     },
-                                                                                    BinaryOperator {
-                                                                                        name: Token {
-                                                                                            kind: Symbol,
-                                                                                            location: Location {
-                                                                                                start: 308,
-                                                                                                end: 309,
+                                                                                    operands: [
+                                                                                        Variable {
+                                                                                            variable: Token {
+                                                                                                kind: Identifier,
+                                                                                                location: Location {
+                                                                                                    start: 306,
+                                                                                                    end: 307,
+                                                                                                },
                                                                                             },
                                                                                         },
-                                                                                        operands: [
-                                                                                            Variable {
-                                                                                                variable: Token {
-                                                                                                    kind: Identifier,
-                                                                                                    location: Location {
-                                                                                                        start: 306,
-                                                                                                        end: 307,
-                                                                                                    },
+                                                                                        Literal {
+                                                                                            value: Literal {
+                                                                                                value: Integer(
+                                                                                                    1,
+                                                                                                ),
+                                                                                                location: Location {
+                                                                                                    start: 310,
+                                                                                                    end: 311,
                                                                                                 },
                                                                                             },
-                                                                                            Literal {
-                                                                                                value: Literal {
-                                                                                                    value: Integer(
-                                                                                                        1,
-                                                                                                    ),
-                                                                                                    location: Location {
-                                                                                                        start: 310,
-                                                                                                        end: 311,
-                                                                                                    },
-                                                                                                },
-                                                                                            },
-                                                                                        ],
-                                                                                    },
-                                                                                ],
+                                                                                        },
+                                                                                    ],
+                                                                                },
                                                                             },
                                                                             semicolon: Token {
                                                                                 kind: Symbol,
@@ -615,15 +611,17 @@ Program {
                                             },
                                             statements: [
                                                 Expression {
-                                                    expression: FunctionCall {
-                                                        name: Token {
-                                                            kind: Identifier,
-                                                            location: Location {
-                                                                start: 364,
-                                                                end: 368,
+                                                    expression: Expression {
+                                                        expression: FunctionCall {
+                                                            name: Token {
+                                                                kind: Identifier,
+                                                                location: Location {
+                                                                    start: 364,
+                                                                    end: 368,
+                                                                },
                                                             },
+                                                            arguments: [],
                                                         },
-                                                        arguments: [],
                                                     },
                                                     semicolon: Token {
                                                         kind: Symbol,

@@ -39,36 +39,38 @@ Program {
                         end: 12,
                     },
                 },
-                initializer: BinaryOperator {
-                    name: Token {
-                        kind: Symbol,
-                        location: Location {
-                            start: 15,
-                            end: 16,
+                initializer: Expression {
+                    expression: BinaryOperator {
+                        name: Token {
+                            kind: Symbol,
+                            location: Location {
+                                start: 15,
+                                end: 16,
+                            },
                         },
+                        operands: [
+                            Variable {
+                                variable: Token {
+                                    kind: Identifier,
+                                    location: Location {
+                                        start: 13,
+                                        end: 14,
+                                    },
+                                },
+                            },
+                            Literal {
+                                value: Literal {
+                                    value: Integer(
+                                        10,
+                                    ),
+                                    location: Location {
+                                        start: 17,
+                                        end: 19,
+                                    },
+                                },
+                            },
+                        ],
                     },
-                    operands: [
-                        Variable {
-                            variable: Token {
-                                kind: Identifier,
-                                location: Location {
-                                    start: 13,
-                                    end: 14,
-                                },
-                            },
-                        },
-                        Literal {
-                            value: Literal {
-                                value: Integer(
-                                    10,
-                                ),
-                                location: Location {
-                                    start: 17,
-                                    end: 19,
-                                },
-                            },
-                        },
-                    ],
                 },
                 semicolon: Token {
                     kind: Symbol,
@@ -118,36 +120,38 @@ Program {
                         end: 33,
                     },
                 },
-                initializer: BinaryOperator {
-                    name: Token {
-                        kind: Symbol,
-                        location: Location {
-                            start: 36,
-                            end: 37,
+                initializer: Expression {
+                    expression: BinaryOperator {
+                        name: Token {
+                            kind: Symbol,
+                            location: Location {
+                                start: 36,
+                                end: 37,
+                            },
                         },
+                        operands: [
+                            Variable {
+                                variable: Token {
+                                    kind: Identifier,
+                                    location: Location {
+                                        start: 34,
+                                        end: 35,
+                                    },
+                                },
+                            },
+                            Literal {
+                                value: Literal {
+                                    value: Integer(
+                                        10,
+                                    ),
+                                    location: Location {
+                                        start: 38,
+                                        end: 40,
+                                    },
+                                },
+                            },
+                        ],
                     },
-                    operands: [
-                        Variable {
-                            variable: Token {
-                                kind: Identifier,
-                                location: Location {
-                                    start: 34,
-                                    end: 35,
-                                },
-                            },
-                        },
-                        Literal {
-                            value: Literal {
-                                value: Integer(
-                                    10,
-                                ),
-                                location: Location {
-                                    start: 38,
-                                    end: 40,
-                                },
-                            },
-                        },
-                    ],
                 },
                 semicolon: Token {
                     kind: Symbol,

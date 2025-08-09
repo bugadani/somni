@@ -39,14 +39,16 @@ Program {
                         end: 15,
                     },
                 },
-                initializer: Literal {
-                    value: Literal {
-                        value: Float(
-                            3.14,
-                        ),
-                        location: Location {
-                            start: 16,
-                            end: 20,
+                initializer: Expression {
+                    expression: Literal {
+                        value: Literal {
+                            value: Float(
+                                3.14,
+                            ),
+                            location: Location {
+                                start: 16,
+                                end: 20,
+                            },
                         },
                     },
                 },
@@ -98,14 +100,16 @@ Program {
                         end: 54,
                     },
                 },
-                initializer: Literal {
-                    value: Literal {
-                        value: Integer(
-                            42,
-                        ),
-                        location: Location {
-                            start: 55,
-                            end: 57,
+                initializer: Expression {
+                    expression: Literal {
+                        value: Literal {
+                            value: Integer(
+                                42,
+                            ),
+                            location: Location {
+                                start: 55,
+                                end: 57,
+                            },
                         },
                     },
                 },
@@ -157,20 +161,22 @@ Program {
                         end: 201,
                     },
                 },
-                initializer: UnaryOperator {
-                    name: Token {
-                        kind: Symbol,
-                        location: Location {
-                            start: 202,
-                            end: 203,
-                        },
-                    },
-                    operand: Variable {
-                        variable: Token {
-                            kind: Identifier,
+                initializer: Expression {
+                    expression: UnaryOperator {
+                        name: Token {
+                            kind: Symbol,
                             location: Location {
-                                start: 203,
-                                end: 220,
+                                start: 202,
+                                end: 203,
+                            },
+                        },
+                        operand: Variable {
+                            variable: Token {
+                                kind: Identifier,
+                                location: Location {
+                                    start: 203,
+                                    end: 220,
+                                },
                             },
                         },
                     },
@@ -223,14 +229,16 @@ Program {
                         end: 253,
                     },
                 },
-                initializer: Literal {
-                    value: Literal {
-                        value: Integer(
-                            100,
-                        ),
-                        location: Location {
-                            start: 254,
-                            end: 257,
+                initializer: Expression {
+                    expression: Literal {
+                        value: Literal {
+                            value: Integer(
+                                100,
+                            ),
+                            location: Location {
+                                start: 254,
+                                end: 257,
+                            },
                         },
                     },
                 },

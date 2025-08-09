@@ -77,74 +77,70 @@ Program {
                     },
                     statements: [
                         Expression {
-                            expression: BinaryOperator {
-                                name: Token {
+                            expression: Assignment {
+                                left_expr: Deref {
+                                    operator: Token {
+                                        kind: Symbol,
+                                        location: Location {
+                                            start: 54,
+                                            end: 55,
+                                        },
+                                    },
+                                    name: Token {
+                                        kind: Identifier,
+                                        location: Location {
+                                            start: 55,
+                                            end: 56,
+                                        },
+                                    },
+                                },
+                                operator: Token {
                                     kind: Symbol,
                                     location: Location {
                                         start: 57,
                                         end: 58,
                                     },
                                 },
-                                operands: [
-                                    UnaryOperator {
-                                        name: Token {
-                                            kind: Symbol,
-                                            location: Location {
-                                                start: 54,
-                                                end: 55,
-                                            },
+                                right_expr: BinaryOperator {
+                                    name: Token {
+                                        kind: Symbol,
+                                        location: Location {
+                                            start: 61,
+                                            end: 62,
                                         },
-                                        operand: Variable {
-                                            variable: Token {
-                                                kind: Identifier,
+                                    },
+                                    operands: [
+                                        Literal {
+                                            value: Literal {
+                                                value: Integer(
+                                                    2,
+                                                ),
                                                 location: Location {
-                                                    start: 55,
-                                                    end: 56,
+                                                    start: 59,
+                                                    end: 60,
                                                 },
                                             },
                                         },
-                                    },
-                                    BinaryOperator {
-                                        name: Token {
-                                            kind: Symbol,
-                                            location: Location {
-                                                start: 61,
-                                                end: 62,
+                                        UnaryOperator {
+                                            name: Token {
+                                                kind: Symbol,
+                                                location: Location {
+                                                    start: 63,
+                                                    end: 64,
+                                                },
+                                            },
+                                            operand: Variable {
+                                                variable: Token {
+                                                    kind: Identifier,
+                                                    location: Location {
+                                                        start: 64,
+                                                        end: 65,
+                                                    },
+                                                },
                                             },
                                         },
-                                        operands: [
-                                            Literal {
-                                                value: Literal {
-                                                    value: Integer(
-                                                        2,
-                                                    ),
-                                                    location: Location {
-                                                        start: 59,
-                                                        end: 60,
-                                                    },
-                                                },
-                                            },
-                                            UnaryOperator {
-                                                name: Token {
-                                                    kind: Symbol,
-                                                    location: Location {
-                                                        start: 63,
-                                                        end: 64,
-                                                    },
-                                                },
-                                                operand: Variable {
-                                                    variable: Token {
-                                                        kind: Identifier,
-                                                        location: Location {
-                                                            start: 64,
-                                                            end: 65,
-                                                        },
-                                                    },
-                                                },
-                                            },
-                                        ],
-                                    },
-                                ],
+                                    ],
+                                },
                             },
                             semicolon: Token {
                                 kind: Symbol,
@@ -270,34 +266,36 @@ Program {
                             },
                         ),
                         Expression {
-                            expression: FunctionCall {
-                                name: Token {
-                                    kind: Identifier,
-                                    location: Location {
-                                        start: 112,
-                                        end: 129,
-                                    },
-                                },
-                                arguments: [
-                                    UnaryOperator {
-                                        name: Token {
-                                            kind: Symbol,
-                                            location: Location {
-                                                start: 130,
-                                                end: 131,
-                                            },
+                            expression: Expression {
+                                expression: FunctionCall {
+                                    name: Token {
+                                        kind: Identifier,
+                                        location: Location {
+                                            start: 112,
+                                            end: 129,
                                         },
-                                        operand: Variable {
-                                            variable: Token {
-                                                kind: Identifier,
+                                    },
+                                    arguments: [
+                                        UnaryOperator {
+                                            name: Token {
+                                                kind: Symbol,
                                                 location: Location {
-                                                    start: 131,
-                                                    end: 136,
+                                                    start: 130,
+                                                    end: 131,
+                                                },
+                                            },
+                                            operand: Variable {
+                                                variable: Token {
+                                                    kind: Identifier,
+                                                    location: Location {
+                                                        start: 131,
+                                                        end: 136,
+                                                    },
                                                 },
                                             },
                                         },
-                                    },
-                                ],
+                                    ],
+                                },
                             },
                             semicolon: Token {
                                 kind: Symbol,

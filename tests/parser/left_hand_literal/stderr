@@ -1,0 +1,5 @@
+Compile error
+ ---> at line 2 column 6
+  |
+2 |     *true = 2;
+  |      ^^^^ Parse error: Literals are not valid on the left-hand side

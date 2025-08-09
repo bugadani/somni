@@ -178,56 +178,54 @@ Program {
                                             },
                                         ),
                                         Expression {
-                                            expression: BinaryOperator {
-                                                name: Token {
+                                            expression: Assignment {
+                                                left_expr: Name {
+                                                    variable: Token {
+                                                        kind: Identifier,
+                                                        location: Location {
+                                                            start: 95,
+                                                            end: 96,
+                                                        },
+                                                    },
+                                                },
+                                                operator: Token {
                                                     kind: Symbol,
                                                     location: Location {
                                                         start: 97,
                                                         end: 98,
                                                     },
                                                 },
-                                                operands: [
-                                                    Variable {
-                                                        variable: Token {
-                                                            kind: Identifier,
-                                                            location: Location {
-                                                                start: 95,
-                                                                end: 96,
-                                                            },
+                                                right_expr: BinaryOperator {
+                                                    name: Token {
+                                                        kind: Symbol,
+                                                        location: Location {
+                                                            start: 101,
+                                                            end: 102,
                                                         },
                                                     },
-                                                    BinaryOperator {
-                                                        name: Token {
-                                                            kind: Symbol,
-                                                            location: Location {
-                                                                start: 101,
-                                                                end: 102,
+                                                    operands: [
+                                                        Variable {
+                                                            variable: Token {
+                                                                kind: Identifier,
+                                                                location: Location {
+                                                                    start: 99,
+                                                                    end: 100,
+                                                                },
                                                             },
                                                         },
-                                                        operands: [
-                                                            Variable {
-                                                                variable: Token {
-                                                                    kind: Identifier,
-                                                                    location: Location {
-                                                                        start: 99,
-                                                                        end: 100,
-                                                                    },
+                                                        Literal {
+                                                            value: Literal {
+                                                                value: Integer(
+                                                                    10,
+                                                                ),
+                                                                location: Location {
+                                                                    start: 103,
+                                                                    end: 105,
                                                                 },
                                                             },
-                                                            Literal {
-                                                                value: Literal {
-                                                                    value: Integer(
-                                                                        10,
-                                                                    ),
-                                                                    location: Location {
-                                                                        start: 103,
-                                                                        end: 105,
-                                                                    },
-                                                                },
-                                                            },
-                                                        ],
-                                                    },
-                                                ],
+                                                        },
+                                                    ],
+                                                },
                                             },
                                             semicolon: Token {
                                                 kind: Symbol,
