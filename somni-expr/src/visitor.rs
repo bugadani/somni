@@ -326,15 +326,17 @@ where
 
     fn visit_body(&mut self, body: &Body<T::Parser>) -> Result<StatementResult<T>, EvalError> {
         self.context.open_scope();
+
+        let mut body_result = StatementResult::EndOfBody;
         for statement in body.statements.iter() {
             if let Some(retval) = self.visit_statement(statement)? {
-                self.context.close_scope();
-                return Ok(retval);
+                body_result = retval;
+                break;
             }
         }
 
         self.context.close_scope();
-        Ok(StatementResult::EndOfBody)
+        Ok(body_result)
     }
 
     fn visit_statement(
@@ -355,6 +357,12 @@ where
             Statement::Loop(loop_statement) => return self.visit_loop(loop_statement),
             Statement::Break(_) => return Ok(Some(StatementResult::LoopBreak)),
             Statement::Continue(_) => return Ok(Some(StatementResult::LoopContinue)),
+            Statement::Scope(body) => {
+                return self.visit_body(body).map(|r| match r {
+                    StatementResult::EndOfBody => None,
+                    r => Some(r),
+                })
+            }
             Statement::VariableDefinition(variable_definition) => {
                 self.visit_declaration(variable_definition)?;
             }

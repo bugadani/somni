@@ -3070,5 +3070,165 @@ Program {
                 },
             },
         ),
+        Function(
+            Function {
+                fn_token: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 1801,
+                        end: 1803,
+                    },
+                },
+                name: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 1804,
+                        end: 1814,
+                    },
+                },
+                opening_paren: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 1814,
+                        end: 1815,
+                    },
+                },
+                arguments: [],
+                closing_paren: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 1815,
+                        end: 1816,
+                    },
+                },
+                return_decl: None,
+                body: Body {
+                    opening_brace: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 1817,
+                            end: 1818,
+                        },
+                    },
+                    statements: [
+                        VariableDefinition(
+                            VariableDefinition {
+                                decl_token: Token {
+                                    kind: Identifier,
+                                    location: Location {
+                                        start: 1823,
+                                        end: 1826,
+                                    },
+                                },
+                                identifier: Token {
+                                    kind: Identifier,
+                                    location: Location {
+                                        start: 1827,
+                                        end: 1828,
+                                    },
+                                },
+                                type_token: None,
+                                equals_token: Token {
+                                    kind: Symbol,
+                                    location: Location {
+                                        start: 1829,
+                                        end: 1830,
+                                    },
+                                },
+                                initializer: Literal {
+                                    value: Literal {
+                                        value: Integer(
+                                            0,
+                                        ),
+                                        location: Location {
+                                            start: 1831,
+                                            end: 1832,
+                                        },
+                                    },
+                                },
+                                semicolon: Token {
+                                    kind: Symbol,
+                                    location: Location {
+                                        start: 1832,
+                                        end: 1833,
+                                    },
+                                },
+                            },
+                        ),
+                        Scope(
+                            Body {
+                                opening_brace: Token {
+                                    kind: Symbol,
+                                    location: Location {
+                                        start: 1838,
+                                        end: 1839,
+                                    },
+                                },
+                                statements: [
+                                    VariableDefinition(
+                                        VariableDefinition {
+                                            decl_token: Token {
+                                                kind: Identifier,
+                                                location: Location {
+                                                    start: 1848,
+                                                    end: 1851,
+                                                },
+                                            },
+                                            identifier: Token {
+                                                kind: Identifier,
+                                                location: Location {
+                                                    start: 1852,
+                                                    end: 1853,
+                                                },
+                                            },
+                                            type_token: None,
+                                            equals_token: Token {
+                                                kind: Symbol,
+                                                location: Location {
+                                                    start: 1854,
+                                                    end: 1855,
+                                                },
+                                            },
+                                            initializer: Literal {
+                                                value: Literal {
+                                                    value: Integer(
+                                                        1,
+                                                    ),
+                                                    location: Location {
+                                                        start: 1856,
+                                                        end: 1857,
+                                                    },
+                                                },
+                                            },
+                                            semicolon: Token {
+                                                kind: Symbol,
+                                                location: Location {
+                                                    start: 1857,
+                                                    end: 1858,
+                                                },
+                                            },
+                                        },
+                                    ),
+                                ],
+                                closing_brace: Token {
+                                    kind: Symbol,
+                                    location: Location {
+                                        start: 1863,
+                                        end: 1864,
+                                    },
+                                },
+                            },
+                        ),
+                    ],
+                    closing_brace: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 1865,
+                            end: 1866,
+                        },
+                    },
+                },
+            },
+        ),
     ],
 }

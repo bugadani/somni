@@ -857,6 +857,7 @@ impl<'s> FunctionCompiler<'s, '_> {
             ast::Statement::Continue(continue_statement) => {
                 self.compile_continue_statement(continue_statement)
             }
+            ast::Statement::Scope(body) => self.compile_free_scope(body),
             ast::Statement::Expression {
                 expression,
                 semicolon,
@@ -1497,5 +1498,26 @@ impl<'s> FunctionCompiler<'s, '_> {
             self.blocks
                 .push_instruction(location, Ir::FreeVariable(var));
         }
+    }
+
+    fn compile_free_scope(&mut self, body: &ast::Body<VmTypeSet>) -> Result<(), CompileError<'s>> {
+        let next_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
+
+        // Compile the body of the loop.
+        let body_block = self.blocks.allocate_block(next_block);
+
+        self.blocks.set_terminator(Termination::Jump {
+            source_location: body.opening_brace.location,
+            to: body_block,
+        });
+        self.compile_body(body)?;
+
+        self.blocks.set_terminator(Termination::Jump {
+            source_location: body.closing_brace.location,
+            to: next_block,
+        });
+
+        self.blocks.select_block(next_block);
+        Ok(())
     }
 }

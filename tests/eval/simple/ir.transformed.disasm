@@ -45,14 +45,14 @@ block 3
   var temp15: int = None
   var temp16: int = None
   var temp17: string = None
-  var temp18: string = Some(String(StringIndex(19)))
+  var temp18: string = Some(String(StringIndex(20)))
   temp17 = call reverse(temp18)
   temp13 = temp17
   free(temp18)
   free(temp17)
   free(temp16)
   free(temp15)
-  var temp19: string = Some(String(StringIndex(25)))
+  var temp19: string = Some(String(StringIndex(26)))
   temp10 = temp13 == temp19
   free(temp13)
   free(temp19)
@@ -95,4 +95,19 @@ block 0
 
 block 1
   -> return
+
+Function: free_scope
+block 0
+  var return_value: int = None
+  var a: int = Some(MaybeSignedInt(0))
+  -> block 2
+
+block 1
+  -> return
+
+block 2
+  return_value = a
+  free(a)
+  free(return_value)
+  -> block 1
 

@@ -1,5 +1,6 @@
 //@ assert(main()) // assert is a no-op that returns its input
 //@ assert(multiple_calls())
+//@ assert(free_scope() == 0)
 
 extern fn add_from_rust(a: int, b: int) -> signed;
 extern fn reverse(a: string) -> string;
@@ -13,4 +14,13 @@ fn multiple_calls() -> bool {
     var n = add_from_rust(2, 3);
     var m = add_from_rust(3, 2);
     return n == m;
+}
+
+fn free_scope() -> int {
+    var a = 0;
+    {
+        // Does not overwrite shadowed variable
+        var a = 1;
+    }
+    return a;
 }

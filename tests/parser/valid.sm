@@ -95,4 +95,11 @@ fn pass_by_reference(x: i32) -> i32 {
     return take_by_reference(&x);
 }
 
+fn free_scope() {
+    var a = 0;
+    {
+        var a = 1;
+    }
+}
+
 // comment at the end

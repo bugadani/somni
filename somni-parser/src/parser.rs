@@ -24,6 +24,7 @@
 //!            | 'if' right_hand_expression body ( 'else' body )?
 //!            | 'loop' body
 //!            | 'while' right_hand_expression body
+//!            | body
 //!            | expression ';'
 //!
 //! expression -> (left_hand_expression '=')? right_hand_expression ;
@@ -475,6 +476,10 @@ where
                 continue_token,
                 semicolon,
             }));
+        }
+
+        if let Ok(Some(_)) = stream.peek_match(TokenKind::Symbol, &["{"]) {
+            return Ok(Statement::Scope(Body::parse(stream)?));
         }
 
         let expression = Expression::parse(stream)?;

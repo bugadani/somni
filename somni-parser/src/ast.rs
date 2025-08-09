@@ -268,6 +268,7 @@ where
     Loop(Loop<T>),
     Break(Break),
     Continue(Continue),
+    Scope(Body<T>),
     Expression {
         expression: Expression<T>,
         semicolon: Token,
@@ -287,6 +288,7 @@ where
             Self::Loop(arg0) => Self::Loop(arg0.clone()),
             Self::Break(arg0) => Self::Break(arg0.clone()),
             Self::Continue(arg0) => Self::Continue(arg0.clone()),
+            Self::Scope(body) => Self::Scope(body.clone()),
             Self::Expression {
                 expression,
                 semicolon,
