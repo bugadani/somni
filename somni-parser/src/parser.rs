@@ -589,7 +589,8 @@ impl LeftHandExpression {
                 // true, false?
                 match Literal::<T>::parse(stream) {
                     Ok(_) => Err(Error {
-                        error: format!("Parse error: Literals are not valid on the left-hand side")
+                        error: "Parse error: Literals are not valid on the left-hand side"
+                            .to_string()
                             .into_boxed_str(),
                         location: token.location,
                     }),

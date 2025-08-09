@@ -583,7 +583,7 @@ impl<'p> EvalContext<'p> {
                         expression,
                         ast.location(),
                         e.message.lines().next().unwrap(),
-                        &format!("{error}"),
+                        &error.to_string(),
                     )
                     .to_string()
                     .into_boxed_str(),
@@ -829,7 +829,7 @@ impl<'p> EvalContext<'p> {
         while sp != 0 {
             let mut name = None;
             for (entry_point, func) in fns.iter().copied() {
-                if entry_point > pc as usize {
+                if entry_point > pc {
                     break;
                 }
                 name = Some(func);
