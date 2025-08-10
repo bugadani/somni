@@ -4,15 +4,15 @@ Function: take_by_reference
 block 0
   var return_value: void = None
   var x: &int = None
-  var temp2: int = Some(MaybeSignedInt(2))
-  var temp3: int = None
-  temp3 = *x
+  var temp3: int = Some(MaybeSignedInt(2))
   var temp4: int = None
-  temp4 = temp2 * temp3
-  free(temp2)
+  temp4 = *x
+  var temp5: int = None
+  temp5 = temp3 * temp4
   free(temp3)
-  *x = temp4
   free(temp4)
+  *x = temp5
+  free(temp5)
   free(x)
   free(return_value)
   -> block 1
@@ -24,19 +24,19 @@ Function: main
 block 0
   var return_value: int = None
   var input: int = Some(MaybeSignedInt(5))
-  var temp4: &int = None
-  temp4 = &input
-  var temp5: int = None
+  var temp5: &int = None
+  temp5 = &input
   var temp6: int = None
-  var temp7: void = None
-  var temp8: &int = None
-  temp8 = temp4
-  temp7 = call take_by_reference(temp8)
+  var temp7: int = None
+  var temp8: void = None
+  var temp9: &int = None
+  temp9 = temp5
+  temp8 = call take_by_reference(temp9)
+  free(temp9)
   free(temp8)
   free(temp7)
   free(temp6)
   free(temp5)
-  free(temp4)
   return_value = input
   free(input)
   free(return_value)

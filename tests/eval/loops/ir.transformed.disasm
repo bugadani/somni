@@ -3,64 +3,92 @@ Globals:
 Function: loopy
 block 0
   var return_value: int = None
+  var temp1: void = None
   var n: int = Some(MaybeSignedInt(7))
-  -> block 3
+  var temp4: void = None
+  -> block 2
 
 block 1
   -> return
 
 block 2
-  var temp10: int = Some(MaybeSignedInt(0))
-  var temp11: bool = None
-  temp11 = n > temp10
-  free(temp10)
-  if temp11 -> block 10 else block 9
+  var temp5: void = None
+  var temp6: void = None
+  -> block 4
 
 block 3
-  var temp3: int = Some(MaybeSignedInt(4))
-  var temp4: bool = None
-  temp4 = n > temp3
-  free(temp3)
-  if temp4 -> block 5 else block 8
+  var temp20: void = None
+  var temp21: int = Some(MaybeSignedInt(0))
+  var temp22: bool = None
+  temp22 = n > temp21
+  free(temp21)
+  if temp22 -> block 11 else block 10
 
 block 4
-  free(temp4)
-  -> block 3
+  var temp7: void = None
+  var temp8: void = None
+  var temp9: int = Some(MaybeSignedInt(4))
+  var temp10: bool = None
+  temp10 = n > temp9
+  free(temp9)
+  if temp10 -> block 6 else block 9
 
 block 5
-  var temp5: int = Some(MaybeSignedInt(6))
-  var temp6: bool = None
-  temp6 = n == temp5
-  free(temp5)
-  if temp6 -> block 7 else block 6
-
-block 6
-  free(temp6)
-  var temp7: int = Some(MaybeSignedInt(1))
-  n = n - temp7
+  free(temp10)
+  free(temp8)
   free(temp7)
   -> block 4
 
+block 6
+  var temp11: void = None
+  var temp12: void = None
+  var temp13: int = Some(MaybeSignedInt(6))
+  var temp14: bool = None
+  temp14 = n == temp13
+  free(temp13)
+  if temp14 -> block 8 else block 7
+
 block 7
-  free(temp6)
-  free(temp4)
-  -> block 2
+  free(temp14)
+  var temp16: int = Some(MaybeSignedInt(1))
+  n = n - temp16
+  free(temp16)
+  free(temp12)
+  free(temp11)
+  -> block 5
 
 block 8
-  free(temp4)
-  -> block 2
+  free(temp14)
+  free(temp12)
+  free(temp11)
+  free(temp10)
+  free(temp8)
+  free(temp7)
+  -> block 3
 
 block 9
-  free(temp11)
+  free(temp10)
+  free(temp8)
+  free(temp7)
+  -> block 3
+
+block 10
+  free(temp22)
   return_value = n
+  free(temp20)
+  free(temp6)
+  free(temp5)
+  free(temp4)
   free(n)
+  free(temp1)
   free(return_value)
   -> block 1
 
-block 10
-  var temp12: int = Some(MaybeSignedInt(1))
-  n = n - temp12
-  free(temp12)
-  free(temp11)
-  -> block 3
+block 11
+  var temp24: int = Some(MaybeSignedInt(1))
+  n = n - temp24
+  free(temp24)
+  free(temp22)
+  free(temp20)
+  -> block 4
 

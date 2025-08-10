@@ -610,9 +610,7 @@ impl Function {
             arguments.push(ty);
         }
 
-        for statement in func.body.statements.iter() {
-            this.compile_statement(statement)?;
-        }
+        this.compile_body(&func.body, VariableIndex::RETURN_VALUE)?;
 
         this.rollback_scope(func.closing_paren.location, rp);
 
@@ -842,28 +840,49 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_statement(
         &mut self,
         statement: &ast::Statement<VmTypeSet>,
+        storage: VariableIndex,
     ) -> Result<(), CompileError<'s>> {
         match statement {
             ast::Statement::VariableDefinition(variable_def) => {
-                self.compile_variable_definition(variable_def)
+                self.compile_variable_definition(variable_def)?;
             }
             ast::Statement::Return(ret_with_value) => {
-                self.compile_return_with_value(ret_with_value)
+                self.compile_return_with_value(ret_with_value)?;
             }
-            ast::Statement::EmptyReturn(ret) => self.compile_empty_return(ret),
-            ast::Statement::If(if_statement) => self.compile_if_statement(if_statement),
-            ast::Statement::Loop(loop_statement) => self.compile_loop_statement(loop_statement),
-            ast::Statement::Break(break_statement) => self.compile_break_statement(break_statement),
+            ast::Statement::EmptyReturn(ret) => self.compile_empty_return(ret)?,
+            ast::Statement::If(if_statement) => {
+                let expect_void = self.declare_typed_temporary(
+                    statement.location(),
+                    Type::Void,
+                    AllocationMethod::FirstFit,
+                );
+                self.compile_if_statement(if_statement, expect_void)?
+            }
+            ast::Statement::Loop(loop_statement) => {
+                let expect_void = self.declare_typed_temporary(
+                    statement.location(),
+                    Type::Void,
+                    AllocationMethod::FirstFit,
+                );
+                self.compile_loop_statement(loop_statement, expect_void)?
+            }
+            ast::Statement::Break(break_statement) => {
+                self.compile_break_statement(break_statement)?
+            }
             ast::Statement::Continue(continue_statement) => {
-                self.compile_continue_statement(continue_statement)
+                self.compile_continue_statement(continue_statement)?;
             }
-            ast::Statement::Scope(body) => self.compile_free_scope(body),
+            ast::Statement::Scope(body) => return self.compile_free_scope(body, storage),
             ast::Statement::Expression {
                 expression,
                 semicolon,
-            } => self.compile_expression_statement(expression, semicolon),
-            ast::Statement::ImplicitReturn(expression) => self.compile_implicit_return(expression),
+            } => self.compile_expression_statement(expression, semicolon)?,
+            ast::Statement::ImplicitReturn(expression) => {
+                self.compile_implicit_return(expression, storage)?
+            }
         }
+
+        Ok(())
     }
 
     fn compile_variable_definition(
@@ -899,6 +918,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_if_statement(
         &mut self,
         if_statement: &ast::If<VmTypeSet>,
+        if_return_value: VariableIndex,
     ) -> Result<(), CompileError<'s>> {
         let rp = self.variables.create_restore_point();
 
@@ -915,7 +935,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         // Compile the branches
         let then_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
         self.blocks.select_block(then_block);
-        self.compile_body(&if_statement.body)?;
+        self.compile_body(&if_statement.body, if_return_value)?;
         self.blocks.set_terminator(Termination::Jump {
             source_location: if_statement.body.closing_brace.location,
             to: next_block,
@@ -924,7 +944,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         let else_block = if let Some(else_branch) = if_statement.else_branch.as_ref() {
             let else_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
             self.blocks.select_block(else_block);
-            self.compile_body(&else_branch.else_body)?;
+            self.compile_body(&else_branch.else_body, if_return_value)?;
             self.blocks.set_terminator(Termination::Jump {
                 source_location: else_branch.else_body.closing_brace.location,
                 to: next_block,
@@ -952,11 +972,24 @@ impl<'s> FunctionCompiler<'s, '_> {
         Ok(())
     }
 
-    fn compile_body(&mut self, body: &ast::Body<VmTypeSet>) -> Result<(), CompileError<'s>> {
+    fn compile_body(
+        &mut self,
+        body: &ast::Body<VmTypeSet>,
+        storage: VariableIndex,
+    ) -> Result<(), CompileError<'s>> {
         let restore_point = self.variables.create_restore_point();
 
-        for statement in body.statements.iter() {
-            self.compile_statement(statement)?;
+        let expect_void =
+            self.declare_typed_temporary(body.location(), Type::Void, AllocationMethod::FirstFit);
+
+        let last_idx = body.statements.len().saturating_sub(1);
+        for (statement, is_last) in body
+            .statements
+            .iter()
+            .enumerate()
+            .map(|(i, stmt)| (stmt, i == last_idx))
+        {
+            self.compile_statement(statement, if is_last { storage } else { expect_void })?;
         }
 
         self.rollback_scope(body.closing_brace.location, restore_point);
@@ -967,6 +1000,7 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_loop_statement(
         &mut self,
         loop_statement: &ast::Loop<VmTypeSet>,
+        loop_return_value: VariableIndex,
     ) -> Result<(), CompileError<'s>> {
         let next_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
 
@@ -985,7 +1019,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         });
 
         self.blocks.select_block(body_block);
-        self.compile_body(&loop_statement.body)?;
+        self.compile_body(&loop_statement.body, loop_return_value)?;
         self.blocks.set_terminator(Termination::Jump {
             source_location: loop_statement.body.closing_brace.location,
             to: body_block,
@@ -1060,15 +1094,14 @@ impl<'s> FunctionCompiler<'s, '_> {
     fn compile_implicit_return(
         &mut self,
         expression: &ast::RightHandExpression<VmTypeSet>,
+        storage: VariableIndex,
     ) -> Result<(), CompileError<'s>> {
         let return_value = self.compile_right_hand_expression(expression)?;
 
         // Store variable in the return variable.
         // TODO: each block should have a return temporary, and we should store there.
-        self.blocks.push_instruction(
-            expression.location(),
-            Ir::Assign(VariableIndex::RETURN_VALUE, return_value),
-        );
+        self.blocks
+            .push_instruction(expression.location(), Ir::Assign(storage, return_value));
 
         Ok(())
     }
@@ -1517,7 +1550,11 @@ impl<'s> FunctionCompiler<'s, '_> {
         }
     }
 
-    fn compile_free_scope(&mut self, body: &ast::Body<VmTypeSet>) -> Result<(), CompileError<'s>> {
+    fn compile_free_scope(
+        &mut self,
+        body: &ast::Body<VmTypeSet>,
+        storage: VariableIndex,
+    ) -> Result<(), CompileError<'s>> {
         let next_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
 
         // Compile the body of the scope.
@@ -1528,7 +1565,7 @@ impl<'s> FunctionCompiler<'s, '_> {
             to: body_block,
         });
         self.blocks.select_block(body_block);
-        self.compile_body(body)?;
+        self.compile_body(body, storage)?;
 
         self.blocks.set_terminator(Termination::Jump {
             source_location: body.closing_brace.location,

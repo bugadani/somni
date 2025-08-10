@@ -4,61 +4,67 @@ Function: fib
 block 0
   var return_value: int = None
   var n: int = None
-  var temp2: int = Some(MaybeSignedInt(1))
-  var temp3: bool = None
-  temp3 = n <= temp2
-  free(temp2)
-  if temp3 -> block 3 else block 2
+  var temp2: void = None
+  var temp3: void = None
+  var temp4: int = Some(MaybeSignedInt(1))
+  var temp5: bool = None
+  temp5 = n <= temp4
+  free(temp4)
+  if temp5 -> block 3 else block 2
 
 block 1
   -> return
 
 block 2
-  free(temp3)
-  var temp4: int = None
-  var temp5: int = Some(MaybeSignedInt(1))
-  var temp6: int = None
-  temp6 = n - temp5
   free(temp5)
   var temp7: int = None
-  var temp8: int = None
+  var temp8: int = Some(MaybeSignedInt(1))
   var temp9: int = None
+  temp9 = n - temp8
+  free(temp8)
   var temp10: int = None
-  temp10 = temp6
-  temp9 = call fib(temp10)
-  temp4 = temp9
+  var temp11: int = None
+  var temp12: int = None
+  var temp13: int = None
+  temp13 = temp9
+  temp12 = call fib(temp13)
+  temp7 = temp12
+  free(temp13)
+  free(temp12)
+  free(temp11)
   free(temp10)
   free(temp9)
-  free(temp8)
-  free(temp7)
-  free(temp6)
-  var temp11: int = None
-  var temp12: int = Some(MaybeSignedInt(2))
-  var temp13: int = None
-  temp13 = n - temp12
-  free(temp12)
   var temp14: int = None
-  var temp15: int = None
+  var temp15: int = Some(MaybeSignedInt(2))
   var temp16: int = None
+  temp16 = n - temp15
+  free(temp15)
   var temp17: int = None
-  temp17 = temp13
-  temp16 = call fib(temp17)
-  temp11 = temp16
+  var temp18: int = None
+  var temp19: int = None
+  var temp20: int = None
+  temp20 = temp16
+  temp19 = call fib(temp20)
+  temp14 = temp19
+  free(temp20)
+  free(temp19)
+  free(temp18)
   free(temp17)
   free(temp16)
-  free(temp15)
+  return_value = temp7 + temp14
+  free(temp7)
   free(temp14)
-  free(temp13)
-  return_value = temp4 + temp11
-  free(temp4)
-  free(temp11)
+  free(temp3)
+  free(temp2)
   free(n)
   free(return_value)
   -> block 1
 
 block 3
   return_value = n
+  free(temp5)
   free(temp3)
+  free(temp2)
   free(n)
   free(return_value)
   -> block 1

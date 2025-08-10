@@ -3,63 +3,84 @@ Globals:
 Function: loopy
 block 0
   var return_value: int = None
+  var temp1: void = None
   var n: void = None
-  var temp2: {int/signed} = Some(MaybeSignedInt(7))
-  n = temp2
-  free(temp2)
+  var temp3: {int/signed} = Some(MaybeSignedInt(7))
+  n = temp3
+  free(temp3)
+  var temp4: void = None
   -> block 3
 
 block 1
   -> return
 
 block 2
+  free(temp4)
   free(n)
+  free(temp1)
   free(return_value)
   -> block 1
 
 block 3
+  var temp5: void = None
+  var temp6: void = None
   -> block 5
 
 block 4
-  var temp10: {int/signed} = Some(MaybeSignedInt(0))
-  var temp11: void = None
-  temp11 = n > temp10
-  free(temp10)
-  if temp11 -> block 16 else block 15
+  var temp20: void = None
+  var temp21: {int/signed} = Some(MaybeSignedInt(0))
+  var temp22: void = None
+  temp22 = n > temp21
+  free(temp21)
+  if temp22 -> block 16 else block 15
 
 block 5
-  var temp3: {int/signed} = Some(MaybeSignedInt(4))
-  var temp4: void = None
-  temp4 = n > temp3
-  free(temp3)
-  if temp4 -> block 7 else block 12
+  var temp7: void = None
+  var temp8: void = None
+  var temp9: {int/signed} = Some(MaybeSignedInt(4))
+  var temp10: void = None
+  temp10 = n > temp9
+  free(temp9)
+  if temp10 -> block 7 else block 12
 
 block 6
-  free(temp4)
+  free(temp10)
+  free(temp8)
+  free(temp7)
   -> block 5
 
 block 7
-  var temp5: {int/signed} = Some(MaybeSignedInt(6))
-  var temp6: void = None
-  temp6 = n == temp5
-  free(temp5)
-  if temp6 -> block 9 else block 8
+  var temp11: void = None
+  var temp12: void = None
+  var temp13: {int/signed} = Some(MaybeSignedInt(6))
+  var temp14: void = None
+  temp14 = n == temp13
+  free(temp13)
+  if temp14 -> block 9 else block 8
 
 block 8
-  free(temp6)
-  var temp7: {int/signed} = Some(MaybeSignedInt(1))
-  var temp8: void = None
-  temp8 = n - temp7
-  free(temp7)
-  n = temp8
-  free(temp8)
-  var temp9: void = None
-  free(temp9)
+  free(temp14)
+  var temp16: {int/signed} = Some(MaybeSignedInt(1))
+  var temp17: void = None
+  temp17 = n - temp16
+  free(temp16)
+  n = temp17
+  free(temp17)
+  var temp18: void = None
+  free(temp18)
+  free(temp12)
+  free(temp11)
   -> block 6
 
 block 9
-  free(temp6)
-  free(temp4)
+  var temp15: void = None
+  free(temp15)
+  free(temp14)
+  free(temp12)
+  free(temp11)
+  free(temp10)
+  free(temp8)
+  free(temp7)
   -> block 10
 
 block 10
@@ -69,7 +90,11 @@ block 11
   -> block 8
 
 block 12
-  free(temp4)
+  var temp19: void = None
+  free(temp19)
+  free(temp10)
+  free(temp8)
+  free(temp7)
   -> block 13
 
 block 13
@@ -79,22 +104,30 @@ block 14
   -> block 6
 
 block 15
-  free(temp11)
+  free(temp22)
   return_value = n
+  free(temp20)
+  free(temp6)
+  free(temp5)
+  free(temp4)
   free(n)
+  free(temp1)
   free(return_value)
   -> block 19
 
 block 16
-  var temp12: {int/signed} = Some(MaybeSignedInt(1))
-  var temp13: void = None
-  temp13 = n - temp12
-  free(temp12)
-  n = temp13
-  free(temp13)
-  var temp14: void = None
-  free(temp14)
-  free(temp11)
+  var temp23: void = None
+  var temp24: {int/signed} = Some(MaybeSignedInt(1))
+  var temp25: void = None
+  temp25 = n - temp24
+  free(temp24)
+  n = temp25
+  free(temp25)
+  var temp26: void = None
+  free(temp26)
+  free(temp23)
+  free(temp22)
+  free(temp20)
   -> block 17
 
 block 17

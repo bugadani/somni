@@ -83,6 +83,14 @@ where
     pub statements: Vec<Statement<T>>,
     pub closing_brace: Token,
 }
+impl<T: TypeSet> Body<T> {
+    pub fn location(&self) -> Location {
+        Location {
+            start: self.opening_brace.location.start,
+            end: self.closing_brace.location.end,
+        }
+    }
+}
 
 impl<T> Clone for Body<T>
 where
@@ -208,6 +216,21 @@ where
     pub body: Body<T>,
     pub else_branch: Option<Else<T>>,
 }
+impl<T> If<T>
+where
+    T: TypeSet,
+{
+    pub fn location(&self) -> Location {
+        Location {
+            start: self.if_token.location.start,
+            end: self
+                .else_branch
+                .as_ref()
+                .map(|else_branch| else_branch.location().end)
+                .unwrap_or_else(|| self.body.location().end),
+        }
+    }
+}
 
 impl<T> Clone for If<T>
 where
@@ -231,6 +254,17 @@ where
     pub loop_token: Token,
     pub body: Body<T>,
 }
+impl<T> Loop<T>
+where
+    T: TypeSet,
+{
+    pub fn location(&self) -> Location {
+        Location {
+            start: self.loop_token.location.start,
+            end: self.body.location().end,
+        }
+    }
+}
 
 impl<T> Clone for Loop<T>
 where
@@ -250,10 +284,26 @@ pub struct Break {
     pub semicolon: Token,
 }
 
+impl Break {
+    pub fn location(&self) -> Location {
+        let start = self.break_token.location.start;
+        let end = self.semicolon.location.end;
+        Location { start, end }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Continue {
     pub continue_token: Token,
     pub semicolon: Token,
+}
+
+impl Continue {
+    pub fn location(&self) -> Location {
+        let start = self.continue_token.location.start;
+        let end = self.semicolon.location.end;
+        Location { start, end }
+    }
 }
 
 #[derive(Debug)]
@@ -274,6 +324,28 @@ where
         semicolon: Token,
     },
     ImplicitReturn(RightHandExpression<T>),
+}
+impl<T: TypeSet> Statement<T> {
+    pub fn location(&self) -> Location {
+        match self {
+            Statement::VariableDefinition(variable_definition) => variable_definition.location(),
+            Statement::Return(return_with_value) => return_with_value.location(),
+            Statement::EmptyReturn(empty_return) => empty_return.location(),
+            Statement::If(if_stmt) => if_stmt.location(),
+            Statement::Loop(loop_stmt) => loop_stmt.location(),
+            Statement::Break(break_stmt) => break_stmt.location(),
+            Statement::Continue(continue_stmt) => continue_stmt.location(),
+            Statement::Scope(body) => body.location(),
+            Statement::Expression {
+                expression,
+                semicolon,
+            } => Location {
+                start: expression.location().start,
+                end: semicolon.location.end,
+            },
+            Statement::ImplicitReturn(right_hand_expression) => right_hand_expression.location(),
+        }
+    }
 }
 
 impl<T> Clone for Statement<T>
@@ -309,6 +381,17 @@ where
 {
     pub else_token: Token,
     pub else_body: Body<T>,
+}
+impl<T> Else<T>
+where
+    T: TypeSet,
+{
+    pub fn location(&self) -> Location {
+        Location {
+            start: self.else_token.location.start,
+            end: self.else_body.location().end,
+        }
+    }
 }
 
 impl<T> Clone for Else<T>

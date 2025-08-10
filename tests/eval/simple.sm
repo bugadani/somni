@@ -27,7 +27,6 @@ fn free_scope() -> int {
 
 fn return_from_scope(a: int) -> int {
     {
-        356
+        a
     }
-    a
 }

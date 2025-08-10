@@ -7,6 +7,7 @@
 - `Expression::as_variable` has been removed
 - Split `Expression` and `RightHandExpression`, added `LeftHandExpression`
 - Support free-standing block scopes
+- Added `location` getters to statement types
 
 # [0.1.0] - 2025-07-24
 

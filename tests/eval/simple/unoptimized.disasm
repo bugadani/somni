@@ -7,10 +7,10 @@ Function main(...) -> bool (stack: 51)
   0005: load Local(10) = MaybeSignedInt(5)
   0006: Local(18) = Local(1) == Local(10) (signed)
   0007: if Local(18) == false jump to 13
-  0008: load Local(43) = String(StringIndex(21))
+  0008: load Local(43) = String(StringIndex(22))
   0009: call reverse(?) -> String with sp=Local(35)
   0010: copy Local(10) = Local(35)
-  0011: load Local(19) = String(StringIndex(27))
+  0011: load Local(19) = String(StringIndex(28))
   0012: Local(9) = Local(10) == Local(19) (string)
   0013: copy Local(0) = Local(9)
   0014: return
@@ -31,8 +31,6 @@ Function free_scope(...) -> int (stack: 48)
   0027: call multiple_calls(..) with sp=Local(32)
   0028: copy Local(0) = Local(32)
   0029: return
-Function return_from_scope(...) -> int (stack: 24)
-  0030: load Local(16) = MaybeSignedInt(356)
-  0031: copy Local(0) = Local(16)
-  0032: copy Local(0) = Local(8)
-  0033: return
+Function return_from_scope(...) -> int (stack: 16)
+  0030: copy Local(0) = Local(8)
+  0031: return

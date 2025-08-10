@@ -9,84 +9,86 @@ Function: reverse
 Function: main
 block 0
   var return_value: bool = None
+  var temp1: void = None
   var n: signed = None
-  var temp5: int = None
   var temp6: int = None
-  var temp7: signed = None
-  var temp8: {int/signed} = Some(MaybeSignedInt(2))
-  var temp9: {int/signed} = Some(MaybeSignedInt(3))
-  temp7 = call add_from_rust(temp8, temp9)
-  n = temp7
+  var temp7: int = None
+  var temp8: signed = None
+  var temp9: {int/signed} = Some(MaybeSignedInt(2))
+  var temp10: {int/signed} = Some(MaybeSignedInt(3))
+  temp8 = call add_from_rust(temp9, temp10)
+  n = temp8
+  free(temp10)
   free(temp9)
   free(temp8)
   free(temp7)
   free(temp6)
-  free(temp5)
-  var temp10: bool = Some(Bool(false))
-  var temp11: signed = Some(MaybeSignedInt(5))
-  var temp12: bool = None
-  temp12 = n == temp11
-  free(temp11)
-  if temp12 -> block 3 else block 2
+  var temp11: bool = Some(Bool(false))
+  var temp12: signed = Some(MaybeSignedInt(5))
+  var temp13: bool = None
+  temp13 = n == temp12
+  free(temp12)
+  if temp13 -> block 3 else block 2
 
 block 1
   -> return
 
 block 2
-  free(temp12)
-  return_value = temp10
-  free(temp10)
+  free(temp13)
+  return_value = temp11
+  free(temp11)
   free(n)
+  free(temp1)
   free(return_value)
   -> block 1
 
 block 3
-  var temp13: string = None
-  var temp15: int = None
+  var temp14: string = None
   var temp16: int = None
-  var temp17: string = None
-  var temp18: string = Some(String(StringIndex(21)))
-  temp17 = call reverse(temp18)
-  temp13 = temp17
+  var temp17: int = None
+  var temp18: string = None
+  var temp19: string = Some(String(StringIndex(22)))
+  temp18 = call reverse(temp19)
+  temp14 = temp18
+  free(temp19)
   free(temp18)
   free(temp17)
   free(temp16)
-  free(temp15)
-  var temp19: string = Some(String(StringIndex(27)))
-  temp10 = temp13 == temp19
-  free(temp13)
-  free(temp19)
+  var temp20: string = Some(String(StringIndex(28)))
+  temp11 = temp14 == temp20
+  free(temp14)
+  free(temp20)
   -> block 2
 
 Function: multiple_calls
 block 0
   var return_value: bool = None
   var n: signed = None
-  var temp5: int = None
   var temp6: int = None
-  var temp7: signed = None
-  var temp8: {int/signed} = Some(MaybeSignedInt(2))
-  var temp9: {int/signed} = Some(MaybeSignedInt(3))
-  temp7 = call add_from_rust(temp8, temp9)
-  n = temp7
+  var temp7: int = None
+  var temp8: signed = None
+  var temp9: {int/signed} = Some(MaybeSignedInt(2))
+  var temp10: {int/signed} = Some(MaybeSignedInt(3))
+  temp8 = call add_from_rust(temp9, temp10)
+  n = temp8
+  free(temp10)
   free(temp9)
   free(temp8)
   free(temp7)
   free(temp6)
-  free(temp5)
   var m: signed = None
-  var temp14: int = None
   var temp15: int = None
-  var temp16: signed = None
-  var temp17: {int/signed} = Some(MaybeSignedInt(3))
-  var temp18: {int/signed} = Some(MaybeSignedInt(2))
-  temp16 = call add_from_rust(temp17, temp18)
-  m = temp16
+  var temp16: int = None
+  var temp17: signed = None
+  var temp18: {int/signed} = Some(MaybeSignedInt(3))
+  var temp19: {int/signed} = Some(MaybeSignedInt(2))
+  temp17 = call add_from_rust(temp18, temp19)
+  m = temp17
+  free(temp19)
   free(temp18)
   free(temp17)
   free(temp16)
   free(temp15)
-  free(temp14)
   return_value = n == m
   free(m)
   free(n)
@@ -99,6 +101,7 @@ block 1
 Function: free_scope
 block 0
   var return_value: int = None
+  var temp1: void = None
   var a: {int/signed} = Some(MaybeSignedInt(0))
   -> block 3
 
@@ -106,18 +109,19 @@ block 1
   -> return
 
 block 2
-  var temp6: int = None
-  var temp7: int = None
   var temp8: int = None
-  var temp9: {int/signed} = None
-  temp9 = a
-  temp8 = call return_from_scope(temp9)
-  return_value = temp8
+  var temp9: int = None
+  var temp10: int = None
+  var temp11: {int/signed} = None
+  temp11 = a
+  temp10 = call return_from_scope(temp11)
+  return_value = temp10
+  free(temp11)
+  free(temp10)
   free(temp9)
   free(temp8)
-  free(temp7)
-  free(temp6)
   free(a)
+  free(temp1)
   free(return_value)
   -> block 1
 
@@ -128,20 +132,19 @@ Function: return_from_scope
 block 0
   var return_value: int = None
   var a: int = None
+  var temp2: void = None
   -> block 3
 
 block 1
   -> return
 
 block 2
-  return_value = a
+  free(temp2)
   free(a)
   free(return_value)
   -> block 1
 
 block 3
-  var temp2: int = Some(MaybeSignedInt(356))
-  return_value = temp2
-  free(temp2)
+  return_value = a
   -> block 2
 

@@ -139,13 +139,13 @@ impl<'a, 's> TypeResolver<'a, 's> {
                             !left_ty.maybe_signed_integer() && !right_ty.maybe_signed_integer()
                         }
                         (Some(left_ty), Some(right_ty)) => {
-                            if left_ty.maybe_signed_integer() {
+                            if left_ty.maybe_signed_integer() && right_ty.is_integer() {
                                 self.locals
                                     .variable_mut(left.local_index().unwrap())
                                     .unwrap()
                                     .ty = Some(right_ty);
                                 any_changed = true;
-                            } else if right_ty.maybe_signed_integer() {
+                            } else if right_ty.maybe_signed_integer() && left_ty.is_integer() {
                                 self.locals
                                     .variable_mut(right.local_index().unwrap())
                                     .unwrap()

@@ -10,8 +10,10 @@ block 0
   var a: int = None
   var b: int = None
   var temp3: void = None
-  temp3 = a + b
-  return_value = temp3
+  var temp4: void = None
+  temp4 = a + b
+  return_value = temp4
+  free(temp4)
   free(temp3)
   free(b)
   free(a)
@@ -25,14 +27,19 @@ block 2
   -> block 1
 
 block 3
+  free(b)
+  free(a)
+  free(return_value)
   -> block 1
 
 Function: str
 block 0
   var return_value: string = None
   var a: string = None
-  var temp2: string = Some(String(StringIndex(11)))
-  return_value = temp2
+  var temp2: void = None
+  var temp3: string = Some(String(StringIndex(13)))
+  return_value = temp3
+  free(temp3)
   free(temp2)
   free(a)
   free(return_value)
@@ -45,5 +52,7 @@ block 2
   -> block 1
 
 block 3
+  free(a)
+  free(return_value)
   -> block 1
 

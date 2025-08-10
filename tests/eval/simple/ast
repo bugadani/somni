@@ -1004,14 +1004,12 @@ Program {
                                 },
                                 statements: [
                                     ImplicitReturn(
-                                        Literal {
-                                            value: Literal {
-                                                value: Integer(
-                                                    356,
-                                                ),
+                                        Variable {
+                                            variable: Token {
+                                                kind: Identifier,
                                                 location: Location {
                                                     start: 634,
-                                                    end: 637,
+                                                    end: 635,
                                                 },
                                             },
                                         },
@@ -1020,19 +1018,8 @@ Program {
                                 closing_brace: Token {
                                     kind: Symbol,
                                     location: Location {
-                                        start: 642,
-                                        end: 643,
-                                    },
-                                },
-                            },
-                        ),
-                        ImplicitReturn(
-                            Variable {
-                                variable: Token {
-                                    kind: Identifier,
-                                    location: Location {
-                                        start: 648,
-                                        end: 649,
+                                        start: 640,
+                                        end: 641,
                                     },
                                 },
                             },
@@ -1041,8 +1028,8 @@ Program {
                     closing_brace: Token {
                         kind: Symbol,
                         location: Location {
-                            start: 650,
-                            end: 651,
+                            start: 642,
+                            end: 643,
                         },
                     },
                 },

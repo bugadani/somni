@@ -6,20 +6,22 @@ block 0
   var x: signed = None
   var temp2: void = None
   var temp3: void = None
-  temp3 = &x
-  var temp4: int = None
+  var temp4: void = None
+  temp4 = &x
   var temp5: int = None
-  var temp6: void = None
+  var temp6: int = None
   var temp7: void = None
-  temp7 = temp3
-  temp6 = call take_by_reference(temp7)
-  temp2 = temp6
+  var temp8: void = None
+  temp8 = temp4
+  temp7 = call take_by_reference(temp8)
+  temp3 = temp7
+  free(temp8)
   free(temp7)
   free(temp6)
   free(temp5)
   free(temp4)
+  return_value = temp3
   free(temp3)
-  return_value = temp2
   free(temp2)
   free(x)
   free(return_value)
@@ -32,6 +34,8 @@ block 2
   -> block 1
 
 block 3
+  free(x)
+  free(return_value)
   -> block 1
 
 Function: take_by_reference
@@ -39,8 +43,10 @@ block 0
   var return_value: signed = None
   var x: &signed = None
   var temp2: void = None
-  temp2 = *x
-  return_value = temp2
+  var temp3: void = None
+  temp3 = *x
+  return_value = temp3
+  free(temp3)
   free(temp2)
   free(x)
   free(return_value)
@@ -53,5 +59,7 @@ block 2
   -> block 1
 
 block 3
+  free(x)
+  free(return_value)
   -> block 1
 

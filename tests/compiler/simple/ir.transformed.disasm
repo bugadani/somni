@@ -20,7 +20,7 @@ block 1
 
 Function: str
 block 0
-  var return_value: string = Some(String(StringIndex(11)))
+  var return_value: string = Some(String(StringIndex(13)))
   var a: string = None
   free(a)
   free(return_value)

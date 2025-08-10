@@ -15,18 +15,26 @@ block 0
   var number: int = None
   var n: int = None
   var add: bool = None
+  var temp4: void = None
+  var temp5: void = None
   if add -> block 2 else block 8
 
 block 1
   -> return
 
 block 2
+  var temp6: void = None
   var acc: int = Some(MaybeSignedInt(0))
+  var temp9: void = None
   -> block 4
 
 block 3
   return_value = acc
+  free(temp9)
   free(acc)
+  free(temp6)
+  free(temp5)
+  free(temp4)
   free(add)
   free(n)
   free(number)
@@ -34,36 +42,44 @@ block 3
   -> block 1
 
 block 4
-  var temp6: int = Some(MaybeSignedInt(0))
-  var temp7: bool = None
-  temp7 = n > temp6
-  free(temp6)
-  if temp7 -> block 6 else block 7
+  var temp10: void = None
+  var temp11: void = None
+  var temp12: int = Some(MaybeSignedInt(0))
+  var temp13: bool = None
+  temp13 = n > temp12
+  free(temp12)
+  if temp13 -> block 6 else block 7
 
 block 5
-  free(temp7)
+  free(temp13)
+  free(temp11)
+  free(temp10)
   -> block 4
 
 block 6
   acc = acc + number
-  var temp10: int = Some(MaybeSignedInt(1))
-  n = n - temp10
-  free(temp10)
+  var temp17: int = Some(MaybeSignedInt(1))
+  n = n - temp17
+  free(temp17)
   -> block 5
 
 block 7
-  free(temp7)
+  free(temp13)
+  free(temp11)
+  free(temp10)
   -> block 3
 
 block 8
-  var temp14: int = None
-  var temp15: int = None
-  var temp16: void = None
-  temp16 = call noop()
-  free(temp16)
-  free(temp15)
-  free(temp14)
+  var temp23: int = None
+  var temp24: int = None
+  var temp25: void = None
+  temp25 = call noop()
+  free(temp25)
+  free(temp24)
+  free(temp23)
   return_value = number * n
+  free(temp5)
+  free(temp4)
   free(add)
   free(n)
   free(number)

@@ -1,0 +1,5 @@
+Compile error
+ ---> at line 3 column 7
+  |
+3 |     { 345 }
+  |       ^^^ Type mismatch: expected void, found {int/signed}
