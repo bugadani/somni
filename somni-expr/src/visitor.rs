@@ -154,12 +154,13 @@ where
                 }
             }
             RightHandExpression::BinaryOperator { name, operands } => {
+                let lhs = self.visit_right_hand_expression(&operands[0])?;
+
                 let short_circuiting = ["&&", "||"];
                 let operator = name.source(self.source);
 
                 // Special cases
                 if short_circuiting.contains(&operator) {
-                    let lhs = self.visit_right_hand_expression(&operands[0])?;
                     return match operator {
                         "&&" if lhs == TypedValue::<T>::Bool(false) => Ok(TypedValue::Bool(false)),
                         "||" if lhs == TypedValue::<T>::Bool(true) => Ok(TypedValue::Bool(true)),
@@ -168,7 +169,6 @@ where
                 }
 
                 // "Normal" binary operators
-                let lhs = self.visit_right_hand_expression(&operands[0])?;
                 let rhs = self.visit_right_hand_expression(&operands[1])?;
                 let type_context = self.context.type_context();
                 let result = match operator {
@@ -355,14 +355,12 @@ where
             Statement::Return(return_with_value) => {
                 return self
                     .visit_right_hand_expression(&return_with_value.expression)
-                    .map(StatementResult::Return)
-                    .map(Some);
+                    .map(|rv| Some(StatementResult::Return(rv)));
             }
             Statement::ImplicitReturn(expression) => {
                 return self
                     .visit_right_hand_expression(expression)
-                    .map(StatementResult::ImplicitReturn)
-                    .map(Some);
+                    .map(|rv| Some(StatementResult::ImplicitReturn(rv)));
             }
             Statement::EmptyReturn(_) => {
                 return Ok(Some(StatementResult::Return(TypedValue::Void)));
