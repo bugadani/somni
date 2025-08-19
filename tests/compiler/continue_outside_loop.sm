@@ -1,0 +1,4 @@
+fn foo(a: int) -> int {
+    continue;
+    1
+}

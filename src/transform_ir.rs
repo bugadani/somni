@@ -157,7 +157,8 @@ impl<'a, 's> TypeResolver<'a, 's> {
                                     location: constraint.source_location,
                                     error: format!(
                                         "Type mismatch: expected {left_ty}, found {right_ty}",
-                                    ),
+                                    )
+                                    .into_boxed_str(),
                                 });
                             }
 
@@ -215,7 +216,8 @@ impl<'a, 's> TypeResolver<'a, 's> {
                                                 error: format!(
                                                     "Type mismatch: expected {required_ty}, found {}",
                                                     *ty
-                                                ),
+                                                )
+                                                .into_boxed_str(),
                                             });
                                         }
                                         true
@@ -227,7 +229,8 @@ impl<'a, 's> TypeResolver<'a, 's> {
                                                 error: format!(
                                                     "Type mismatch: expected {required_ty}, found {}",
                                                     *ty
-                                                ),
+                                                )
+                                                .into_boxed_str(),
                                             });
                                         }
                                         true
@@ -238,7 +241,8 @@ impl<'a, 's> TypeResolver<'a, 's> {
                                             error: format!(
                                                 "Type mismatch: expected {required_ty}, found {}",
                                                 *ty
-                                            ),
+                                            )
+                                            .into_boxed_str(),
                                         });
                                     } else {
                                         *ty = required_ty;
@@ -279,7 +283,7 @@ impl<'a, 's> TypeResolver<'a, 's> {
                             return Err(CompileError {
                                 source: self.source,
                                 location: constraint.source_location,
-                                error: "Globals cannot be references".to_string(),
+                                error: "Globals cannot be references".to_string().into_boxed_str(),
                             });
                         }
                         _ => self.current_type_of(left),
@@ -316,7 +320,8 @@ impl<'a, 's> TypeResolver<'a, 's> {
                                     left_ty.dereference().ok_or_else(|| CompileError {
                                         source: self.source,
                                         location: constraint.source_location,
-                                        error: format!("Cannot dereference {left_ty}"),
+                                        error: format!("Cannot dereference {left_ty}")
+                                            .into_boxed_str(),
                                     })?;
                                 self.locals
                                     .variable_mut(right.local_index().unwrap())
@@ -335,14 +340,15 @@ impl<'a, 's> TypeResolver<'a, 's> {
                                 location: constraint.source_location,
                                 error: format!(
                                     "Type mismatch: expected {left_ty}, found {right_ty}"
-                                ),
+                                )
+                                .into_boxed_str(),
                             });
                         }
                         (Some(ty), None) => {
                             let ty = ty.dereference().ok_or_else(|| CompileError {
                                 source: self.source,
                                 location: constraint.source_location,
-                                error: format!("Cannot dereference {ty}"),
+                                error: format!("Cannot dereference {ty}").into_boxed_str(),
                             })?;
                             self.locals
                                 .variable_mut(right.local_index().unwrap())
@@ -648,7 +654,8 @@ fn propagate_variable_types_inner<'s>(
                                     strings.lookup(*func),
                                     signature.arguments.len(),
                                     args.len()
-                                ),
+                                )
+                                .into_boxed_str(),
                             });
                         }
 

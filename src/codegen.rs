@@ -14,7 +14,7 @@ use crate::{
 };
 
 use somni_expr::{Context, Type, TypedValue as ExprTypedValue};
-use somni_parser::Location;
+use somni_parser::{ast::Program as ProgramAst, Location};
 
 // This is just to keep the size of Instruction small enough. Re-evaluate this later.
 #[derive(Clone, Copy, Debug)]
@@ -311,7 +311,11 @@ impl Program {
     }
 }
 
-pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, CompileError<'s>> {
+pub(crate) fn compile<'s>(
+    source: &'s str,
+    ast: ProgramAst<VmTypeSet>,
+    ir: &ir::Program,
+) -> Result<Program, CompileError<'s>> {
     let interner = ir.strings.clone();
     let strings = ir.strings.clone().finalize();
     let mut this = Compiler {
@@ -343,9 +347,8 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
         global_addr += ty.vm_size_of();
     }
 
-    // TODO: avoid double-parsing source
     // TODO: change the API so that user-registered Rust functions are visible here
-    let mut eval_ctx = Context::<VmTypeSet>::parse_with_types(source).unwrap();
+    let mut eval_ctx = Context::<VmTypeSet>::new_from_program(source, ast);
 
     loop {
         let mut made_progress = false;
@@ -366,7 +369,8 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
                     return Err(CompileError {
                         source,
                         location: err.location,
-                        error: format!("Failed to evaluate initializer: {}", err.message),
+                        error: format!("Failed to evaluate initializer: {}", err.message)
+                            .into_boxed_str(),
                     });
                 }
             }
@@ -383,7 +387,9 @@ pub fn compile<'s>(source: &'s str, ir: &ir::Program) -> Result<Program, Compile
             return Err(CompileError {
                 source,
                 location: global.initializer.location(),
-                error: "Failed to evaluate initializer".to_string(),
+                error: "Failed to evaluate initializer"
+                    .to_string()
+                    .into_boxed_str(),
             });
         }
     }
@@ -661,7 +667,8 @@ impl<'s> FunctionCompiler<'s, '_> {
                         error: format!(
                             "Call to underclared function {}",
                             self.compiler.program.debug_info.strings.lookup(*fn_name)
-                        ),
+                        )
+                        .into_boxed_str(),
                     });
                 }
             }
@@ -705,7 +712,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                         return Err(CompileError {
                             source: self.source,
                             location,
-                            error: format!("Unsupported binary operator: {other}"),
+                            error: format!("Unsupported binary operator: {other}").into_boxed_str(),
                         });
                     }
                 };
@@ -751,7 +758,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                         return Err(CompileError {
                             source: self.source,
                             location,
-                            error: format!("Unsupported unary operator: {other}"),
+                            error: format!("Unsupported unary operator: {other}").into_boxed_str(),
                         });
                     }
                 };

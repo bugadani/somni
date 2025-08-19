@@ -1,0 +1,4 @@
+fn foo(a: int) -> int {
+    break;
+    1
+}

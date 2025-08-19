@@ -7,7 +7,7 @@ use somni_parser::Location;
 pub struct CompileError<'s> {
     pub source: &'s str,
     pub location: Location,
-    pub error: String,
+    pub error: Box<str>,
 }
 
 impl<'s> CompileError<'s> {
@@ -15,7 +15,7 @@ impl<'s> CompileError<'s> {
         Self {
             source,
             location: error.location(),
-            error: error.to_string(),
+            error: error.to_string().into_boxed_str(),
         }
     }
 }
@@ -48,7 +48,7 @@ mod test {
                 CompileError {
                     source,
                     location: Location { start: 4, end: 5 },
-                    error: "Syntax error".to_string(),
+                    error: "Syntax error".to_string().into_boxed_str(),
                 }
             ))
         );
@@ -64,7 +64,7 @@ mod test {
                 CompileError {
                     source,
                     location: Location { start: 8, end: 14 },
-                    error: "Syntax error".to_string(),
+                    error: "Syntax error".to_string().into_boxed_str(),
                 }
             ))
         );

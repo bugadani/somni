@@ -1,0 +1,5 @@
+Compile error
+ ---> at line 2 column 5
+  |
+2 |     continue;
+  |     ^^^^^^^^ Cannot continue outside of a loop.

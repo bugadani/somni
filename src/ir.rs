@@ -390,7 +390,7 @@ impl Program {
         output
     }
 
-    pub fn compile<'s>(
+    pub(crate) fn compile<'s>(
         source: &'s str,
         ast: &ast::Program<VmTypeSet>,
     ) -> Result<Program, CompileError<'s>> {
@@ -408,7 +408,8 @@ impl Program {
                         return Err(CompileError {
                             source,
                             location: global_variable.identifier.location,
-                            error: format!("Global variable `{name}` is already defined"),
+                            error: format!("Global variable `{name}` is already defined")
+                                .into_boxed_str(),
                         });
                     }
 
@@ -422,7 +423,7 @@ impl Program {
                             return Err(CompileError {
                                 source,
                                 location: global_variable.type_token.type_name.location,
-                                error: format!("Unknown type `{other}`"),
+                                error: format!("Unknown type `{other}`").into_boxed_str(),
                             });
                         }
                     };
@@ -442,7 +443,7 @@ impl Program {
                         return Err(CompileError {
                             source,
                             location: function.name.location,
-                            error: format!("Function `{name}` is already defined"),
+                            error: format!("Function `{name}` is already defined").into_boxed_str(),
                         });
                     }
                     functions.insert(
@@ -457,7 +458,7 @@ impl Program {
                         return Err(CompileError {
                             source,
                             location: function.name.location,
-                            error: format!("Function `{name}` is already defined"),
+                            error: format!("Function `{name}` is already defined").into_boxed_str(),
                         });
                     }
                     functions.insert(name_idx, Function::DUMMY);
@@ -672,14 +673,14 @@ impl Function {
                 return Err(CompileError {
                     source,
                     location: arguments[idx].name.location,
-                    error: format!("Duplicate argument name `{name}`"),
+                    error: format!("Duplicate argument name `{name}`").into_boxed_str(),
                 });
             }
             if RESERVED_NAMES.contains(&name) {
                 return Err(CompileError {
                     source,
                     location: arguments[idx].name.location,
-                    error: format!("Argument name `{name}` is reserved"),
+                    error: format!("Argument name `{name}` is reserved").into_boxed_str(),
                 });
             }
         }
@@ -1038,7 +1039,9 @@ impl<'s> FunctionCompiler<'s, '_> {
             return Err(CompileError {
                 source: self.source,
                 location: break_statement.break_token.location,
-                error: "Cannot break outside of a loop.".to_string(),
+                error: "Cannot break outside of a loop."
+                    .to_string()
+                    .into_boxed_str(),
             });
         };
 
@@ -1059,7 +1062,9 @@ impl<'s> FunctionCompiler<'s, '_> {
             return Err(CompileError {
                 source: self.source,
                 location: continue_statement.continue_token.location,
-                error: "Cannot break outside of a loop.".to_string(),
+                error: "Cannot continue outside of a loop."
+                    .to_string()
+                    .into_boxed_str(),
             });
         };
 
@@ -1170,7 +1175,7 @@ impl<'s> FunctionCompiler<'s, '_> {
             other => Err(CompileError {
                 source,
                 location: type_token.type_name.location,
-                error: format!("Unknown type `{other}`"),
+                error: format!("Unknown type `{other}`").into_boxed_str(),
             }),
         }
     }
@@ -1257,7 +1262,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                     None => Err(CompileError {
                         source: self.source,
                         location: variable.location,
-                        error: format!("Variable `{name}` is not declared"),
+                        error: format!("Variable `{name}` is not declared").into_boxed_str(),
                     }),
                 }
             }
@@ -1293,7 +1298,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                 return Err(CompileError {
                     source: self.source,
                     location: literal.location,
-                    error: format!("{literal_type} is not supported in literals"),
+                    error: format!("{literal_type} is not supported in literals").into_boxed_str(),
                 });
             }
             _ => {
@@ -1308,7 +1313,8 @@ impl<'s> FunctionCompiler<'s, '_> {
                             ast::LiteralValue::Boolean(_) => "boolean",
                             ast::LiteralValue::String(_) => "string",
                         }
-                    ),
+                    )
+                    .into_boxed_str(),
                 });
             }
         };

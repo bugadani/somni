@@ -120,7 +120,7 @@ pub fn run_compile_test(
         write_out_file(&ctx.out_path.join("ir.transformed.disasm"), ir.print());
 
         // Compile the IR to a program.
-        let p = match codegen::compile(&source, &ir) {
+        let p = match codegen::compile(&source, ast, &ir) {
             Ok(program) => program,
             Err(err) => return ctx.handle_error("Failed to compile", err),
         };
