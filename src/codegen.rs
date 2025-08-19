@@ -11,6 +11,7 @@ use crate::{
     string_interner::{StringIndex, Strings},
     types::{TypeExt, TypedValue, VmTypeSet},
     variable_tracker::{self, LocalVariableIndex},
+    vm::SomniFn,
 };
 
 use somni_expr::{Context, Type, TypedValue as ExprTypedValue};
@@ -315,6 +316,7 @@ pub(crate) fn compile<'s>(
     source: &'s str,
     ast: ProgramAst<VmTypeSet>,
     ir: &ir::Program,
+    functions: &HashMap<&str, SomniFn<'_>>,
 ) -> Result<Program, CompileError<'s>> {
     let interner = ir.strings.clone();
     let strings = ir.strings.clone().finalize();
@@ -347,8 +349,11 @@ pub(crate) fn compile<'s>(
         global_addr += ty.vm_size_of();
     }
 
-    // TODO: change the API so that user-registered Rust functions are visible here
     let mut eval_ctx = Context::<VmTypeSet>::new_from_program(source, ast);
+
+    for (func_name, func) in functions {
+        eval_ctx.add_function::<_, ()>(func_name, func);
+    }
 
     loop {
         let mut made_progress = false;

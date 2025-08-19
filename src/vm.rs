@@ -113,13 +113,8 @@ pub struct SomniFn<'p> {
     >,
 
     #[allow(clippy::type_complexity)]
-    expr_func: Box<
-        dyn Fn(
-                &mut dyn ExprContext<VmTypeSet>,
-                &[TypedValue],
-            ) -> Result<TypedValue, FunctionCallError>
-            + 'p,
-    >,
+    expr_func:
+        Box<dyn Fn(&mut VmTypeSet, &[TypedValue]) -> Result<TypedValue, FunctionCallError> + 'p>,
 }
 
 impl<'p> SomniFn<'p> {
@@ -130,7 +125,7 @@ impl<'p> SomniFn<'p> {
         let expr_func = func.clone();
         Self {
             func: Box::new(move |ctx, sp| func.call_from_vm(ctx, sp)),
-            expr_func: Box::new(move |ctx, args| expr_func.call(&mut *ctx.type_context(), args)),
+            expr_func: Box::new(move |ctx, args| expr_func.call(ctx, args)),
         }
     }
 
@@ -145,6 +140,16 @@ impl<'p> SomniFn<'p> {
     fn call_from_expr(
         &self,
         ctx: &mut dyn ExprContext<VmTypeSet>,
+        args: &[TypedValue],
+    ) -> Result<TypedValue, FunctionCallError> {
+        (self.expr_func)(&mut *ctx.type_context(), args)
+    }
+}
+
+impl<A> DynFunction<A, VmTypeSet> for &SomniFn<'_> {
+    fn call(
+        &self,
+        ctx: &mut VmTypeSet,
         args: &[TypedValue],
     ) -> Result<TypedValue, FunctionCallError> {
         (self.expr_func)(ctx, args)

@@ -1,6 +1,13 @@
+use std::collections::HashMap;
+
 use somni_parser::parser::parse;
 
-use crate::{codegen::Program, error::CompileError, types::VmTypeSet};
+use crate::{
+    codegen::Program,
+    error::CompileError,
+    types::VmTypeSet,
+    vm::{NativeFunction, SomniFn},
+};
 
 pub mod codegen;
 pub mod error;
@@ -16,16 +23,20 @@ pub mod vm;
 /// A Somni compiler.
 ///
 /// The compiler is used to turn source code into executable programs. Programs can then be executed using a [`vm::EvalContext`].
-pub struct Compiler {}
+pub struct Compiler<'ctx> {
+    functions: HashMap<&'ctx str, SomniFn<'ctx>>,
+}
 
-impl Compiler {
+impl<'ctx> Compiler<'ctx> {
     /// Creates a new compiler instance.
     pub fn new() -> Self {
-        Self {}
+        Self {
+            functions: HashMap::new(),
+        }
     }
 
     /// Compiles Somni source code into a [`Program`].
-    pub fn compile(source: &str) -> Result<Program, CompileError<'_>> {
+    pub fn compile<'s>(&mut self, source: &'s str) -> Result<Program, CompileError<'s>> {
         let ast = match parse::<VmTypeSet>(source) {
             Ok(ast) => ast,
             Err(parse_error) => {
@@ -48,7 +59,39 @@ impl Compiler {
             }
         };
 
-        codegen::compile(source, ast, &ir)
+        codegen::compile(source, ast, &ir, &self.functions)
+    }
+
+    /// Adds a new function to the compiler context.
+    ///
+    /// These functions are executed if they are needed to evaluate global variable initial values.
+    ///
+    /// If a program refers to a foreign function that is called both during compilation, and also in runtime,
+    /// the function registered to the compiler and the [`vm::EvalContext`] should behave the same.
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// use somni::Compiler;
+    ///
+    /// let mut compiler = Compiler::new();
+    ///
+    /// compiler.add_function("rust_fn", |a: u64| a + 3);
+    ///
+    /// compiler.compile(r#"
+    ///     extern fn rust_fn() -> int;
+    ///
+    ///     var a: int = foo();
+    ///
+    ///     fn foo() -> int {
+    ///         rust_fn(2) // returns 5 from Rust code
+    ///     }
+    /// "#).unwrap();
+    pub fn add_function<F, A>(&mut self, name: &'ctx str, func: F)
+    where
+        F: NativeFunction<A> + 'ctx,
+    {
+        self.functions.insert(name, SomniFn::new(func));
     }
 }
 
