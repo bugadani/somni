@@ -1485,7 +1485,10 @@ impl<'s> FunctionCompiler<'s, '_> {
         // Compile the arguments.
         let arguments = arguments
             .iter()
-            .map(|arg| self.compile_right_hand_expression(arg))
+            .map(|arg| {
+                self.compile_right_hand_expression(arg)
+                    .map(|val| (val, arg.location()))
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let function_name = name.source(self.source);
         let function_index = self.strings.intern(function_name);
@@ -1504,14 +1507,11 @@ impl<'s> FunctionCompiler<'s, '_> {
             self.declare_temporary(name.location, Value::Void, AllocationMethod::TopOfStack);
         let arg_temporaries = arguments
             .iter()
-            .map(|arg| {
-                let arg_temp = self.declare_temporary(
-                    name.location,
-                    Value::Void,
-                    AllocationMethod::TopOfStack,
-                );
+            .map(|(arg, location)| {
+                let arg_temp =
+                    self.declare_temporary(*location, Value::Void, AllocationMethod::TopOfStack);
                 self.blocks
-                    .push_instruction(name.location, Ir::Assign(arg_temp, *arg));
+                    .push_instruction(*location, Ir::Assign(arg_temp, *arg));
                 arg_temp
             })
             .collect::<Vec<_>>();

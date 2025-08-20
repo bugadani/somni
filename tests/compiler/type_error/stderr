@@ -1,5 +1,5 @@
 Compile error
- ---> at line 7 column 5
+ ---> at line 7 column 7
   |
-7 |     f(x);
-  |     ^ Type mismatch: expected float, found {int/signed}
+7 |     f(xy);
+  |       ^^ Type mismatch: expected float, found {int/signed}

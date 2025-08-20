@@ -17,9 +17,9 @@ Function: foo
 block 0
   var return_value: string = None
   var temp1: void = None
-  var x: void = None
+  var xy: void = None
   var temp3: {int/signed} = Some(MaybeSignedInt(3))
-  x = temp3
+  xy = temp3
   free(temp3)
   var y: void = None
   var temp5: {int/signed} = Some(MaybeSignedInt(2))
@@ -27,7 +27,7 @@ block 0
   free(temp5)
   var z: void = None
   var temp7: void = None
-  temp7 = x + y
+  temp7 = xy + y
   z = temp7
   free(temp7)
   var temp8: void = None
@@ -35,7 +35,7 @@ block 0
   var temp10: int = None
   var temp11: void = None
   var temp12: void = None
-  temp12 = x
+  temp12 = xy
   temp11 = call f(temp12)
   temp8 = temp11
   free(temp12)
@@ -46,7 +46,7 @@ block 0
   return_value = z
   free(z)
   free(y)
-  free(x)
+  free(xy)
   free(temp1)
   free(return_value)
   -> block 2

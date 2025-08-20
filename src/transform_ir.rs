@@ -208,33 +208,17 @@ impl<'a, 's> TypeResolver<'a, 's> {
                                         any_changed = true;
                                     }
 
-                                    if required_ty.maybe_signed_integer() {
-                                        if !ty.is_integer() {
-                                            return Err(CompileError {
-                                                source: self.source,
-                                                location: constraint.source_location,
-                                                error: format!(
-                                                    "Type mismatch: expected {required_ty}, found {}",
-                                                    *ty
-                                                )
-                                                .into_boxed_str(),
-                                            });
-                                        }
+                                    // If any of the types is a maybe integer, the other needs to be some kind of integer.
+                                    let is_compatible = (required_ty.maybe_signed_integer()
+                                        || ty.maybe_signed_integer())
+                                        && (ty.is_integer() && required_ty.is_integer());
+
+                                    if is_compatible {
                                         true
-                                    } else if ty.maybe_signed_integer() {
-                                        if !required_ty.is_integer() {
-                                            return Err(CompileError {
-                                                source: self.source,
-                                                location: constraint.source_location,
-                                                error: format!(
-                                                    "Type mismatch: expected {required_ty}, found {}",
-                                                    *ty
-                                                )
-                                                .into_boxed_str(),
-                                            });
-                                        }
-                                        true
-                                    } else if *ty != required_ty {
+                                    } else if *ty == required_ty {
+                                        *ty = required_ty;
+                                        !ty.maybe_signed_integer()
+                                    } else {
                                         return Err(CompileError {
                                             source: self.source,
                                             location: constraint.source_location,
@@ -244,9 +228,6 @@ impl<'a, 's> TypeResolver<'a, 's> {
                                             )
                                             .into_boxed_str(),
                                         });
-                                    } else {
-                                        *ty = required_ty;
-                                        !ty.maybe_signed_integer()
                                     }
                                 }
                                 None => {
@@ -297,25 +278,20 @@ impl<'a, 's> TypeResolver<'a, 's> {
                         (Some(left_ty), Some(right_ty))
                             if left_ty.maybe_signed_integer() && right_ty.is_integer() =>
                         {
-                            if right_ty.maybe_signed_integer() {
-                                false
-                            } else {
+                            if !right_ty.maybe_signed_integer() {
                                 self.locals
                                     .variable_mut(left.local_index().unwrap())
                                     .unwrap()
                                     .ty = Some(right_ty.reference());
 
                                 any_changed = true;
-
-                                !right_ty.maybe_signed_integer()
                             }
+                            !right_ty.maybe_signed_integer()
                         }
                         (Some(left_ty), Some(right_ty))
                             if right_ty.maybe_signed_integer() && left_ty.is_integer() =>
                         {
-                            if left_ty.maybe_signed_integer() {
-                                false
-                            } else {
+                            if !left_ty.maybe_signed_integer() {
                                 let left_ty =
                                     left_ty.dereference().ok_or_else(|| CompileError {
                                         source: self.source,
@@ -329,9 +305,8 @@ impl<'a, 's> TypeResolver<'a, 's> {
                                     .ty = Some(left_ty);
 
                                 any_changed = true;
-
-                                !left_ty.maybe_signed_integer()
                             }
+                            !left_ty.maybe_signed_integer()
                         }
 
                         (Some(left_ty), Some(right_ty)) => {
@@ -617,7 +592,7 @@ fn propagate_variable_types_inner<'s>(
     let mut resolver = TypeResolver::new(source, globals, &mut implem.variables);
 
     for block in &mut implem.blocks {
-        for instruction in &block.instructions {
+        for (idx, instruction) in block.instructions.iter().enumerate() {
             match &instruction.instruction {
                 ir::Ir::Declare(dst, init_value) => {
                     if let Some(init_value) = init_value {
@@ -638,7 +613,6 @@ fn propagate_variable_types_inner<'s>(
                 ir::Ir::Call(func, return_value, args) => {
                     if let Some(signature) = signatures.get(func) {
                         // If the function has a signature, we can require the return type.
-                        // TODO: require external functions to have a signature.
                         resolver.require(
                             *return_value,
                             signature.return_type,
@@ -660,8 +634,20 @@ fn propagate_variable_types_inner<'s>(
                         }
 
                         for (arg, arg_type) in args.iter().zip(signature.arguments.iter()) {
-                            // TODO: point at variable in error message.
-                            resolver.require(*arg, *arg_type, instruction.source_location)?;
+                            let mut last_assigned_at = Location::dummy();
+                            for instr in block.instructions[..idx].iter().rev() {
+                                if let ir::IrWithLocation {
+                                    instruction: ir::Ir::Assign(dst, _),
+                                    source_location,
+                                } = instr
+                                {
+                                    if dst == arg {
+                                        last_assigned_at = *source_location;
+                                        break;
+                                    }
+                                }
+                            }
+                            resolver.require(*arg, *arg_type, last_assigned_at)?;
                         }
                     }
                 }
