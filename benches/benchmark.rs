@@ -2,14 +2,10 @@ use std::time::Duration;
 
 use criterion::Criterion;
 use somni::{
-    codegen,
-    error::CompileError,
-    ir,
-    transform_ir::transform_ir,
     vm::{EvalContext, EvalEvent},
+    Compiler,
 };
 use somni_expr::{Context, ExprContext};
-use somni_parser::parser;
 
 const SOURCE_CODE: &str = r#"
 fn fib(n: int) -> int {
@@ -36,29 +32,7 @@ pub fn eval(c: &mut Criterion) {
 }
 
 pub fn vm(c: &mut Criterion) {
-    let ast = match parser::parse(SOURCE_CODE) {
-        Ok(ast) => ast,
-        Err(e) => {
-            println!("Error parsing `{SOURCE_CODE}`");
-            println!("{:?}", CompileError::new(SOURCE_CODE, e));
-            panic!("Parsing failed");
-        }
-    };
-    let mut ir = match ir::Program::compile(&SOURCE_CODE, &ast) {
-        Ok(program) => program,
-        Err(e) => {
-            println!("Error compiling `{SOURCE_CODE}`");
-            println!("{:?}", e);
-            panic!("Compilation failed");
-        }
-    };
-    if let Err(e) = transform_ir(&SOURCE_CODE, &mut ir) {
-        println!("Error transforming IR for `{SOURCE_CODE}`");
-        println!("{:?}", e);
-        panic!("Transformation failed");
-    }
-    let mut strings = ir.strings.clone().finalize();
-    let program = match codegen::compile(&SOURCE_CODE, &ir) {
+    let program = match Compiler::new().compile(&SOURCE_CODE) {
         Ok(program) => program,
         Err(e) => {
             println!("Error compiling `{SOURCE_CODE}`");
@@ -67,6 +41,7 @@ pub fn vm(c: &mut Criterion) {
         }
     };
 
+    let mut strings = program.debug_info.strings.clone();
     c.bench_function("fib 20 (vm)", |b| {
         b.iter(|| {
             let mut context = EvalContext::new(SOURCE_CODE, &mut strings, &program);
