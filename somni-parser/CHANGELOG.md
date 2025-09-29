@@ -8,6 +8,7 @@
 - Split `Expression` and `RightHandExpression`, added `LeftHandExpression`
 - Support free-standing block scopes
 - Added `location` getters to statement types
+- Added `%` for modulo operation
 
 # [0.1.0] - 2025-07-24
 

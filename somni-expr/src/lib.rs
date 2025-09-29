@@ -318,6 +318,7 @@ where
     dispatch_binary!(subtract);
     dispatch_binary!(multiply);
     dispatch_binary!(divide);
+    dispatch_binary!(modulo);
     dispatch_unary!(not);
     dispatch_unary!(negate);
 }

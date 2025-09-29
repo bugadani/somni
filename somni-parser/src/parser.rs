@@ -40,7 +40,7 @@
 //! binary6 -> binary7 ( '&' binary7 )* ;
 //! binary7 -> binary8 ( ( '<<' | '>>' ) binary8 )* ;
 //! binary8 -> binary9 ( ( '+' | '-' ) binary9 )* ;
-//! binary9 -> unary ( ( '*' | '/' ) unary )* ;
+//! binary9 -> unary ( ( '*' | '/', '%' ) unary )* ;
 //! unary -> ('!' | '-' | '&' | '*' )* primary | call ;
 //! primary -> ( literal | identifier ( '(' call_arguments ')' )? ) | '(' right_hand_expression ')' ;
 //! call_arguments -> right_hand_expression ( ',' right_hand_expression )* ','? ;
@@ -687,7 +687,7 @@ where
             &["&"],
             &["<<", ">>"],
             &["+", "-"],
-            &["*", "/"],
+            &["*", "/", "%"],
         ];
 
         Self::parse_binary(stream, operators)

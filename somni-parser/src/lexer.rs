@@ -146,7 +146,7 @@ pub(crate) fn tokenize(source: &str) -> impl Tokenizer + '_ {
                     // skip whitespace
                 }
                 '+' | '-' | '*' | '(' | ')' | '{' | '}' | '[' | ']' | ',' | ';' | '/' | ':'
-                | '<' | '>' | '&' | '|' | '^' | '=' | '!' => {
+                | '<' | '>' | '&' | '|' | '^' | '=' | '!' | '%' => {
                     return Some(Ok(Token {
                         kind: TokenKind::Symbol,
                         location,

@@ -176,6 +176,7 @@ where
                     "-" => TypedValue::<T>::subtract(type_context, lhs, rhs),
                     "*" => TypedValue::<T>::multiply(type_context, lhs, rhs),
                     "/" => TypedValue::<T>::divide(type_context, lhs, rhs),
+                    "%" => TypedValue::<T>::modulo(type_context, lhs, rhs),
                     "<" => TypedValue::<T>::less_than(type_context, lhs, rhs),
                     ">" => TypedValue::<T>::less_than(type_context, rhs, lhs),
                     "<=" => TypedValue::<T>::less_than_or_equal(type_context, lhs, rhs),

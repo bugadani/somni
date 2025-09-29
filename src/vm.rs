@@ -281,6 +281,7 @@ macro_rules! for_each_binary_operator {
         inner!(codegen::BinaryOperator::Subtract, subtract);
         inner!(codegen::BinaryOperator::Multiply, multiply);
         inner!(codegen::BinaryOperator::Divide, divide);
+        inner!(codegen::BinaryOperator::Modulo, modulo);
     };
 }
 
@@ -302,6 +303,7 @@ macro_rules! dispatch_binary_operator {
             codegen::BinaryOperator::Subtract => inner!(subtract),
             codegen::BinaryOperator::Multiply => inner!(multiply),
             codegen::BinaryOperator::Divide => inner!(divide),
+            codegen::BinaryOperator::Modulo => inner!(modulo),
         }
     }};
 }
