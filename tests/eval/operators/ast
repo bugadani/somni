@@ -1,0 +1,396 @@
+Program {
+    items: [
+        Function(
+            Function {
+                fn_token: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 13,
+                        end: 15,
+                    },
+                },
+                name: Token {
+                    kind: Identifier,
+                    location: Location {
+                        start: 16,
+                        end: 19,
+                    },
+                },
+                opening_paren: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 19,
+                        end: 20,
+                    },
+                },
+                arguments: [],
+                closing_paren: Token {
+                    kind: Symbol,
+                    location: Location {
+                        start: 20,
+                        end: 21,
+                    },
+                },
+                return_decl: Some(
+                    ReturnDecl {
+                        return_token: Token {
+                            kind: Symbol,
+                            location: Location {
+                                start: 22,
+                                end: 24,
+                            },
+                        },
+                        return_type: TypeHint {
+                            type_name: Token {
+                                kind: Identifier,
+                                location: Location {
+                                    start: 25,
+                                    end: 29,
+                                },
+                            },
+                        },
+                    },
+                ),
+                body: Body {
+                    opening_brace: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 30,
+                            end: 31,
+                        },
+                    },
+                    statements: [
+                        ImplicitReturn(
+                            BinaryOperator {
+                                name: Token {
+                                    kind: Symbol,
+                                    location: Location {
+                                        start: 110,
+                                        end: 112,
+                                    },
+                                },
+                                operands: [
+                                    BinaryOperator {
+                                        name: Token {
+                                            kind: Symbol,
+                                            location: Location {
+                                                start: 91,
+                                                end: 93,
+                                            },
+                                        },
+                                        operands: [
+                                            BinaryOperator {
+                                                name: Token {
+                                                    kind: Symbol,
+                                                    location: Location {
+                                                        start: 72,
+                                                        end: 74,
+                                                    },
+                                                },
+                                                operands: [
+                                                    BinaryOperator {
+                                                        name: Token {
+                                                            kind: Symbol,
+                                                            location: Location {
+                                                                start: 53,
+                                                                end: 55,
+                                                            },
+                                                        },
+                                                        operands: [
+                                                            BinaryOperator {
+                                                                name: Token {
+                                                                    kind: Symbol,
+                                                                    location: Location {
+                                                                        start: 43,
+                                                                        end: 45,
+                                                                    },
+                                                                },
+                                                                operands: [
+                                                                    BinaryOperator {
+                                                                        name: Token {
+                                                                            kind: Symbol,
+                                                                            location: Location {
+                                                                                start: 39,
+                                                                                end: 40,
+                                                                            },
+                                                                        },
+                                                                        operands: [
+                                                                            Literal {
+                                                                                value: Literal {
+                                                                                    value: Integer(
+                                                                                        1,
+                                                                                    ),
+                                                                                    location: Location {
+                                                                                        start: 37,
+                                                                                        end: 38,
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                            Literal {
+                                                                                value: Literal {
+                                                                                    value: Integer(
+                                                                                        1,
+                                                                                    ),
+                                                                                    location: Location {
+                                                                                        start: 41,
+                                                                                        end: 42,
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                        ],
+                                                                    },
+                                                                    Literal {
+                                                                        value: Literal {
+                                                                            value: Integer(
+                                                                                2,
+                                                                            ),
+                                                                            location: Location {
+                                                                                start: 46,
+                                                                                end: 47,
+                                                                            },
+                                                                        },
+                                                                    },
+                                                                ],
+                                                            },
+                                                            BinaryOperator {
+                                                                name: Token {
+                                                                    kind: Symbol,
+                                                                    location: Location {
+                                                                        start: 62,
+                                                                        end: 64,
+                                                                    },
+                                                                },
+                                                                operands: [
+                                                                    BinaryOperator {
+                                                                        name: Token {
+                                                                            kind: Symbol,
+                                                                            location: Location {
+                                                                                start: 58,
+                                                                                end: 59,
+                                                                            },
+                                                                        },
+                                                                        operands: [
+                                                                            Literal {
+                                                                                value: Literal {
+                                                                                    value: Integer(
+                                                                                        2,
+                                                                                    ),
+                                                                                    location: Location {
+                                                                                        start: 56,
+                                                                                        end: 57,
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                            Literal {
+                                                                                value: Literal {
+                                                                                    value: Integer(
+                                                                                        2,
+                                                                                    ),
+                                                                                    location: Location {
+                                                                                        start: 60,
+                                                                                        end: 61,
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                        ],
+                                                                    },
+                                                                    Literal {
+                                                                        value: Literal {
+                                                                            value: Integer(
+                                                                                4,
+                                                                            ),
+                                                                            location: Location {
+                                                                                start: 65,
+                                                                                end: 66,
+                                                                            },
+                                                                        },
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ],
+                                                    },
+                                                    BinaryOperator {
+                                                        name: Token {
+                                                            kind: Symbol,
+                                                            location: Location {
+                                                                start: 81,
+                                                                end: 83,
+                                                            },
+                                                        },
+                                                        operands: [
+                                                            BinaryOperator {
+                                                                name: Token {
+                                                                    kind: Symbol,
+                                                                    location: Location {
+                                                                        start: 77,
+                                                                        end: 78,
+                                                                    },
+                                                                },
+                                                                operands: [
+                                                                    Literal {
+                                                                        value: Literal {
+                                                                            value: Integer(
+                                                                                3,
+                                                                            ),
+                                                                            location: Location {
+                                                                                start: 75,
+                                                                                end: 76,
+                                                                            },
+                                                                        },
+                                                                    },
+                                                                    Literal {
+                                                                        value: Literal {
+                                                                            value: Integer(
+                                                                                2,
+                                                                            ),
+                                                                            location: Location {
+                                                                                start: 79,
+                                                                                end: 80,
+                                                                            },
+                                                                        },
+                                                                    },
+                                                                ],
+                                                            },
+                                                            Literal {
+                                                                value: Literal {
+                                                                    value: Integer(
+                                                                        1,
+                                                                    ),
+                                                                    location: Location {
+                                                                        start: 84,
+                                                                        end: 85,
+                                                                    },
+                                                                },
+                                                            },
+                                                        ],
+                                                    },
+                                                ],
+                                            },
+                                            BinaryOperator {
+                                                name: Token {
+                                                    kind: Symbol,
+                                                    location: Location {
+                                                        start: 100,
+                                                        end: 102,
+                                                    },
+                                                },
+                                                operands: [
+                                                    BinaryOperator {
+                                                        name: Token {
+                                                            kind: Symbol,
+                                                            location: Location {
+                                                                start: 96,
+                                                                end: 97,
+                                                            },
+                                                        },
+                                                        operands: [
+                                                            Literal {
+                                                                value: Literal {
+                                                                    value: Integer(
+                                                                        4,
+                                                                    ),
+                                                                    location: Location {
+                                                                        start: 94,
+                                                                        end: 95,
+                                                                    },
+                                                                },
+                                                            },
+                                                            Literal {
+                                                                value: Literal {
+                                                                    value: Integer(
+                                                                        2,
+                                                                    ),
+                                                                    location: Location {
+                                                                        start: 98,
+                                                                        end: 99,
+                                                                    },
+                                                                },
+                                                            },
+                                                        ],
+                                                    },
+                                                    Literal {
+                                                        value: Literal {
+                                                            value: Integer(
+                                                                2,
+                                                            ),
+                                                            location: Location {
+                                                                start: 103,
+                                                                end: 104,
+                                                            },
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                        ],
+                                    },
+                                    BinaryOperator {
+                                        name: Token {
+                                            kind: Symbol,
+                                            location: Location {
+                                                start: 119,
+                                                end: 121,
+                                            },
+                                        },
+                                        operands: [
+                                            BinaryOperator {
+                                                name: Token {
+                                                    kind: Symbol,
+                                                    location: Location {
+                                                        start: 115,
+                                                        end: 116,
+                                                    },
+                                                },
+                                                operands: [
+                                                    Literal {
+                                                        value: Literal {
+                                                            value: Integer(
+                                                                5,
+                                                            ),
+                                                            location: Location {
+                                                                start: 113,
+                                                                end: 114,
+                                                            },
+                                                        },
+                                                    },
+                                                    Literal {
+                                                        value: Literal {
+                                                            value: Integer(
+                                                                3,
+                                                            ),
+                                                            location: Location {
+                                                                start: 117,
+                                                                end: 118,
+                                                            },
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            Literal {
+                                                value: Literal {
+                                                    value: Integer(
+                                                        2,
+                                                    ),
+                                                    location: Location {
+                                                        start: 122,
+                                                        end: 123,
+                                                    },
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                        ),
+                    ],
+                    closing_brace: Token {
+                        kind: Symbol,
+                        location: Location {
+                            start: 125,
+                            end: 126,
+                        },
+                    },
+                },
+            },
+        ),
+    ],
+}

@@ -43,6 +43,7 @@ pub enum BinaryOperator {
     Subtract,
     Multiply,
     Divide,
+    Modulo,
 }
 
 impl std::fmt::Display for BinaryOperator {
@@ -61,6 +62,7 @@ impl std::fmt::Display for BinaryOperator {
             BinaryOperator::Subtract => "-",
             BinaryOperator::Multiply => "*",
             BinaryOperator::Divide => "/",
+            BinaryOperator::Modulo => "%",
         };
         f.write_str(operator)
     }
@@ -713,6 +715,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                     "-" => BinaryOperator::Subtract,
                     "*" => BinaryOperator::Multiply,
                     "/" => BinaryOperator::Divide,
+                    "%" => BinaryOperator::Modulo,
                     other => {
                         return Err(CompileError {
                             source: self.source,

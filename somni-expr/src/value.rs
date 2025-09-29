@@ -68,6 +68,10 @@ pub trait ValueType: Sized + Clone + PartialEq + std::fmt::Debug {
     fn divide(_a: Self, _b: Self) -> Result<Self, OperatorError> {
         unimplemented!("Operation not supported")
     }
+    /// Implements the binary `%` operator.
+    fn modulo(_a: Self, _b: Self) -> Result<Self, OperatorError> {
+        unimplemented!("Operation not supported")
+    }
     /// Implements the unary `!` operator.
     fn not(_a: Self) -> Result<Self, OperatorError> {
         unimplemented!("Operation not supported")
@@ -109,6 +113,13 @@ macro_rules! value_type_int {
                     Err(OperatorError::RuntimeError)
                 } else {
                     Ok(a / b)
+                }
+            }
+            fn modulo(a: Self, b: Self) -> Result<Self, OperatorError> {
+                if b == 0 {
+                    Err(OperatorError::RuntimeError)
+                } else {
+                    Ok(a % b)
                 }
             }
             fn bitwise_or(a: Self, b: Self) -> Result<Self, OperatorError> {
@@ -174,6 +185,9 @@ impl ValueType for f32 {
     fn divide(a: Self, b: Self) -> Result<Self, OperatorError> {
         Ok(a / b)
     }
+    fn modulo(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a % b)
+    }
     fn negate(a: Self) -> Result<Self::NegateOutput, OperatorError> {
         Ok(-a)
     }
@@ -201,6 +215,9 @@ impl ValueType for f64 {
     }
     fn divide(a: Self, b: Self) -> Result<Self, OperatorError> {
         Ok(a / b)
+    }
+    fn modulo(a: Self, b: Self) -> Result<Self, OperatorError> {
+        Ok(a % b)
     }
     fn negate(a: Self) -> Result<Self::NegateOutput, OperatorError> {
         Ok(-a)
