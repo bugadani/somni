@@ -1,4 +1,4 @@
-# Unreleased
+# [0.2.0] - 2025-09-29
 
 - The TypeSet trait has been reworked for better ergonomics. The parser's TypeSet is now an associated type. Additional associated types and trait bounds have been added.
 - The `MemoryRepr` trait has been removed.
@@ -18,4 +18,5 @@
 
 - Initial release
 
+[0.2.0]: https://github.com/bugadani/somni/compare/somni-expr-v0.1.0...somni-expr-v0.2.0
 [0.1.0]: https://github.com/bugadani/somni/releases/tag/somni-expr-v0.1.0

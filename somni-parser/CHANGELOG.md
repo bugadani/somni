@@ -1,4 +1,4 @@
-# Unreleased
+# [0.2.0] - 2025-09-29
 
 - Hidden the tokenizer function
 - Unified lexer/parser errors
@@ -14,4 +14,5 @@
 
 - Initial release
 
+[0.2.0]: https://github.com/bugadani/somni/compare/somni-parser-v0.1.0...somni-parser-v0.2.0
 [0.1.0]: https://github.com/bugadani/somni/releases/tag/somni-parser-v0.1.0
