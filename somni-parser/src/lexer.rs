@@ -114,6 +114,11 @@ pub(crate) fn tokenize(source: &str) -> impl Tokenizer + '_ {
 
                         let mut has_digit = false;
                         while let Some(maybe_digit) = chars.peek() {
+                            // Ignore underscores completely
+                            if maybe_digit == '_' {
+                                chars.next();
+                                continue;
+                            }
                             if !ident_char(maybe_digit) {
                                 break;
                             }
@@ -157,6 +162,11 @@ pub(crate) fn tokenize(source: &str) -> impl Tokenizer + '_ {
                     let mut is_float = false;
                     while let Some(maybe_boundary) = chars.peek() {
                         if !maybe_boundary.is_numeric() {
+                            // Ignore underscores completely
+                            if maybe_boundary == '_' {
+                                chars.next();
+                                continue;
+                            }
                             if maybe_boundary == '.' && is_float {
                                 break;
                             }
@@ -261,13 +271,14 @@ mod test {
 
     #[test]
     fn test_lex_numbers() {
-        let source = "2 2. 2.3 2.34 23.4 234 0b00 0b10 0b2 0x123 0xf 0xF";
+        let source = "2 2. 2.3 2.34 23.4 1_000.4 234 0b00 0b10 0b2 0x123 0xf 0xF 1_000 0x10_00";
         let expectations = [
             Ok(("2", TokenKind::DecimalInteger)),
             Ok(("2.", TokenKind::Float)),
             Ok(("2.3", TokenKind::Float)),
             Ok(("2.34", TokenKind::Float)),
             Ok(("23.4", TokenKind::Float)),
+            Ok(("1_000.4", TokenKind::Float)),
             Ok(("234", TokenKind::DecimalInteger)),
             Ok(("0b00", TokenKind::BinaryInteger)),
             Ok(("0b10", TokenKind::BinaryInteger)),
@@ -275,6 +286,8 @@ mod test {
             Ok(("0x123", TokenKind::HexInteger)),
             Ok(("0xf", TokenKind::HexInteger)),
             Ok(("0xF", TokenKind::HexInteger)),
+            Ok(("1_000", TokenKind::DecimalInteger)),
+            Ok(("0x10_00", TokenKind::HexInteger)),
         ];
 
         test_tokenizer(source, &expectations);

@@ -532,7 +532,7 @@ where
     fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let token = stream.peek_expect()?;
 
-        let token_source = stream.source(token.location);
+        let token_source = &stream.source(token.location).replace("_", "");
         let location = token.location;
 
         let literal_value = match token.kind {
@@ -966,5 +966,14 @@ mod tests {
             "Parse error: Invalid hexadecimal integer literal",
             result.error.as_ref()
         );
+    }
+
+    #[test]
+    fn test_grouped_numeric_literal() {
+        let source = "1_000_000";
+
+        let result = parse_expression::<TypeSet32>(source).unwrap();
+
+        assert_eq!(source, result.location().extract(source));
     }
 }

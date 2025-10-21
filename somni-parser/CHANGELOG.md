@@ -1,3 +1,7 @@
+# [0.2.1] - 2025-10-21
+
+- Parse grouped numeric literals (`1_000_000`).
+
 # [0.2.0] - 2025-09-29
 
 - Hidden the tokenizer function
