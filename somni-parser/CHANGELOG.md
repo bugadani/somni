@@ -1,3 +1,7 @@
+# [0.2.2] - 2025-10-23
+
+- Fix parsing non-numeric literals that contain `_`.
+
 # [0.2.1] - 2025-10-21
 
 - Parse grouped numeric literals (`1_000_000`).

@@ -532,19 +532,31 @@ where
     fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let token = stream.peek_expect()?;
 
-        let token_source = &stream.source(token.location).replace("_", "");
+        let token_source = stream.source(token.location);
         let location = token.location;
 
         let literal_value = match token.kind {
-            TokenKind::BinaryInteger => Self::parse_integer_literal(&token_source[2..], 2)
-                .map_err(|_| stream.error("Invalid binary integer literal"))?,
-            TokenKind::DecimalInteger => Self::parse_integer_literal(token_source, 10)
-                .map_err(|_| stream.error("Invalid integer literal"))?,
-            TokenKind::HexInteger => Self::parse_integer_literal(&token_source[2..], 16)
-                .map_err(|_| stream.error("Invalid hexadecimal integer literal"))?,
-            TokenKind::Float => <T::Float as FloatParser>::parse(token_source)
-                .map(LiteralValue::Float)
-                .map_err(|_| stream.error("Invalid float literal"))?,
+            TokenKind::BinaryInteger => {
+                let token_source = token_source.replace("_", "");
+                Self::parse_integer_literal(&token_source[2..], 2)
+                    .map_err(|_| stream.error("Invalid binary integer literal"))?
+            }
+            TokenKind::DecimalInteger => {
+                let token_source = token_source.replace("_", "");
+                Self::parse_integer_literal(&token_source, 10)
+                    .map_err(|_| stream.error("Invalid integer literal"))?
+            }
+            TokenKind::HexInteger => {
+                let token_source = token_source.replace("_", "");
+                Self::parse_integer_literal(&token_source[2..], 16)
+                    .map_err(|_| stream.error("Invalid hexadecimal integer literal"))?
+            }
+            TokenKind::Float => {
+                let token_source = token_source.replace("_", "");
+                <T::Float as FloatParser>::parse(&token_source)
+                    .map(LiteralValue::Float)
+                    .map_err(|_| stream.error("Invalid float literal"))?
+            }
             TokenKind::String => match unescape(&token_source[1..token_source.len() - 1]) {
                 Ok(string) => LiteralValue::String(string),
                 Err(offset) => {
@@ -975,5 +987,52 @@ mod tests {
         let result = parse_expression::<TypeSet32>(source).unwrap();
 
         assert_eq!(source, result.location().extract(source));
+    }
+
+    #[test]
+    fn test_parse_strings() {
+        type LitVal = LiteralValue<TypeSet32>;
+
+        let test_data = [
+            (r#""hel_lo""#, Ok(LitVal::String(r#"hel_lo"#.to_string()))),
+            ("1_000", Ok(LitVal::Integer(1000))),
+            ("true", Ok(LitVal::Boolean(true))),
+            ("false", Ok(LitVal::Boolean(false))),
+            (
+                "fal_se",
+                Err("Parse error: Expected literal (number, string, or boolean)"),
+            ),
+        ];
+
+        for (source, expected) in test_data {
+            let tokens = crate::lexer::tokenize(source);
+            let mut stream = TokenStream::new(source, tokens);
+
+            let lit = match Literal::<TypeSet32>::parse(&mut stream) {
+                Ok(lit) => lit,
+                Err(err) => {
+                    let Err(expected_err) = expected else {
+                        panic!(
+                            "Expected parsing to succeed, but it failed with error: {}",
+                            err
+                        );
+                    };
+                    assert_eq!(expected_err, err.to_string());
+                    continue;
+                }
+            };
+
+            let Ok(expected) = expected else {
+                panic!("Expected error, but `{source}` was parsed successfully");
+            };
+
+            match (lit.value, expected) {
+                (LitVal::Integer(a), LitVal::Integer(b)) => assert_eq!(a, b),
+                (LitVal::Float(a), LitVal::Float(b)) => assert_eq!(a, b),
+                (LitVal::String(a), LitVal::String(b)) => assert_eq!(a, b),
+                (LitVal::Boolean(a), LitVal::Boolean(b)) => assert_eq!(a, b),
+                _ => panic!("Unexpected literal type"),
+            }
+        }
     }
 }
