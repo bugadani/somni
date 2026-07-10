@@ -1,4 +1,4 @@
-# Unreleased
+# [0.3.0] - 2026-07-10
 
 - Added iterators and for loops
 - Bumped Rust version to 1.85.0, and edition to 2024.
@@ -27,5 +27,8 @@
 
 - Initial release
 
+[0.3.0]: https://github.com/bugadani/somni/compare/somni-parser-v0.2.2...somni-parser-v0.3.0
+[0.2.2]: https://github.com/bugadani/somni/compare/somni-parser-v0.2.1...somni-parser-v0.2.2
+[0.2.1]: https://github.com/bugadani/somni/compare/somni-parser-v0.2.0...somni-parser-v0.2.1
 [0.2.0]: https://github.com/bugadani/somni/compare/somni-parser-v0.1.0...somni-parser-v0.2.0
 [0.1.0]: https://github.com/bugadani/somni/releases/tag/somni-parser-v0.1.0
