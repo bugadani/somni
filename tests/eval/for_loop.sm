@@ -1,0 +1,51 @@
+//@ assert(sum_range(0, 5) == 10)
+//@ assert(sum_range(3, 3) == 0)
+//@ assert(count(0, 7) == 7)
+//@ assert(skip_and_stop() == 12)
+//@ assert(nested() == 9)
+
+extern fn range(start: int, end: int) -> iter;
+
+// Sums all values yielded by the iterator.
+fn sum_range(start: int, end: int) -> int {
+    var total = 0;
+    for x: int in range(start, end) {
+        total = total + x;
+    }
+    return total;
+}
+
+// Counts iterations using an explicit counter.
+fn count(start: int, end: int) -> int {
+    var n = 0;
+    for _x: int in range(start, end) {
+        n = n + 1;
+    }
+    return n;
+}
+
+// Exercises `continue` and `break` inside a `for` loop.
+fn skip_and_stop() -> int {
+    var total = 0;
+    for x: int in range(0, 10) {
+        if x == 3 {
+            continue;
+        }
+        if x == 6 {
+            break;
+        }
+        total = total + x;
+    }
+    return total;
+}
+
+// Nested `for` loops sharing the same iterator source.
+fn nested() -> int {
+    var total = 0;
+    for a: int in range(0, 3) {
+        for b: int in range(0, 3) {
+            total = total + a * b;
+        }
+    }
+    return total;
+}

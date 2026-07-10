@@ -1,6 +1,6 @@
 use somni_parser::{
     ast::{
-        Body, Expression, Function, If, LeftHandExpression, LiteralValue, Loop,
+        Body, Expression, For, Function, If, LeftHandExpression, LiteralValue, Loop,
         RightHandExpression, Statement, TypeHint, VariableDefinition,
     },
     lexer,
@@ -368,6 +368,7 @@ where
             }
             Statement::If(if_statement) => return self.visit_if(if_statement),
             Statement::Loop(loop_statement) => return self.visit_loop(loop_statement),
+            Statement::For(for_statement) => return self.visit_for(for_statement),
             Statement::Break(_) => return Ok(Some(StatementResult::LoopBreak)),
             Statement::Continue(_) => return Ok(Some(StatementResult::LoopContinue)),
             Statement::Scope(body) => {
@@ -428,6 +429,54 @@ where
     ) -> Result<Option<StatementResult<T>>, EvalError> {
         loop {
             match self.visit_body(&loop_statement.body)? {
+                ret @ StatementResult::Return(_) => return Ok(Some(ret)),
+                StatementResult::LoopBreak => return Ok(None),
+                StatementResult::LoopContinue
+                | StatementResult::EndOfBody
+                | StatementResult::ImplicitReturn(_) => {}
+            }
+        }
+    }
+
+    fn visit_for(
+        &mut self,
+        for_statement: &For<T::Parser>,
+    ) -> Result<Option<StatementResult<T>>, EvalError> {
+        // Evaluate the iterable. It must produce an iterator.
+        let iterable = self.visit_right_hand_expression(&for_statement.iterable)?;
+        let TypedValue::Iter(iter) = iterable else {
+            return Err(EvalError {
+                message: format!("Expected an iterator, got {}", iterable.type_of())
+                    .into_boxed_str(),
+                location: for_statement.iterable.location(),
+            });
+        };
+
+        // The loop variable's declared type. Values produced by the iterator are
+        // checked against it, matching the VM's runtime behavior.
+        let elem_ty = Type::from_name(for_statement.var_type.type_name.source(self.source))
+            .map_err(|message| EvalError {
+                message,
+                location: for_statement.var_type.type_name.location,
+            })?;
+        let var_name = for_statement.variable.source(self.source);
+
+        loop {
+            let Some(value) = self.context.type_context().iter_next(&iter) else {
+                return Ok(None);
+            };
+            // A mismatch is about the declared element type, so point the error at
+            // the type annotation rather than the loop variable name.
+            let value = self.typecheck(value, elem_ty, for_statement.variable.location)?;
+
+            // Bind the loop variable in a fresh scope for this iteration.
+            self.context.open_scope();
+            self.context.declare(var_name, value);
+
+            let body_result = self.visit_body(&for_statement.body);
+            self.context.close_scope();
+
+            match body_result? {
                 ret @ StatementResult::Return(_) => return Ok(Some(ret)),
                 StatementResult::LoopBreak => return Ok(None),
                 StatementResult::LoopContinue

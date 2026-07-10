@@ -64,6 +64,9 @@ pub fn run_eval_test(program: codegen::Program, path: impl AsRef<Path>) {
     context.add_function("add_from_rust", |a: u64, b: u64| -> i64 { (a + b) as i64 });
     context.add_function("assert", |a: bool| a); // No-op to test calling Rust functions from expressions
     context.add_function("reverse", |s: &str| s.chars().rev().collect::<String>());
+    context.add_function("range", |start: u64, end: u64| {
+        crate::types::SomniIter::new((start..end).map(somni_expr::TypedValue::Int))
+    });
 
     for expression in &expressions {
         let expression = if let Some(e) = expression.strip_prefix('+') {
@@ -207,4 +210,75 @@ fn filter(path: &Path) -> bool {
     };
 
     Path::new(&env) == path
+}
+
+/// Verifies that the `somni-expr` tree-walking evaluator (not the VM) can execute
+/// `for` loops, using an iterator-registry-backed type set.
+#[cfg(test)]
+mod expr_for_loop_tests {
+    use somni_expr::{Context, TypedValue};
+
+    use crate::types::{SomniIter, VmTypeSet};
+
+    fn run(program: &str, expr: &str) -> TypedValue<VmTypeSet> {
+        let mut ctx = Context::<VmTypeSet>::parse_with_types(program).expect("failed to parse");
+        ctx.add_function("range", |a: u64, b: u64| {
+            SomniIter::new((a..b).map(TypedValue::<VmTypeSet>::Int))
+        });
+        ctx.evaluate::<TypedValue<VmTypeSet>>(expr)
+            .expect("failed to evaluate")
+    }
+
+    const PROGRAM: &str = r#"
+extern fn range(start: int, end: int) -> iter;
+
+fn sum_range(start: int, end: int) -> int {
+    var total = 0;
+    for x: int in range(start, end) {
+        total = total + x;
+    }
+    return total;
+}
+
+fn skip_and_stop() -> int {
+    var total = 0;
+    for x: int in range(0, 10) {
+        if x == 3 {
+            continue;
+        }
+        if x == 6 {
+            break;
+        }
+        total = total + x;
+    }
+    return total;
+}
+
+fn nested() -> int {
+    var total = 0;
+    for a: int in range(0, 3) {
+        for b: int in range(0, 3) {
+            total = total + a * b;
+        }
+    }
+    return total;
+}
+"#;
+
+    #[test]
+    fn sums_a_range() {
+        assert_eq!(run(PROGRAM, "sum_range(0, 5)"), TypedValue::Int(10));
+        assert_eq!(run(PROGRAM, "sum_range(3, 3)"), TypedValue::Int(0));
+    }
+
+    #[test]
+    fn supports_break_and_continue() {
+        // 0 + 1 + 2 + (skip 3) + 4 + 5 = 12
+        assert_eq!(run(PROGRAM, "skip_and_stop()"), TypedValue::Int(12));
+    }
+
+    #[test]
+    fn nested_for_loops() {
+        assert_eq!(run(PROGRAM, "nested()"), TypedValue::Int(9));
+    }
 }

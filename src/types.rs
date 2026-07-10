@@ -1,7 +1,79 @@
-use somni_expr::{OperatorError, Type, TypeSet};
+use std::{cell::RefCell, fmt, rc::Rc};
+
+use somni_expr::{
+    value::{LoadStore, ValueType},
+    OperatorError, Type, TypeSet,
+};
 use somni_parser::parser::TypeSet as ParserTypeSet;
 
 use crate::string_interner::{StringIndex, StringInterner};
+
+/// The value type produced by iterators inside the VM.
+type ExprValue = somni_expr::TypedValue<VmTypeSet>;
+
+/// A runtime iterator handle backed by a boxed Rust iterator.
+///
+/// Iterators are opaque, handle-sized values (like strings). The concrete iterator
+/// lives in the type context's registry; a [`TypedValue::Iter`] holds the index into it.
+#[derive(Clone)]
+pub struct SomniIter {
+    inner: Rc<RefCell<std::iter::Peekable<Box<dyn Iterator<Item = ExprValue>>>>>,
+}
+
+impl SomniIter {
+    /// Creates an iterator from anything yielding Somni values.
+    pub fn new<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = ExprValue> + 'static,
+    {
+        let boxed: Box<dyn Iterator<Item = ExprValue>> = Box::new(iter.into_iter());
+        Self {
+            inner: Rc::new(RefCell::new(boxed.peekable())),
+        }
+    }
+
+    fn has_next(&self) -> bool {
+        self.inner.borrow_mut().peek().is_some()
+    }
+
+    fn next_value(&self) -> Option<ExprValue> {
+        self.inner.borrow_mut().next()
+    }
+}
+
+impl fmt::Debug for SomniIter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("<iter>")
+    }
+}
+
+impl PartialEq for SomniIter {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl ValueType for SomniIter {
+    const TYPE: Type = Type::Iter;
+    type NegateOutput = Self;
+}
+
+impl LoadStore<VmTypeSet> for SomniIter {
+    type Output<'s> = Self;
+
+    fn load<'s>(ctx: &'s VmTypeSet, typed: &'s ExprValue) -> Option<Self::Output<'s>> {
+        if let somni_expr::TypedValue::Iter(handle) = typed {
+            ctx.get_iterator(*handle)
+        } else {
+            None
+        }
+    }
+
+    fn store(&self, ctx: &mut VmTypeSet) -> ExprValue {
+        let handle = ctx.store_iterator(self.clone());
+        somni_expr::TypedValue::Iter(handle)
+    }
+}
 
 #[doc(hidden)]
 pub trait MemoryRepr: Sized + Copy + PartialEq {
@@ -76,6 +148,8 @@ impl TypeExt for somni_expr::Type {
             Type::Float => <<VmTypeSet as TypeSet>::Float as MemoryRepr>::BYTES,
             Type::Bool => <bool as MemoryRepr>::BYTES,
             Type::String => <<VmTypeSet as TypeSet>::String as MemoryRepr>::BYTES,
+            // Iterators are stored as an 8-byte handle into the iterator registry.
+            Type::Iter => <u64 as MemoryRepr>::BYTES,
         }
     }
 }
@@ -98,6 +172,8 @@ pub enum TypedValue {
     Bool(bool),
     /// Represents a string.
     String(StringIndex),
+    /// Represents an iterator handle.
+    Iter(usize),
 }
 
 impl From<TypedValue> for somni_expr::TypedValue<VmTypeSet> {
@@ -110,6 +186,7 @@ impl From<TypedValue> for somni_expr::TypedValue<VmTypeSet> {
             TypedValue::Float(inner) => somni_expr::TypedValue::Float(inner),
             TypedValue::Bool(inner) => somni_expr::TypedValue::Bool(inner),
             TypedValue::String(inner) => somni_expr::TypedValue::String(inner),
+            TypedValue::Iter(inner) => somni_expr::TypedValue::Iter(inner),
         }
     }
 }
@@ -123,6 +200,7 @@ impl From<somni_expr::TypedValue<VmTypeSet>> for TypedValue {
             somni_expr::TypedValue::Float(inner) => TypedValue::Float(inner),
             somni_expr::TypedValue::Bool(inner) => TypedValue::Bool(inner),
             somni_expr::TypedValue::String(inner) => TypedValue::String(inner),
+            somni_expr::TypedValue::Iter(inner) => TypedValue::Iter(inner),
         }
     }
 }
@@ -137,6 +215,7 @@ impl TypedValue {
             TypedValue::Float(_) => Type::Float,
             TypedValue::Bool(_) => Type::Bool,
             TypedValue::String(_) => Type::String,
+            TypedValue::Iter(_) => Type::Iter,
         }
     }
 
@@ -148,6 +227,7 @@ impl TypedValue {
             TypedValue::Float(value) => value.write(to),
             TypedValue::Bool(value) => value.write(to),
             TypedValue::String(value) => value.write(to),
+            TypedValue::Iter(value) => (*value as u64).write(to),
         }
     }
 
@@ -160,16 +240,40 @@ impl TypedValue {
             Type::Float => Self::Float(<_>::from_bytes(value)),
             Type::Bool => Self::Bool(<_>::from_bytes(value)),
             Type::String => Self::String(<_>::from_bytes(value)),
+            Type::Iter => Self::Iter(u64::from_bytes(value) as usize),
         }
     }
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct VmTypeSet(StringInterner);
+pub struct VmTypeSet {
+    strings: StringInterner,
+    iterators: Vec<SomniIter>,
+}
 
 impl VmTypeSet {
     pub fn new(string_interner: StringInterner) -> Self {
-        Self(string_interner)
+        Self {
+            strings: string_interner,
+            iterators: Vec::new(),
+        }
+    }
+
+    /// Drops all live iterators (called when the VM state is reset).
+    pub fn clear_iterators(&mut self) {
+        self.iterators.clear();
+    }
+
+    /// Registers a live iterator, returning its handle.
+    pub fn store_iterator(&mut self, iter: SomniIter) -> usize {
+        let handle = self.iterators.len();
+        self.iterators.push(iter);
+        handle
+    }
+
+    /// Returns a clone of the iterator handle (they share the same underlying iterator).
+    pub fn get_iterator(&self, handle: usize) -> Option<SomniIter> {
+        self.iterators.get(handle).cloned()
     }
 }
 
@@ -185,6 +289,9 @@ impl TypeSet for VmTypeSet {
     type SignedInteger = i64;
     type Float = f64;
     type String = StringIndex;
+    // The VM stores values in flat memory, so an iterator is represented as a handle
+    // into the type context's registry rather than the iterator object itself.
+    type Iterator = usize;
 
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
         i64::try_from(v).map_err(|_| OperatorError::RuntimeError)
@@ -199,10 +306,21 @@ impl TypeSet for VmTypeSet {
     }
 
     fn load_string<'s>(&'s self, str: &'s Self::String) -> &'s str {
-        self.0.lookup(*str)
+        self.strings.lookup(*str)
     }
 
     fn store_string(&mut self, str: &str) -> Self::String {
-        self.0.intern(str)
+        self.strings.intern(str)
+    }
+
+    fn iter_has_next(&self, handle: &Self::Iterator) -> bool {
+        self.iterators
+            .get(*handle)
+            .map(SomniIter::has_next)
+            .unwrap_or(false)
+    }
+
+    fn iter_next(&self, handle: &Self::Iterator) -> Option<ExprValue> {
+        self.iterators.get(*handle).and_then(SomniIter::next_value)
     }
 }

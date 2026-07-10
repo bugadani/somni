@@ -1,0 +1,380 @@
+Globals:
+
+Function: range
+  External function
+
+Function: sum_range
+block 0
+  var return_value: int = None
+  var start: int = None
+  var end: int = None
+  var temp3: void = None
+  var total: void = None
+  var temp5: {int/signed} = Some(MaybeSignedInt(0))
+  total = temp5
+  free(temp5)
+  var temp6: void = None
+  var temp7: void = None
+  var temp8: int = None
+  var temp9: int = None
+  var temp10: void = None
+  var temp11: void = None
+  temp11 = start
+  var temp12: void = None
+  temp12 = end
+  temp10 = call range(temp11, temp12)
+  temp7 = temp10
+  free(temp12)
+  free(temp11)
+  free(temp10)
+  free(temp9)
+  free(temp8)
+  -> block 2
+
+block 1
+  -> return
+
+block 2
+  var temp13: bool = None
+  temp13 = has_next(temp7)
+  if temp13 -> block 4 else block 3
+
+block 3
+  free(temp13)
+  free(temp7)
+  return_value = total
+  free(temp6)
+  free(total)
+  free(temp3)
+  free(end)
+  free(start)
+  free(return_value)
+  -> block 5
+
+block 4
+  var x: int = None
+  x = next(temp7)
+  var temp15: void = None
+  var temp16: void = None
+  temp16 = total + x
+  total = temp16
+  free(temp16)
+  var temp17: void = None
+  free(temp17)
+  free(temp15)
+  free(x)
+  -> block 2
+
+block 5
+  -> block 1
+
+block 6
+  free(end)
+  free(start)
+  free(return_value)
+  -> block 1
+
+Function: count
+block 0
+  var return_value: int = None
+  var start: int = None
+  var end: int = None
+  var temp3: void = None
+  var n: void = None
+  var temp5: {int/signed} = Some(MaybeSignedInt(0))
+  n = temp5
+  free(temp5)
+  var temp6: void = None
+  var temp7: void = None
+  var temp8: int = None
+  var temp9: int = None
+  var temp10: void = None
+  var temp11: void = None
+  temp11 = start
+  var temp12: void = None
+  temp12 = end
+  temp10 = call range(temp11, temp12)
+  temp7 = temp10
+  free(temp12)
+  free(temp11)
+  free(temp10)
+  free(temp9)
+  free(temp8)
+  -> block 2
+
+block 1
+  -> return
+
+block 2
+  var temp13: bool = None
+  temp13 = has_next(temp7)
+  if temp13 -> block 4 else block 3
+
+block 3
+  free(temp13)
+  free(temp7)
+  return_value = n
+  free(temp6)
+  free(n)
+  free(temp3)
+  free(end)
+  free(start)
+  free(return_value)
+  -> block 5
+
+block 4
+  var _x: int = None
+  _x = next(temp7)
+  var temp15: void = None
+  var temp16: {int/signed} = Some(MaybeSignedInt(1))
+  var temp17: void = None
+  temp17 = n + temp16
+  free(temp16)
+  n = temp17
+  free(temp17)
+  var temp18: void = None
+  free(temp18)
+  free(temp15)
+  free(_x)
+  -> block 2
+
+block 5
+  -> block 1
+
+block 6
+  free(end)
+  free(start)
+  free(return_value)
+  -> block 1
+
+Function: skip_and_stop
+block 0
+  var return_value: int = None
+  var temp1: void = None
+  var total: void = None
+  var temp3: {int/signed} = Some(MaybeSignedInt(0))
+  total = temp3
+  free(temp3)
+  var temp4: void = None
+  var temp5: void = None
+  var temp6: {int/signed} = Some(MaybeSignedInt(0))
+  var temp7: {int/signed} = Some(MaybeSignedInt(10))
+  var temp8: int = None
+  var temp9: int = None
+  var temp10: void = None
+  var temp11: void = None
+  temp11 = temp6
+  var temp12: void = None
+  temp12 = temp7
+  temp10 = call range(temp11, temp12)
+  temp5 = temp10
+  free(temp12)
+  free(temp11)
+  free(temp10)
+  free(temp9)
+  free(temp8)
+  free(temp7)
+  free(temp6)
+  -> block 2
+
+block 1
+  -> return
+
+block 2
+  var temp13: bool = None
+  temp13 = has_next(temp5)
+  if temp13 -> block 4 else block 3
+
+block 3
+  free(temp13)
+  free(temp5)
+  return_value = total
+  free(temp4)
+  free(total)
+  free(temp1)
+  free(return_value)
+  -> block 13
+
+block 4
+  var x: int = None
+  x = next(temp5)
+  var temp15: void = None
+  var temp16: void = None
+  var temp17: {int/signed} = Some(MaybeSignedInt(3))
+  var temp18: void = None
+  temp18 = x == temp17
+  free(temp17)
+  if temp18 -> block 6 else block 5
+
+block 5
+  free(temp18)
+  var temp20: void = None
+  var temp21: {int/signed} = Some(MaybeSignedInt(6))
+  var temp22: void = None
+  temp22 = x == temp21
+  free(temp21)
+  if temp22 -> block 10 else block 9
+
+block 6
+  var temp19: void = None
+  free(temp19)
+  free(temp18)
+  free(temp16)
+  free(temp15)
+  free(x)
+  -> block 7
+
+block 7
+  -> block 2
+
+block 8
+  -> block 5
+
+block 9
+  free(temp22)
+  var temp24: void = None
+  temp24 = total + x
+  total = temp24
+  free(temp24)
+  var temp25: void = None
+  free(temp25)
+  free(temp20)
+  free(temp16)
+  free(temp15)
+  free(x)
+  -> block 2
+
+block 10
+  var temp23: void = None
+  free(temp23)
+  free(temp22)
+  free(temp20)
+  free(temp16)
+  free(temp15)
+  free(x)
+  -> block 11
+
+block 11
+  -> block 3
+
+block 12
+  -> block 9
+
+block 13
+  -> block 1
+
+block 14
+  free(return_value)
+  -> block 1
+
+Function: nested
+block 0
+  var return_value: int = None
+  var temp1: void = None
+  var total: void = None
+  var temp3: {int/signed} = Some(MaybeSignedInt(0))
+  total = temp3
+  free(temp3)
+  var temp4: void = None
+  var temp5: void = None
+  var temp6: {int/signed} = Some(MaybeSignedInt(0))
+  var temp7: {int/signed} = Some(MaybeSignedInt(3))
+  var temp8: int = None
+  var temp9: int = None
+  var temp10: void = None
+  var temp11: void = None
+  temp11 = temp6
+  var temp12: void = None
+  temp12 = temp7
+  temp10 = call range(temp11, temp12)
+  temp5 = temp10
+  free(temp12)
+  free(temp11)
+  free(temp10)
+  free(temp9)
+  free(temp8)
+  free(temp7)
+  free(temp6)
+  -> block 2
+
+block 1
+  -> return
+
+block 2
+  var temp13: bool = None
+  temp13 = has_next(temp5)
+  if temp13 -> block 4 else block 3
+
+block 3
+  free(temp13)
+  free(temp5)
+  return_value = total
+  free(temp4)
+  free(total)
+  free(temp1)
+  free(return_value)
+  -> block 8
+
+block 4
+  var a: int = None
+  a = next(temp5)
+  var temp15: void = None
+  var temp16: void = None
+  var temp17: void = None
+  var temp18: {int/signed} = Some(MaybeSignedInt(0))
+  var temp19: {int/signed} = Some(MaybeSignedInt(3))
+  var temp20: int = None
+  var temp21: int = None
+  var temp22: void = None
+  var temp23: void = None
+  temp23 = temp18
+  var temp24: void = None
+  temp24 = temp19
+  temp22 = call range(temp23, temp24)
+  temp17 = temp22
+  free(temp24)
+  free(temp23)
+  free(temp22)
+  free(temp21)
+  free(temp20)
+  free(temp19)
+  free(temp18)
+  -> block 5
+
+block 5
+  var temp25: bool = None
+  temp25 = has_next(temp17)
+  if temp25 -> block 7 else block 6
+
+block 6
+  free(temp25)
+  free(temp17)
+  free(temp16)
+  free(temp15)
+  free(a)
+  -> block 2
+
+block 7
+  var b: int = None
+  b = next(temp17)
+  var temp27: void = None
+  var temp28: void = None
+  temp28 = a * b
+  var temp29: void = None
+  temp29 = total + temp28
+  free(temp28)
+  total = temp29
+  free(temp29)
+  var temp30: void = None
+  free(temp30)
+  free(temp27)
+  free(b)
+  -> block 5
+
+block 8
+  -> block 1
+
+block 9
+  free(return_value)
+  -> block 1
+

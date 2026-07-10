@@ -685,6 +685,26 @@ fn propagate_variable_types_inner<'s>(
                         }
                     }
                 }
+                ir::Ir::IterHasNext(dst, iter) => {
+                    resolver.require(
+                        *dst,
+                        ir::Variable::Value(ir::Type::Bool),
+                        instruction.source_location,
+                    )?;
+                    resolver.require(
+                        *iter,
+                        ir::Variable::Value(ir::Type::Iter),
+                        instruction.source_location,
+                    )?;
+                }
+                ir::Ir::IterNext(_dst, iter) => {
+                    // The destination's type comes from the loop variable's annotation.
+                    resolver.require(
+                        *iter,
+                        ir::Variable::Value(ir::Type::Iter),
+                        instruction.source_location,
+                    )?;
+                }
                 ir::Ir::FreeVariable(_) => {}
             }
         }
@@ -739,6 +759,7 @@ fn propagate_destination(
                     ir::Ir::Call(_, _, args) => args.contains(&src),
                     ir::Ir::BinaryOperator(_, _, lhs, rhs) => *lhs == src || *rhs == src,
                     ir::Ir::UnaryOperator(_, _, operand) => *operand == src,
+                    ir::Ir::IterHasNext(_, iter) | ir::Ir::IterNext(_, iter) => *iter == src,
                     _ => false,
                 };
                 if read {
@@ -749,6 +770,7 @@ fn propagate_destination(
                     ir::Ir::Call(_, dst, _) => dst,
                     ir::Ir::BinaryOperator(_, dst, _, _) => dst,
                     ir::Ir::UnaryOperator(_, dst, _) => dst,
+                    ir::Ir::IterHasNext(dst, _) | ir::Ir::IterNext(dst, _) => dst,
                     _ => continue,
                 };
 
@@ -815,7 +837,9 @@ fn remove_unused_assignments(
         match &block.instructions[idx].instruction {
             ir::Ir::Assign(_, src)
             | ir::Ir::DerefAssign(_, src)
-            | ir::Ir::UnaryOperator(_, _, src) => {
+            | ir::Ir::UnaryOperator(_, _, src)
+            | ir::Ir::IterHasNext(_, src)
+            | ir::Ir::IterNext(_, src) => {
                 if let Some(src) = src.local_index() {
                     can_remove.remove(&src);
                 }
@@ -869,7 +893,9 @@ fn remove_unused_variables(
                     can_remove.remove(&src);
                 }
             }
-            ir::Ir::UnaryOperator(_, dst, src) => {
+            ir::Ir::UnaryOperator(_, dst, src)
+            | ir::Ir::IterHasNext(dst, src)
+            | ir::Ir::IterNext(dst, src) => {
                 if let Some(src) = src.local_index() {
                     can_remove.remove(&src);
                 }
@@ -902,18 +928,14 @@ fn remove_unused_variables(
         };
     }
     for idx in (0..block.instructions.len()).rev() {
-        match &block.instructions[idx].instruction {
-            ir::Ir::Declare(v, _) => {
-                if can_remove.contains_key(&v.index) {
-                    block.instructions.remove(idx); // Remove the assignment.
-                }
-            }
-            ir::Ir::FreeVariable(v) => {
-                if can_remove.contains_key(v) {
-                    block.instructions.remove(idx); // Remove the assignment.
-                }
-            }
-            _ => {}
+        let can_remove = match &block.instructions[idx].instruction {
+            ir::Ir::Declare(v, _) => can_remove.contains_key(&v.index),
+            ir::Ir::FreeVariable(v) => can_remove.contains_key(v),
+            _ => false,
         };
+
+        if can_remove {
+            block.instructions.remove(idx);
+        }
     }
 }

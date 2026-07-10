@@ -1,0 +1,5 @@
+Compile error
+ ---> at line 5 column 19
+  |
+5 |     for x: int in total {
+  |                   ^^^^^ Type mismatch: expected iter, found int

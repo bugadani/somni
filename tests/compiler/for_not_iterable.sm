@@ -1,0 +1,9 @@
+fn main() -> int {
+    var total: int = 0;
+    // `total` is an `int`, not an iterator. The `for` loop requires its iterable
+    // to have type `iter`, so this fails to type-check at compile time.
+    for x: int in total {
+        total = total + x;
+    }
+    return total;
+}

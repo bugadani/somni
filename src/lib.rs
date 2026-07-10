@@ -29,6 +29,7 @@ pub struct Compiler<'ctx> {
 
 impl<'ctx> Compiler<'ctx> {
     /// Creates a new compiler instance.
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             functions: HashMap::new(),
