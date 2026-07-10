@@ -1,0 +1,12 @@
+Function mismatch(...) -> int (stack: 56)
+  0000: load Local(40) = MaybeSignedInt(0)
+  0001: load Local(48) = MaybeSignedInt(3)
+  0002: call range(?) -> Iter with sp=Local(32)
+  0003: copy Local(8) = Local(32)
+  0004: Local(16) = has_next(Local(8))
+  0005: if Local(16) == false jump to 8
+  0006: Local(17) = next(Local(8)) (string)
+  0007: jump to 4
+  0008: load Local(8) = MaybeSignedInt(0)
+  0009: copy Local(0) = Local(8)
+  0010: return

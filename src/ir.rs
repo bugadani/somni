@@ -105,6 +105,7 @@ pub enum Type {
     Float,
     Bool,
     String,
+    Iter,
 }
 
 impl Display for Type {
@@ -117,6 +118,7 @@ impl Display for Type {
             Type::Bool => write!(f, "bool"),
             Type::String => write!(f, "string"),
             Type::Float => write!(f, "float"),
+            Type::Iter => write!(f, "iter"),
         }
     }
 }
@@ -210,6 +212,11 @@ pub enum Ir {
     Call(StringIndex, VariableIndex, Vec<VariableIndex>), // function name, arguments
     BinaryOperator(StringIndex, VariableIndex, VariableIndex, VariableIndex),
     UnaryOperator(StringIndex, VariableIndex, VariableIndex),
+
+    /// `dst` (bool) = whether `iter` can yield another value.
+    IterHasNext(VariableIndex, VariableIndex),
+    /// `dst` (element type) = next value from `iter`.
+    IterNext(VariableIndex, VariableIndex),
 }
 
 impl Ir {
@@ -278,6 +285,16 @@ impl Ir {
                 let operator = program.strings.lookup(*op);
 
                 write!(&mut output, "{dst} = {left} {operator} {right}").unwrap()
+            }
+            Self::IterHasNext(dst, iter) => {
+                let dst = dst.name(program, function);
+                let iter = iter.name(program, function);
+                write!(&mut output, "{dst} = has_next({iter})").unwrap()
+            }
+            Self::IterNext(dst, iter) => {
+                let dst = dst.name(program, function);
+                let iter = iter.name(program, function);
+                write!(&mut output, "{dst} = next({iter})").unwrap()
             }
         }
         output
@@ -419,6 +436,7 @@ impl Program {
                         "float" => Type::Float,
                         "bool" => Type::Bool,
                         "string" => Type::String,
+                        "iter" => Type::Iter,
                         other => {
                             return Err(CompileError {
                                 source,
@@ -867,6 +885,14 @@ impl<'s> FunctionCompiler<'s, '_> {
                 );
                 self.compile_loop_statement(loop_statement, expect_void)?
             }
+            ast::Statement::For(for_statement) => {
+                let expect_void = self.declare_typed_temporary(
+                    statement.location(),
+                    Type::Void,
+                    AllocationMethod::FirstFit,
+                );
+                self.compile_for_statement(for_statement, expect_void)?
+            }
             ast::Statement::Break(break_statement) => {
                 self.compile_break_statement(break_statement)?
             }
@@ -1031,6 +1057,95 @@ impl<'s> FunctionCompiler<'s, '_> {
         Ok(())
     }
 
+    fn compile_for_statement(
+        &mut self,
+        for_statement: &ast::For<VmTypeSet>,
+        for_return_value: VariableIndex,
+    ) -> Result<(), CompileError<'s>> {
+        // The loop variable's type is taken from the mandatory annotation.
+        let elem_ty = Self::compile_type(self.source, &for_statement.var_type)?;
+
+        let rp = self.variables.create_restore_point();
+
+        // Obtain the iterator. This temporary persists for the whole loop and is
+        // freed when the loop's scope is rolled back.
+        let iter_var = self.compile_right_hand_expression(&for_statement.iterable)?;
+
+        // Condition block: re-checked on every iteration (and on `continue`).
+        let cond_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
+        self.blocks.set_terminator(Termination::Jump {
+            source_location: for_statement.for_token.location,
+            to: cond_block,
+        });
+        self.blocks.select_block(cond_block);
+
+        let has_next = self.declare_typed_temporary(
+            for_statement.for_token.location,
+            Type::Bool,
+            AllocationMethod::FirstFit,
+        );
+        // Attribute the iterator check to the iterable expression so that a
+        // "not an iterator" type error points at the offending operand.
+        self.blocks.push_instruction(
+            for_statement.iterable.location(),
+            Ir::IterHasNext(has_next, iter_var),
+        );
+
+        let next_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
+        let body_block = self.blocks.allocate_block(BlockIndex::RETURN_BLOCK);
+
+        self.blocks.set_terminator(Termination::If {
+            source_location: for_statement.for_token.location,
+            condition: has_next,
+            then_block: body_block,
+            else_block: next_block,
+        });
+
+        // Restore point that captures the state at the start of a body iteration
+        // (iterator and `has_next` allocated, loop variable not yet). `break` and
+        // `continue` roll back to here so per-iteration variables are freed.
+        let body_rp = self.variables.create_restore_point();
+
+        // `break` -> next_block, `continue` -> cond_block (re-check the iterator).
+        self.loop_stack.push(Loop {
+            restore_point: body_rp,
+            body_block: cond_block,
+            next_block,
+        });
+
+        self.blocks.select_block(body_block);
+
+        // Bind the loop variable to the next value.
+        let loop_var = self.declare_variable(
+            for_statement.variable.source(self.source),
+            Some(Variable::Value(elem_ty)),
+            for_statement.variable.location,
+            false,
+        )?;
+        self.blocks.push_instruction(
+            for_statement.variable.location,
+            Ir::IterNext(VariableIndex::Local(loop_var), iter_var),
+        );
+
+        self.compile_body(&for_statement.body, for_return_value)?;
+
+        // Free the loop variable (and any body temporaries) at the end of each
+        // iteration, before looping back to the condition.
+        self.rollback_scope(for_statement.body.closing_brace.location, body_rp);
+        self.blocks.set_terminator(Termination::Jump {
+            source_location: for_statement.body.closing_brace.location,
+            to: cond_block,
+        });
+
+        self.loop_stack.pop();
+
+        // After the loop, free the iterator and the `has_next` temporary.
+        self.blocks.select_block(next_block);
+        self.rollback_scope(for_statement.body.closing_brace.location, rp);
+
+        Ok(())
+    }
+
     fn compile_break_statement(
         &mut self,
         break_statement: &ast::Break,
@@ -1172,6 +1287,7 @@ impl<'s> FunctionCompiler<'s, '_> {
             "float" => Ok(Type::Float),
             "bool" => Ok(Type::Bool),
             "string" => Ok(Type::String),
+            "iter" => Ok(Type::Iter),
             other => Err(CompileError {
                 source,
                 location: type_token.type_name.location,

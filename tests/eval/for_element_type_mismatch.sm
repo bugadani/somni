@@ -1,0 +1,12 @@
+//@ mismatch()
+
+extern fn range(start: int, end: int) -> iter;
+
+// `range` yields `int` values, but the loop variable is declared `string`. The
+// mismatch is detected at runtime when the first value is produced, and the
+// error points at the declared element type.
+fn mismatch() -> int {
+    for x: string in range(0, 3) {
+    }
+    return 0;
+}

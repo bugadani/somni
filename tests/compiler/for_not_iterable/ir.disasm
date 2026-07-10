@@ -1,0 +1,51 @@
+Globals:
+
+Function: main
+block 0
+  var return_value: int = None
+  var temp1: void = None
+  var total: int = None
+  var temp3: {int/signed} = Some(MaybeSignedInt(0))
+  total = temp3
+  free(temp3)
+  var temp4: void = None
+  -> block 2
+
+block 1
+  -> return
+
+block 2
+  var temp5: bool = None
+  temp5 = has_next(total)
+  if temp5 -> block 4 else block 3
+
+block 3
+  free(temp5)
+  return_value = total
+  free(temp4)
+  free(total)
+  free(temp1)
+  free(return_value)
+  -> block 5
+
+block 4
+  var x: int = None
+  x = next(total)
+  var temp7: void = None
+  var temp8: void = None
+  temp8 = total + x
+  total = temp8
+  free(temp8)
+  var temp9: void = None
+  free(temp9)
+  free(temp7)
+  free(x)
+  -> block 2
+
+block 5
+  -> block 1
+
+block 6
+  free(return_value)
+  -> block 1
+

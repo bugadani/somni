@@ -1,0 +1,69 @@
+Function sum_range(...) -> int (stack: 80)
+  0000: load Local(24) = MaybeSignedInt(0)
+  0001: copy Local(64) = Local(8)
+  0002: copy Local(72) = Local(16)
+  0003: call range(?) -> Iter with sp=Local(56)
+  0004: copy Local(32) = Local(56)
+  0005: Local(40) = has_next(Local(32))
+  0006: if Local(40) == false jump to 10
+  0007: Local(41) = next(Local(32)) (int)
+  0008: Local(24) = Local(24) + Local(41) (int)
+  0009: jump to 5
+  0010: copy Local(0) = Local(24)
+  0011: return
+Function count(...) -> int (stack: 80)
+  0012: load Local(24) = MaybeSignedInt(0)
+  0013: copy Local(64) = Local(8)
+  0014: copy Local(72) = Local(16)
+  0015: call range(?) -> Iter with sp=Local(56)
+  0016: copy Local(32) = Local(56)
+  0017: Local(40) = has_next(Local(32))
+  0018: if Local(40) == false jump to 23
+  0019: Local(41) = next(Local(32)) (int)
+  0020: load Local(49) = MaybeSignedInt(1)
+  0021: Local(24) = Local(24) + Local(49) (int)
+  0022: jump to 17
+  0023: copy Local(0) = Local(24)
+  0024: return
+Function skip_and_stop(...) -> int (stack: 64)
+  0025: load Local(8) = MaybeSignedInt(0)
+  0026: load Local(48) = MaybeSignedInt(0)
+  0027: load Local(56) = MaybeSignedInt(10)
+  0028: call range(?) -> Iter with sp=Local(40)
+  0029: copy Local(16) = Local(40)
+  0030: Local(24) = has_next(Local(16))
+  0031: if Local(24) == false jump to 40
+  0032: Local(25) = next(Local(16)) (int)
+  0033: load Local(33) = MaybeSignedInt(3)
+  0034: Local(41) = Local(25) == Local(33) (int)
+  0035: if Local(41) == false jump to 37
+  0036: jump to 30
+  0037: load Local(33) = MaybeSignedInt(6)
+  0038: Local(41) = Local(25) == Local(33) (int)
+  0039: if Local(41) == false jump to 42
+  0040: copy Local(0) = Local(8)
+  0041: return
+  0042: Local(8) = Local(8) + Local(25) (int)
+  0043: jump to 30
+Function nested(...) -> int (stack: 81)
+  0044: load Local(8) = MaybeSignedInt(0)
+  0045: load Local(48) = MaybeSignedInt(0)
+  0046: load Local(56) = MaybeSignedInt(3)
+  0047: call range(?) -> Iter with sp=Local(40)
+  0048: copy Local(16) = Local(40)
+  0049: Local(24) = has_next(Local(16))
+  0050: if Local(24) == false jump to 63
+  0051: Local(25) = next(Local(16)) (int)
+  0052: load Local(65) = MaybeSignedInt(0)
+  0053: load Local(73) = MaybeSignedInt(3)
+  0054: call range(?) -> Iter with sp=Local(57)
+  0055: copy Local(33) = Local(57)
+  0056: Local(41) = has_next(Local(33))
+  0057: if Local(41) == false jump to 62
+  0058: Local(42) = next(Local(33)) (int)
+  0059: Local(50) = Local(25) * Local(42) (int)
+  0060: Local(8) = Local(8) + Local(50) (int)
+  0061: jump to 56
+  0062: jump to 49
+  0063: copy Local(0) = Local(8)
+  0064: return

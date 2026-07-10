@@ -1,0 +1,9 @@
+Evaluation error
+ ---> at line 1 column 2
+  |
+1 |  mismatch()
+  |  ^^^^^^^^ Failed to call mismatch: Evaluation error
+ ---> at line 9 column 9
+  |
+9 |     for x: string in range(0, 3) {
+  |         ^ Expected string, got int

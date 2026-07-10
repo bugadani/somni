@@ -282,6 +282,8 @@ pub enum TypedValue<T: TypeSet = DefaultTypeSet> {
     Bool(bool),
     /// Represents a string.
     String(T::String),
+    /// Represents an iterator.
+    Iter(T::Iterator),
 }
 
 impl<T: TypeSet> PartialEq for TypedValue<T> {
@@ -299,6 +301,7 @@ impl<T: TypeSet> PartialEq for TypedValue<T> {
             (Self::Float(lhs), Self::Float(rhs)) => lhs == rhs,
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs == rhs,
             (Self::String(lhs), Self::String(rhs)) => lhs == rhs,
+            (Self::Iter(lhs), Self::Iter(rhs)) => lhs == rhs,
             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
         }
     }
@@ -314,6 +317,7 @@ impl<T: TypeSet> Clone for TypedValue<T> {
             Self::Float(inner) => Self::Float(*inner),
             Self::Bool(inner) => Self::Bool(*inner),
             Self::String(inner) => Self::String(inner.clone()),
+            Self::Iter(inner) => Self::Iter(inner.clone()),
         }
     }
 }
@@ -329,6 +333,7 @@ impl<T: TypeSet> TypedValue<T> {
             TypedValue::Float(_) => Type::Float,
             TypedValue::Bool(_) => Type::Bool,
             TypedValue::String(_) => Type::String,
+            TypedValue::Iter(_) => Type::Iter,
         }
     }
 }

@@ -123,10 +123,12 @@ macro_rules! for_each {
 
 pub mod error;
 pub mod function;
+pub mod iter;
 pub mod value;
 mod visitor;
 
 pub use function::{DynFunction, FunctionCallError};
+pub use iter::{SomniIterator, WithIterator};
 pub use value::TypedValue;
 pub use visitor::ExpressionVisitor;
 
@@ -170,6 +172,13 @@ pub trait TypeSet: Sized + Default + Debug + 'static {
     /// The type of a string in this type set.
     type String: ValueType<NegateOutput: LoadStore<Self>> + LoadStore<Self>;
 
+    /// The type of an iterator value in this type set.
+    ///
+    /// This is the payload carried directly by [`TypedValue::Iter`]. Type sets that
+    /// do not support iteration use the uninhabited [`NoIterator`], making it
+    /// impossible to construct an iterator value.
+    type Iterator: Clone + PartialEq + Debug;
+
     /// Converts an unsigned integer into a signed integer.
     fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError>;
 
@@ -184,7 +193,21 @@ pub trait TypeSet: Sized + Default + Debug + 'static {
 
     /// Stores a string.
     fn store_string(&mut self, str: &str) -> Self::String;
+
+    /// Returns whether the given iterator can yield another value.
+    fn iter_has_next(&self, iter: &Self::Iterator) -> bool;
+
+    /// Advances the given iterator, returning its next value, or `None` if the
+    /// iterator is exhausted.
+    fn iter_next(&self, iter: &Self::Iterator) -> Option<TypedValue<Self>>;
 }
+
+/// The iterator type used by type sets that do not support iteration.
+///
+/// This type is uninhabited, so such type sets can never construct a
+/// [`TypedValue::Iter`] value.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum NoIterator {}
 
 for_each! {
     (($name:ident, $signed:ty)) in [(DefaultTypeSet, i64), (TypeSet32, i32), (TypeSet128, i128)] => {
@@ -195,6 +218,7 @@ for_each! {
             type SignedInteger = $signed;
             type Float = <Self::Parser as ParserTypeSet>::Float;
             type String = Box<str>;
+            type Iterator = NoIterator;
 
             fn to_signed(v: Self::Integer) -> Result<Self::SignedInteger, OperatorError> {
                 <$signed>::try_from(v).map_err(|_| OperatorError::RuntimeError)
@@ -214,6 +238,14 @@ for_each! {
 
             fn store_string(&mut self, str: &str) -> Self::String {
                 str.to_string().into_boxed_str()
+            }
+
+            fn iter_has_next(&self, iter: &Self::Iterator) -> bool {
+                match *iter {}
+            }
+
+            fn iter_next(&self, iter: &Self::Iterator) -> Option<TypedValue<Self>> {
+                match *iter {}
             }
         }
     };
@@ -444,6 +476,9 @@ pub enum Type {
     Bool,
     /// Represents a string value.
     String,
+    /// Represents an iterator handle. The element type is not part of the type;
+    /// it is checked at runtime when a value is produced.
+    Iter,
 }
 impl Type {
     fn from_name(source: &str) -> Result<Self, Box<str>> {
@@ -453,6 +488,7 @@ impl Type {
             "float" => Ok(Type::Float),
             "bool" => Ok(Type::Bool),
             "string" => Ok(Type::String),
+            "iter" => Ok(Type::Iter),
             other => Err(format!("Unknown type `{other}`").into_boxed_str()),
         }
     }
@@ -468,6 +504,7 @@ impl Display for Type {
             Type::Bool => write!(f, "bool"),
             Type::String => write!(f, "string"),
             Type::Float => write!(f, "float"),
+            Type::Iter => write!(f, "iter"),
         }
     }
 }
@@ -1142,12 +1179,17 @@ mod test {
         }
 
         fn run_eval_test(path: &Path) {
-            fn parse(source: &str) -> Context<'_> {
-                let mut context = Context::parse(&source).unwrap();
+            type Types = WithIterator<DefaultTypeSet>;
+
+            fn parse(source: &str) -> Context<'_, Types> {
+                let mut context = Context::<Types>::parse_with_types(source).unwrap();
 
                 context.add_function("add_from_rust", |a: u64, b: u64| -> i64 { (a + b) as i64 });
                 context.add_function("assert", |a: bool| a); // No-op to test calling Rust functions from expressions
                 context.add_function("reverse", |s: &str| s.chars().rev().collect::<String>());
+                context.add_function("range", |a: u64, b: u64| {
+                    SomniIterator::new((a..b).map(TypedValue::<DefaultTypeSet>::Int))
+                });
 
                 context
             }
@@ -1179,7 +1221,7 @@ mod test {
                     expression
                 };
                 println!("Running `{expression}`");
-                match context.evaluate::<TypedValue>(expression) {
+                match context.evaluate::<TypedValue<Types>>(expression) {
                     Ok(_) if fail_expected => {
                         panic!(
                             "Expected {} to fail evaluating, but it succeeded",

@@ -113,6 +113,18 @@ pub enum Instruction {
         lhs: MemoryAddress,
         rhs: MemoryAddress,
     },
+
+    /// `dst` (bool) = whether the iterator at `iter` can yield another value.
+    IterHasNext {
+        dst: MemoryAddress,
+        iter: MemoryAddress,
+    },
+    /// `dst` (of type `elem_ty`) = next value from the iterator at `iter`.
+    IterNext {
+        elem_ty: Type,
+        dst: MemoryAddress,
+        iter: MemoryAddress,
+    },
 }
 
 impl Instruction {
@@ -160,6 +172,12 @@ impl Instruction {
             }
             Instruction::AddressOf(dst, op) => {
                 format!("{dst:?} = &{op:?}")
+            }
+            Instruction::IterHasNext { dst, iter } => {
+                format!("{dst:?} = has_next({iter:?})")
+            }
+            Instruction::IterNext { elem_ty, dst, iter } => {
+                format!("{dst:?} = next({iter:?}) ({elem_ty})")
             }
         }
     }
@@ -225,6 +243,7 @@ impl From<ir::Type> for Type {
             ir::Type::Bool => Type::Bool,
             ir::Type::String => Type::String,
             ir::Type::MaybeSignedInt => Type::Int,
+            ir::Type::Iter => Type::Iter,
         }
     }
 }
@@ -772,6 +791,34 @@ impl<'s> FunctionCompiler<'s, '_> {
                 };
 
                 self.push_instruction(location, instruction)
+            }
+            ir::Ir::IterHasNext(dst, iter) => {
+                let dst = self
+                    .address_of_variable(*dst)
+                    .expect("Variable not found in stack allocator");
+                let iter = self
+                    .address_of_variable(*iter)
+                    .expect("Variable not found in stack allocator");
+                self.push_instruction(location, Instruction::IterHasNext { dst, iter });
+            }
+            ir::Ir::IterNext(dst, iter) => {
+                let elem_ty = self
+                    .type_of_variable(*dst)
+                    .expect("Type of iterator element should be known");
+                let dst_addr = self
+                    .address_of_variable(*dst)
+                    .expect("Variable not found in stack allocator");
+                let iter_addr = self
+                    .address_of_variable(*iter)
+                    .expect("Variable not found in stack allocator");
+                self.push_instruction(
+                    location,
+                    Instruction::IterNext {
+                        elem_ty,
+                        dst: dst_addr,
+                        iter: iter_addr,
+                    },
+                );
             }
         }
         Ok(())

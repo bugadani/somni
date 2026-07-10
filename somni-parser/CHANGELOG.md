@@ -1,3 +1,7 @@
+# Unreleased
+
+- Added iterators and for loops
+
 # [0.2.2] - 2025-10-23
 
 - Fix parsing non-numeric literals that contain `_`.

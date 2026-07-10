@@ -24,6 +24,7 @@
 //!            | 'if' right_hand_expression body ( 'else' body )? (statement)?
 //!            | 'loop' body (statement)?
 //!            | 'while' right_hand_expression body (statement)?
+//!            | 'for' identifier ':' type 'in' right_hand_expression body (statement)?
 //!            | body (statement)?
 //!            | expression ';' (statement)?
 //!            | right_hand_expression // implicit return statmenet
@@ -58,7 +59,7 @@ use std::{
 
 use crate::{
     ast::{
-        Body, Break, Continue, Else, EmptyReturn, Expression, ExternalFunction, Function,
+        Body, Break, Continue, Else, EmptyReturn, Expression, ExternalFunction, For, Function,
         FunctionArgument, GlobalVariable, If, Item, LeftHandExpression, Literal, LiteralValue,
         Loop, Program, ReturnDecl, ReturnWithValue, RightHandExpression, Statement, TypeHint,
         VariableDefinition,
@@ -481,6 +482,25 @@ where
                         }),
                     })],
                 },
+            })));
+        }
+
+        if let Some(for_token) = stream.take_match(TokenKind::Identifier, &["for"])? {
+            let variable = stream.expect_match(TokenKind::Identifier, &[])?;
+            let colon = stream.expect_match(TokenKind::Symbol, &[":"])?;
+            let var_type = TypeHint::parse(stream)?;
+            let in_token = stream.expect_match(TokenKind::Identifier, &["in"])?;
+            let iterable = RightHandExpression::parse(stream)?;
+            let body = Body::parse(stream)?;
+
+            return Ok(ControlFlow::Continue(Statement::For(For {
+                for_token,
+                variable,
+                colon,
+                var_type,
+                in_token,
+                iterable,
+                body,
             })));
         }
 

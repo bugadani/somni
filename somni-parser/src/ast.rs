@@ -278,6 +278,48 @@ where
     }
 }
 
+#[derive(Debug)]
+pub struct For<T>
+where
+    T: TypeSet,
+{
+    pub for_token: Token,
+    pub variable: Token,
+    pub colon: Token,
+    pub var_type: TypeHint,
+    pub in_token: Token,
+    pub iterable: RightHandExpression<T>,
+    pub body: Body<T>,
+}
+impl<T> For<T>
+where
+    T: TypeSet,
+{
+    pub fn location(&self) -> Location {
+        Location {
+            start: self.for_token.location.start,
+            end: self.body.location().end,
+        }
+    }
+}
+
+impl<T> Clone for For<T>
+where
+    T: TypeSet,
+{
+    fn clone(&self) -> Self {
+        Self {
+            for_token: self.for_token,
+            variable: self.variable,
+            colon: self.colon,
+            var_type: self.var_type,
+            in_token: self.in_token,
+            iterable: self.iterable.clone(),
+            body: self.body.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Break {
     pub break_token: Token,
@@ -316,6 +358,7 @@ where
     EmptyReturn(EmptyReturn),
     If(If<T>),
     Loop(Loop<T>),
+    For(For<T>),
     Break(Break),
     Continue(Continue),
     Scope(Body<T>),
@@ -333,6 +376,7 @@ impl<T: TypeSet> Statement<T> {
             Statement::EmptyReturn(empty_return) => empty_return.location(),
             Statement::If(if_stmt) => if_stmt.location(),
             Statement::Loop(loop_stmt) => loop_stmt.location(),
+            Statement::For(for_stmt) => for_stmt.location(),
             Statement::Break(break_stmt) => break_stmt.location(),
             Statement::Continue(continue_stmt) => continue_stmt.location(),
             Statement::Scope(body) => body.location(),
@@ -359,6 +403,7 @@ where
             Self::EmptyReturn(arg0) => Self::EmptyReturn(arg0.clone()),
             Self::If(arg0) => Self::If(arg0.clone()),
             Self::Loop(arg0) => Self::Loop(arg0.clone()),
+            Self::For(arg0) => Self::For(arg0.clone()),
             Self::Break(arg0) => Self::Break(arg0.clone()),
             Self::Continue(arg0) => Self::Continue(arg0.clone()),
             Self::Scope(body) => Self::Scope(body.clone()),

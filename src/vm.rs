@@ -10,7 +10,7 @@ use crate::{
 use somni_expr::{
     error::MarkInSource,
     value::{LoadOwned, LoadStore, ValueType},
-    DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type,
+    DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type, TypeSet,
 };
 use somni_parser::{parser, Location};
 
@@ -256,6 +256,7 @@ macro_rules! dispatch_type {
             Type::Float => inner!(f64),
             Type::Bool => inner!(bool),
             Type::String => inner!(StringIndex),
+            Type::Iter => inner!(u64),
             Type::Void => inner!(()),
         }
     }};
@@ -409,6 +410,7 @@ impl<'p> EvalContext<'p> {
     pub fn reset(&mut self) {
         // TODO: only if eval_expression is supported
         self.state = EvalState::Idle;
+        self.type_ctx.clear_iterators();
         self.memory = Memory::new();
         self.memory.allocate(
             self.program
@@ -736,6 +738,38 @@ impl<'p> EvalContext<'p> {
                 self.copy(from, dst, ty.vm_size_of())?;
             }
             Instruction::LoadValue(addr, value) => self.store_typed(addr, value)?,
+            Instruction::IterHasNext { dst, iter } => {
+                let handle = self.load::<u64>(iter)? as usize;
+                let has_next = self.type_ctx.iter_has_next(&handle);
+                self.store(dst, has_next)?;
+            }
+            Instruction::IterNext { elem_ty, dst, iter } => {
+                let handle = self.load::<u64>(iter)? as usize;
+                let Some(value) = self.type_ctx.iter_next(&handle) else {
+                    return Err(
+                        self.runtime_error("Iterator was exhausted while producing a value")
+                    );
+                };
+                let mut value = VmTypedValue::from(value);
+
+                // Coerce untyped integer literals produced by the iterator to the
+                // declared element type.
+                if let VmTypedValue::MaybeSignedInt(int) = value {
+                    value = match elem_ty {
+                        Type::SignedInt => VmTypedValue::SignedInt(int as i64),
+                        _ => VmTypedValue::Int(int),
+                    };
+                }
+
+                if value.type_of() != elem_ty {
+                    return Err(self.runtime_error(format_args!(
+                        "Expected {elem_ty}, got {}",
+                        value.type_of()
+                    )));
+                }
+
+                self.store_typed(dst, value)?;
+            }
         }
 
         self.program_counter += 1;
