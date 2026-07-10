@@ -1,6 +1,7 @@
 # Unreleased
 
 - Added iterators and for loops
+- Bumped Rust version to 1.85.0, and edition to 2024.
 
 # [0.2.2] - 2025-10-23
 

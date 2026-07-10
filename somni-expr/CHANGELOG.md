@@ -1,3 +1,7 @@
+# Unreleased
+
+- Bumped Rust version to 1.85.0, and edition to 2024.
+
 # [0.2.0] - 2025-09-29
 
 - The TypeSet trait has been reworked for better ergonomics. The parser's TypeSet is now an associated type. Additional associated types and trait bounds have been added.

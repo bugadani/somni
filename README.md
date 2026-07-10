@@ -3,7 +3,7 @@ Somni language and VM
 
 [![Crates.io](https://img.shields.io/crates/v/somni?labelColor=1C2C2E&color=C96329&logo=Rust&style=flat-square)](https://crates.io/crates/somni)
 [![docs.rs](https://img.shields.io/docsrs/somni?labelColor=1C2C2E&color=C96329&logo=rust&style=flat-square)](https://docs.rs/somni/latest/)
-![MSRV](https://img.shields.io/badge/MSRV-1.82.0-blue?labelColor=1C2C2E&style=flat-square)
+![MSRV](https://img.shields.io/badge/MSRV-1.85.0-blue?labelColor=1C2C2E&style=flat-square)
 ![Crates.io](https://img.shields.io/crates/l/somni?labelColor=1C2C2E&style=flat-square)
 
 Somni is a simple, embeddable scripting language. There are two separate runtimes to run Somni programs:

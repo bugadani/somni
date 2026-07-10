@@ -1,8 +1,8 @@
 [package]
 name = "somni-template"
 version = "0.2.0"
-edition = "2021"
-rust-version = "1.82.0"
+edition = "2024"
+rust-version = "1.85.0"
 description = "A configurable templating engine built on the Somni expression language"
 keywords = ["template", "templating", "script", "somni", "engine"]
 categories = ["template-engine"]

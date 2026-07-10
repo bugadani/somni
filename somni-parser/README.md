@@ -3,7 +3,7 @@ Somni lexer/parser
 
 [![Crates.io](https://img.shields.io/crates/v/somni-parser?labelColor=1C2C2E&color=C96329&logo=Rust&style=flat-square)](https://crates.io/crates/somni-parser)
 [![docs.rs](https://img.shields.io/docsrs/somni-parser?labelColor=1C2C2E&color=C96329&logo=rust&style=flat-square)](https://docs.rs/somni-parser/latest/)
-![MSRV](https://img.shields.io/badge/MSRV-1.82.0-blue?labelColor=1C2C2E&style=flat-square)
+![MSRV](https://img.shields.io/badge/MSRV-1.85.0-blue?labelColor=1C2C2E&style=flat-square)
 ![Crates.io](https://img.shields.io/crates/l/somni-parser?labelColor=1C2C2E&style=flat-square)
 
 This crate implements the source code processing parts of the Somni language and VM. It is not meant

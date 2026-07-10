@@ -3,7 +3,7 @@ Somni expression evaluator
 
 [![Crates.io](https://img.shields.io/crates/v/somni-expr?labelColor=1C2C2E&color=C96329&logo=Rust&style=flat-square)](https://crates.io/crates/somni-expr)
 [![docs.rs](https://img.shields.io/docsrs/somni-expr?labelColor=1C2C2E&color=C96329&logo=rust&style=flat-square)](https://docs.rs/somni-expr/latest/)
-![MSRV](https://img.shields.io/badge/MSRV-1.82.0-blue?labelColor=1C2C2E&style=flat-square)
+![MSRV](https://img.shields.io/badge/MSRV-1.85.0-blue?labelColor=1C2C2E&style=flat-square)
 ![Crates.io](https://img.shields.io/crates/l/somni-expr?labelColor=1C2C2E&style=flat-square)
 
 This crate implements the expression evaluation subset of the Somnni language and VM. The crate
