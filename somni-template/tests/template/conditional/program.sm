@@ -1,0 +1,12 @@
+fn __tmpl_render() {
+__tmpl_emit_lit(0);
+if (online) {
+__tmpl_emit_lit(1);
+} else {
+if (offline) {
+__tmpl_emit_lit(2);
+} else {
+__tmpl_emit_lit(3);
+}
+}
+}

@@ -1,0 +1,1 @@
+Status: {% if online %}online{% else if offline %}offline{% else %}unknown{% endif %}

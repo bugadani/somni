@@ -1,0 +1,8 @@
+---
+block: line #
+---
+Numbers:
+#for n: int in nums
+  - {{ str(n) }}
+#endfor
+End.

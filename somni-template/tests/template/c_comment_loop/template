@@ -1,0 +1,4 @@
+---
+block: paired /* */
+---
+/* for n: int in nums */[{{ str(n) }}]/* endfor */

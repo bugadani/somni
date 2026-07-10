@@ -17,6 +17,7 @@ harness = false
 [workspace.dependencies]
 somni-parser = { version = "0.2",path = "somni-parser" }
 somni-expr = { version = "0.2",path = "somni-expr" }
+somni-template = { version = "0.2",path = "somni-template" }
 
 indexmap = "2"
 criterion = "0.6"
@@ -42,4 +43,5 @@ members = [
     "xtask",
     "somni-parser",
     "somni-expr",
+    "somni-template",
 ]

@@ -1,0 +1,4 @@
+---
+block: paired /* */
+---
+Status: /* if online */up/* else if offline */down/* else */unknown/* endif */ for {{ name }}

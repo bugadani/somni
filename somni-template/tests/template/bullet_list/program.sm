@@ -1,0 +1,9 @@
+fn __tmpl_render() {
+__tmpl_emit_lit(0);
+for n: int in (nums) {
+__tmpl_emit_lit(1);
+__tmpl_emit(str(n));
+__tmpl_emit_lit(2);
+}
+__tmpl_emit_lit(3);
+}
