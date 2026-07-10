@@ -13,7 +13,7 @@
 //! use somni_template::{Env, Iter, Syntax, Template};
 //!
 //! let tmpl = Template::compile(
-//!     "#for n: int in nums\n{{ str(n) }},\n#endfor\n",
+//!     "#for n in nums\n{{ str(n) }},\n#endfor\n",
 //!     &Syntax::lines(),
 //! )
 //! .unwrap();
@@ -28,8 +28,9 @@
 //!
 //! - Interpolation: `{{ expr }}` (the expression must evaluate to a `string`; use a
 //!   conversion such as `str(x)` for other types).
-//! - Directives: `if` / `else if` / `else` / `endif` and `for <var>: <type> in <expr>` /
-//!   `endfor`, in either bracket ([`Syntax::brackets`]) or line ([`Syntax::lines`]) style.
+//! - Directives: `if` / `else if` / `else` / `endif` and `for <var> in <expr>` / `endfor` (the
+//!   loop variable may carry an optional `: <type>` annotation), in either bracket
+//!   ([`Syntax::brackets`]) or line ([`Syntax::lines`]) style.
 //!
 //! See [`Env`] for supplying data, [`IntoValue`]/[`Iter`] for values and loop sources, and
 //! [`TemplateError`] for diagnostics (which always point into the original template).

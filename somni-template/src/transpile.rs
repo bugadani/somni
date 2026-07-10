@@ -121,8 +121,10 @@ impl Writer<'_> {
             } => {
                 self.push("for ");
                 self.push_verbatim(*var);
-                self.push(": ");
-                self.push_verbatim(*ty);
+                if let Some(ty) = ty {
+                    self.push(": ");
+                    self.push_verbatim(*ty);
+                }
                 self.push(" in (");
                 self.push_verbatim(*iterable);
                 self.push(") {\n");

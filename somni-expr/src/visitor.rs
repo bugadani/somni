@@ -452,13 +452,20 @@ where
             });
         };
 
-        // The loop variable's declared type. Values produced by the iterator are
-        // checked against it, matching the VM's runtime behavior.
-        let elem_ty = Type::from_name(for_statement.var_type.type_name.source(self.source))
-            .map_err(|message| EvalError {
-                message,
-                location: for_statement.var_type.type_name.location,
-            })?;
+        // The loop variable's declared type, if annotated. Values produced by the
+        // iterator are checked against it, matching the VM's runtime behavior. When
+        // the annotation is omitted, values are bound as-is.
+        let elem_ty = match for_statement.var_type.as_ref() {
+            Some(var_type) => Some(
+                Type::from_name(var_type.type_name.source(self.source)).map_err(|message| {
+                    EvalError {
+                        message,
+                        location: var_type.type_name.location,
+                    }
+                })?,
+            ),
+            None => None,
+        };
         let var_name = for_statement.variable.source(self.source);
 
         loop {
@@ -466,8 +473,14 @@ where
                 return Ok(None);
             };
             // A mismatch is about the declared element type, so point the error at
-            // the type annotation rather than the loop variable name.
-            let value = self.typecheck(value, elem_ty, for_statement.variable.location)?;
+            // the type annotation rather than the loop variable name. Without an
+            // annotation the value is bound as-is.
+            let value = match elem_ty {
+                Some(elem_ty) => {
+                    self.typecheck(value, elem_ty, for_statement.variable.location)?
+                }
+                None => value,
+            };
 
             // Bind the loop variable in a fresh scope for this iteration.
             self.context.open_scope();

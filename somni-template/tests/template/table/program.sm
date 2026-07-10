@@ -1,9 +1,9 @@
 fn __tmpl_render() {
-for r: int in (nums) {
+for r in (nums) {
 __tmpl_emit_lit(0);
 __tmpl_emit(str(r));
 __tmpl_emit_lit(1);
-for c: int in (seq()) {
+for c in (seq()) {
 __tmpl_emit_lit(2);
 __tmpl_emit(str(r));
 __tmpl_emit_lit(3);

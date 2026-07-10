@@ -1062,8 +1062,13 @@ impl<'s> FunctionCompiler<'s, '_> {
         for_statement: &ast::For<VmTypeSet>,
         for_return_value: VariableIndex,
     ) -> Result<(), CompileError<'s>> {
-        // The loop variable's type is taken from the mandatory annotation.
-        let elem_ty = Self::compile_type(self.source, &for_statement.var_type)?;
+        // The loop variable's type comes from the optional annotation. When it is
+        // omitted, the variable is left untyped and its type is inferred from how
+        // it is used in the loop body (like an untyped variable definition).
+        let elem_ty = match &for_statement.var_type {
+            Some(var_type) => Some(Variable::Value(Self::compile_type(self.source, var_type)?)),
+            None => None,
+        };
 
         let rp = self.variables.create_restore_point();
 
@@ -1118,7 +1123,7 @@ impl<'s> FunctionCompiler<'s, '_> {
         // Bind the loop variable to the next value.
         let loop_var = self.declare_variable(
             for_statement.variable.source(self.source),
-            Some(Variable::Value(elem_ty)),
+            elem_ty,
             for_statement.variable.location,
             false,
         )?;

@@ -2,7 +2,7 @@
 block: line #
 ---
 Numbers:
-#for n: int in nums
+#for n in nums
   - {{ str(n) }}
 #endfor
 End.

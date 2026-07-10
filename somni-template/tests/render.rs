@@ -67,6 +67,20 @@ fn if_else_if_else_chain() {
 
 #[test]
 fn for_loop_over_collection() {
+    // The loop variable's type is inferred from its use in `str(n)`.
+    let source = r#"#for n in nums
+{{ str(n) }},
+#endfor
+"#;
+    let out = render(source, &Syntax::lines(), |env| {
+        env.value("nums", Iter(vec![1u64, 2, 3]));
+    });
+    assert_eq!(out, "1,\n2,\n3,\n");
+}
+
+#[test]
+fn for_loop_with_type_annotation() {
+    // The optional `: type` annotation is still accepted.
     let source = r#"#for n: int in nums
 {{ str(n) }},
 #endfor
@@ -80,7 +94,7 @@ fn for_loop_over_collection() {
 #[test]
 fn for_loop_over_strings() {
     let out = render(
-        "{% for s: string in words %}[{{ s }}]{% endfor %}",
+        "{% for s in words %}[{{ s }}]{% endfor %}",
         &Syntax::brackets(),
         |env| {
             env.value("words", Iter(vec!["a".to_string(), "b".to_string()]));
@@ -91,7 +105,7 @@ fn for_loop_over_strings() {
 
 #[test]
 fn nested_for_in_if() {
-    let source = "{% if show %}{% for x: int in xs %}{{ str(x) }};{% endfor %}{% endif %}done";
+    let source = "{% if show %}{% for x in xs %}{{ str(x) }};{% endfor %}{% endif %}done";
     let out = render(source, &Syntax::brackets(), |env| {
         env.value("show", true);
         env.value("xs", Iter(vec![10u64, 20]));
@@ -103,8 +117,8 @@ fn nested_for_in_if() {
 fn nested_loops() {
     // The inner source is re-iterated once per outer element, so it must be a function that
     // returns a *fresh* iterator each call (value-registered iterators are single-pass).
-    let source = r#"#for i: int in outer
-#for j: int in inner()
+    let source = r#"#for i in outer
+#for j in inner()
 {{ str(i) }}{{ str(j) }} 
 #endfor
 #endfor
@@ -121,7 +135,7 @@ fn nested_loops() {
 fn value_registered_iterator_is_single_pass() {
     // Documents the single-pass semantics: iterating the same value twice yields nothing the
     // second time. Use a function (see `nested_loops`) when re-iteration is needed.
-    let source = "{% for x: int in xs %}{{ str(x) }}{% endfor %}|{% for x: int in xs %}{{ str(x) }}{% endfor %}";
+    let source = "{% for x in xs %}{{ str(x) }}{% endfor %}|{% for x in xs %}{{ str(x) }}{% endfor %}";
     let out = render(source, &Syntax::brackets(), |env| {
         env.value("xs", Iter(vec![1u64, 2]));
     });
@@ -211,7 +225,7 @@ fn c_style_comment_loop() {
             close: "*/".into(),
         },
     };
-    let source = "/* for n: int in xs */[{{ str(n) }}]/* endfor */";
+    let source = "/* for n in xs */[{{ str(n) }}]/* endfor */";
     let out = render(source, &syntax, |env| {
         env.value("xs", Iter(vec![1u64, 2, 3]));
     });
@@ -250,7 +264,7 @@ fn c_line_comment_loop() {
         expr: ("{{".into(), "}}".into()),
         block: somni_template::BlockStyle::Line { prefix: "//".into() },
     };
-    let source = r#"// for n: int in xs
+    let source = r#"// for n in xs
 * {{ str(n) }}
 // endfor
 "#;

@@ -1,5 +1,6 @@
 //@ assert(sum_range(0, 5) == 10)
 //@ assert(sum_range(3, 3) == 0)
+//@ assert(sum_range_inferred(0, 5) == 10)
 //@ assert(count(0, 7) == 7)
 //@ assert(skip_and_stop() == 12)
 //@ assert(nested() == 9)
@@ -10,6 +11,16 @@ extern fn range(start: int, end: int) -> iter;
 fn sum_range(start: int, end: int) -> int {
     var total = 0;
     for x: int in range(start, end) {
+        total = total + x;
+    }
+    return total;
+}
+
+// Same as `sum_range`, but the loop variable's type annotation is omitted and
+// inferred from its use in `total + x`.
+fn sum_range_inferred(start: int, end: int) -> int {
+    var total = 0;
+    for x in range(start, end) {
         total = total + x;
     }
     return total;

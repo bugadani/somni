@@ -22,12 +22,12 @@ pub enum Node {
         /// The optional `else` body.
         otherwise: Option<Vec<Node>>,
     },
-    /// A `for var: type in iterable` loop.
+    /// A `for var (: type)? in iterable` loop.
     For {
         /// The loop variable identifier span.
         var: Location,
-        /// The loop variable type identifier span.
-        ty: Location,
+        /// The optional loop variable type identifier span.
+        ty: Option<Location>,
         /// The iterable expression span.
         iterable: Location,
         /// The loop body.
@@ -53,7 +53,7 @@ enum Directive {
     EndIf,
     For {
         var: Location,
-        ty: Location,
+        ty: Option<Location>,
         iterable: Location,
     },
     EndFor,
@@ -130,7 +130,7 @@ fn interpret(source: &str, inner: Location) -> Result<Directive, TemplateError> 
     }
 }
 
-/// Parses a `for` header: `var : type in iterable`.
+/// Parses a `for` header: `var (: type)? in iterable`.
 fn parse_for(source: &str, header: Location) -> Result<Directive, TemplateError> {
     // var
     let (var, var_name, rest) = split_word_at_colon(source, header)?;
@@ -138,32 +138,35 @@ fn parse_for(source: &str, header: Location) -> Result<Directive, TemplateError>
         return Err(TemplateError::new("`for` requires a loop variable", header));
     }
 
-    // ':' then type
-    let rest_text = rest.extract(source);
-    let Some(colon_rel) = rest_text.find(':') else {
-        return Err(TemplateError::new(
-            "`for` loop variable requires a `: type` annotation",
-            header,
-        ));
+    // The `: type` annotation is optional. When omitted, the loop variable's type
+    // is inferred from its usage in the body.
+    let rest = trim_start_loc(source, rest);
+    let (ty, ty_name, after_ty) = if rest.extract(source).starts_with(':') {
+        let after_colon = Location {
+            start: rest.start + 1,
+            end: rest.end,
+        };
+        let (ty, ty_name, after_ty) = split_word(source, trim_start_loc(source, after_colon));
+        if ty_name.is_empty() {
+            return Err(TemplateError::new(
+                "`for` loop variable requires a type after `:`",
+                header,
+            ));
+        }
+        (Some(ty), Some(ty_name), after_ty)
+    } else {
+        (None, None, rest)
     };
-    let after_colon = Location {
-        start: rest.start + colon_rel + 1,
-        end: rest.end,
-    };
-
-    let (ty, ty_name, after_ty) = split_word(source, trim_start_loc(source, after_colon));
-    if ty_name.is_empty() {
-        return Err(TemplateError::new(
-            "`for` loop variable requires a type after `:`",
-            header,
-        ));
-    }
 
     // `in`
     let (_in_loc, in_kw, iterable) = split_word(source, after_ty);
     if in_kw != "in" {
+        let annotated = match ty_name {
+            Some(ty_name) => format!("for {var_name}: {ty_name}"),
+            None => format!("for {var_name}"),
+        };
         return Err(TemplateError::new(
-            format!("expected `in` after `for {var_name}: {ty_name}`, found `{in_kw}`"),
+            format!("expected `in` after `{annotated}`, found `{in_kw}`"),
             after_ty,
         ));
     }
@@ -349,7 +352,7 @@ impl Parser<'_> {
     fn parse_for(
         &mut self,
         var: Location,
-        ty: Location,
+        ty: Option<Location>,
         iterable: Location,
     ) -> Result<Node, TemplateError> {
         let (body, stop) = self.parse_until(&[is_endfor as fn(&Directive) -> bool])?;
@@ -446,14 +449,33 @@ mod tests {
             panic!("expected for, got {nodes:?}");
         };
         assert_eq!(ex(src, *var), "item");
-        assert_eq!(ex(src, *ty), "string");
+        assert_eq!(ex(src, ty.unwrap()), "string");
+        assert_eq!(ex(src, *iterable), "items");
+        assert!(body.iter().any(|n| matches!(n, Node::Interp(_))));
+    }
+
+    #[test]
+    fn for_header_without_type_annotation() {
+        let src = "#for item in items\n{{ item }}\n#endfor\n";
+        let nodes = parse(src, &Syntax::lines()).unwrap();
+        let Node::For {
+            var,
+            ty,
+            iterable,
+            body,
+        } = &nodes[0]
+        else {
+            panic!("expected for, got {nodes:?}");
+        };
+        assert_eq!(ex(src, *var), "item");
+        assert!(ty.is_none());
         assert_eq!(ex(src, *iterable), "items");
         assert!(body.iter().any(|n| matches!(n, Node::Interp(_))));
     }
 
     #[test]
     fn nested_for_in_if() {
-        let src = "{% if show %}{% for x: int in xs %}{{ x }}{% endfor %}{% endif %}";
+        let src = "{% if show %}{% for x in xs %}{{ x }}{% endfor %}{% endif %}";
         let nodes = parse(src, &Syntax::brackets()).unwrap();
         let Node::If { arms, .. } = &nodes[0] else {
             panic!("expected if");
@@ -484,8 +506,15 @@ mod tests {
     }
 
     #[test]
-    fn missing_type_annotation_errors() {
+    fn omitted_type_annotation_is_allowed() {
         let src = "{% for x in xs %}{% endfor %}";
+        let nodes = parse(src, &Syntax::brackets()).unwrap();
+        assert!(matches!(nodes[0], Node::For { ty: None, .. }));
+    }
+
+    #[test]
+    fn empty_type_annotation_still_errors() {
+        let src = "{% for x: %}{% endfor %}";
         let err = parse(src, &Syntax::brackets()).unwrap_err();
         assert!(err.message.contains("type"), "{}", err.message);
     }

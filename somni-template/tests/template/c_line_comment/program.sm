@@ -5,7 +5,7 @@ __tmpl_emit_lit(1);
 if (online) {
 __tmpl_emit_lit(2);
 }
-for n: int in (nums) {
+for n in (nums) {
 __tmpl_emit_lit(3);
 __tmpl_emit(str(n));
 __tmpl_emit_lit(4);

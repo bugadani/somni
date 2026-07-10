@@ -130,22 +130,17 @@ Program {
                                         end: 207,
                                     },
                                 },
-                                colon: Token {
-                                    kind: Symbol,
-                                    location: Location {
-                                        start: 207,
-                                        end: 208,
-                                    },
-                                },
-                                var_type: TypeHint {
-                                    type_name: Token {
-                                        kind: Identifier,
-                                        location: Location {
-                                            start: 209,
-                                            end: 212,
+                                var_type: Some(
+                                    TypeHint {
+                                        type_name: Token {
+                                            kind: Identifier,
+                                            location: Location {
+                                                start: 209,
+                                                end: 212,
+                                            },
                                         },
                                     },
-                                },
+                                ),
                                 in_token: Token {
                                     kind: Identifier,
                                     location: Location {

@@ -8,7 +8,7 @@ Status: ACTIVE
 Status: INACTIVE
 #endif
 Items ({{ str(count) }}):
-#for n: int in nums
+#for n in nums
   {{ str(n) }}. item
 #endfor
 --- end ---

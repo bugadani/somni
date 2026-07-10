@@ -285,8 +285,7 @@ where
 {
     pub for_token: Token,
     pub variable: Token,
-    pub colon: Token,
-    pub var_type: TypeHint,
+    pub var_type: Option<TypeHint>,
     pub in_token: Token,
     pub iterable: RightHandExpression<T>,
     pub body: Body<T>,
@@ -311,7 +310,6 @@ where
         Self {
             for_token: self.for_token,
             variable: self.variable,
-            colon: self.colon,
             var_type: self.var_type,
             in_token: self.in_token,
             iterable: self.iterable.clone(),

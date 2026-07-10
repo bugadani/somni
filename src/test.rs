@@ -263,6 +263,15 @@ fn nested() -> int {
     }
     return total;
 }
+
+fn sum_range_inferred(start: int, end: int) -> int {
+    var total = 0;
+    // No type annotation: `x` is inferred from its use in `total + x`.
+    for x in range(start, end) {
+        total = total + x;
+    }
+    return total;
+}
 "#;
 
     #[test]
@@ -280,5 +289,11 @@ fn nested() -> int {
     #[test]
     fn nested_for_loops() {
         assert_eq!(run(PROGRAM, "nested()"), TypedValue::Int(9));
+    }
+
+    #[test]
+    fn sums_a_range_without_type_annotation() {
+        assert_eq!(run(PROGRAM, "sum_range_inferred(0, 5)"), TypedValue::Int(10));
+        assert_eq!(run(PROGRAM, "sum_range_inferred(3, 3)"), TypedValue::Int(0));
     }
 }

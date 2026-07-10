@@ -12,8 +12,8 @@ while `{{ expr }}` interpolations, `if`/`for` conditions and loop iterables are 
 - **Configurable syntax.** Interpolation delimiters and block-directive style are both
   configurable. Block directives can be a delimiter pair (e.g. `{% ... %}`, `/* ... */`) or a
   line prefix (e.g. `#`, `//`).
-- **Control flow.** `if` / `else if` / `else` and `for <var>: <type> in <iterable>`, arbitrarily
-  nestable.
+- **Control flow.** `if` / `else if` / `else` and `for <var> in <iterable>` (with an optional
+  `<var>: <type>` annotation), arbitrarily nestable.
 - **Strongly typed output.** Interpolation is string-only; convert other types explicitly
   (a generic `str` conversion is provided, more can be registered).
 - **Errors point into the template**, even for evaluation errors in the generated program.
@@ -24,7 +24,7 @@ while `{{ expr }}` interpolations, `if`/`for` conditions and loop iterables are 
 use somni_template::{Env, Iter, Syntax, Template};
 
 let tmpl = Template::compile(
-    "Hello, {{ name }}!\n#for n: int in nums\n- {{ str(n) }}\n#endfor\n",
+    "Hello, {{ name }}!\n#for n in nums\n- {{ str(n) }}\n#endfor\n",
     &Syntax::lines(),
 )
 .unwrap();
@@ -41,8 +41,9 @@ assert_eq!(out, "Hello, Ada!\n- 1\n- 2\n- 3\n");
 
 - Interpolation must evaluate to a `string`; use `{{ str(x) }}` (or a custom conversion) for
   other types.
-- `for` requires the explicit loop-variable type (`for x: int in ...`) and a host-provided
-  iterable.
+- `for` needs a host-provided iterable. The loop-variable type annotation is optional
+  (`for x in ...`); when omitted it is inferred from how the variable is used, but it can still
+  be given explicitly (`for x: int in ...`).
 - Iterables registered with [`Iter`] are single-pass. To re-iterate a source (e.g. an inner
   loop nested in an outer loop), register a host function that returns a fresh iterator and
   call it in the loop header (`#for x: int in items()`).

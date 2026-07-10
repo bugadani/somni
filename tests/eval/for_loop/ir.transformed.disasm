@@ -55,6 +55,58 @@ block 4
   free(x)
   -> block 2
 
+Function: sum_range_inferred
+block 0
+  var return_value: int = None
+  var start: int = None
+  var end: int = None
+  var temp3: void = None
+  var total: int = Some(MaybeSignedInt(0))
+  var temp6: void = None
+  var temp7: iter = None
+  var temp8: int = None
+  var temp9: int = None
+  var temp10: iter = None
+  var temp11: int = None
+  temp11 = start
+  var temp12: int = None
+  temp12 = end
+  temp10 = call range(temp11, temp12)
+  temp7 = temp10
+  free(temp12)
+  free(temp11)
+  free(temp10)
+  free(temp9)
+  free(temp8)
+  -> block 2
+
+block 1
+  -> return
+
+block 2
+  var temp13: bool = None
+  temp13 = has_next(temp7)
+  if temp13 -> block 4 else block 3
+
+block 3
+  free(temp13)
+  free(temp7)
+  return_value = total
+  free(temp6)
+  free(total)
+  free(temp3)
+  free(end)
+  free(start)
+  free(return_value)
+  -> block 1
+
+block 4
+  var x: int = None
+  x = next(temp7)
+  total = total + x
+  free(x)
+  -> block 2
+
 Function: count
 block 0
   var return_value: int = None

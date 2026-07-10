@@ -196,22 +196,17 @@ Program {
                                         end: 299,
                                     },
                                 },
-                                colon: Token {
-                                    kind: Symbol,
-                                    location: Location {
-                                        start: 299,
-                                        end: 300,
-                                    },
-                                },
-                                var_type: TypeHint {
-                                    type_name: Token {
-                                        kind: Identifier,
-                                        location: Location {
-                                            start: 301,
-                                            end: 307,
+                                var_type: Some(
+                                    TypeHint {
+                                        type_name: Token {
+                                            kind: Identifier,
+                                            location: Location {
+                                                start: 301,
+                                                end: 307,
+                                            },
                                         },
                                     },
-                                },
+                                ),
                                 in_token: Token {
                                     kind: Identifier,
                                     location: Location {

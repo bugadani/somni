@@ -1,5 +1,5 @@
 fn __tmpl_render() {
-for w: string in (words) {
+for w in (words) {
 __tmpl_emit_lit(0);
 __tmpl_emit(w);
 __tmpl_emit_lit(1);

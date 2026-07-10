@@ -5,6 +5,6 @@ User: {{ name }}
 // if online
 (online)
 // endif
-// for n: int in nums
+// for n in nums
 * {{ str(n) }}
 // endfor
