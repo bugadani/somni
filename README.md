@@ -11,6 +11,8 @@ Somni is a simple, embeddable scripting language. There are two separate runtime
 - [`somni-expr`](https://crates.io/crates/somni-expr): a simpler, slower syntax tree evaluator
 - [`somni`](https://crates.io/crates/somni): an optimizing compiler and VM, which is much more experimental and much less refined
 
+There is also [`somni-template`](somni-template): a configurable templating engine (conditions and nestable loops) built on top of `somni-expr`.
+
 ## License
 
 All packages within this repository are licensed under either of:

@@ -1,0 +1,14 @@
+---
+block: line #
+---
+Report for {{ name }}
+#if online
+Status: ACTIVE
+#else
+Status: INACTIVE
+#endif
+Items ({{ str(count) }}):
+#for n: int in nums
+  {{ str(n) }}. item
+#endfor
+--- end ---

@@ -1,0 +1,10 @@
+---
+block: line //
+---
+User: {{ name }}
+// if online
+(online)
+// endif
+// for n: int in nums
+* {{ str(n) }}
+// endfor

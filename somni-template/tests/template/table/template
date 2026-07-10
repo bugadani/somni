@@ -1,0 +1,9 @@
+---
+block: line #
+---
+#for r: int in nums
+row {{ str(r) }}:
+#for c: int in seq()
+  cell {{ str(r) }}x{{ str(c) }}
+#endfor
+#endfor

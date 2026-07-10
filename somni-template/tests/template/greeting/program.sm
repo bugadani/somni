@@ -1,0 +1,7 @@
+fn __tmpl_render() {
+__tmpl_emit_lit(0);
+__tmpl_emit(name);
+__tmpl_emit_lit(1);
+__tmpl_emit(upper(title));
+__tmpl_emit_lit(2);
+}

@@ -1,0 +1,13 @@
+fn __tmpl_render() {
+__tmpl_emit_lit(0);
+__tmpl_emit(name);
+__tmpl_emit_lit(1);
+if (online) {
+__tmpl_emit_lit(2);
+}
+for n: int in (nums) {
+__tmpl_emit_lit(3);
+__tmpl_emit(str(n));
+__tmpl_emit_lit(4);
+}
+}
