@@ -1,0 +1,13 @@
+fn __tmpl_render() {
+for l in (lines) {
+__tmpl_emit_lit(0);
+__tmpl_emit(str(l.start.x));
+__tmpl_emit_lit(1);
+__tmpl_emit(str(l.start.y));
+__tmpl_emit_lit(2);
+__tmpl_emit(str(l.end.x));
+__tmpl_emit_lit(3);
+__tmpl_emit(str(l.end.y));
+__tmpl_emit_lit(4);
+}
+}

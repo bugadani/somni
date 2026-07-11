@@ -1,0 +1,119 @@
+Function sum_fields(...) -> int (stack: 48)
+  0000: load Local(40) = MaybeSignedInt(3)
+  0001: Local(24)[0..+8] = Local(40)
+  0002: load Local(40) = MaybeSignedInt(4)
+  0003: Local(24)[8..+8] = Local(40)
+  0004: copy Local(8) = Local(24)
+  0005: Local(24) = Local(8)[0..+8]
+  0006: Local(32) = Local(8)[8..+8]
+  0007: Local(0) = Local(24) + Local(32) (int)
+  0008: return
+Function field_write(...) -> int (stack: 48)
+  0009: load Local(40) = MaybeSignedInt(1)
+  0010: Local(24)[0..+8] = Local(40)
+  0011: load Local(40) = MaybeSignedInt(2)
+  0012: Local(24)[8..+8] = Local(40)
+  0013: copy Local(8) = Local(24)
+  0014: load Local(24) = MaybeSignedInt(10)
+  0015: Local(8)[0..+8] = Local(24)
+  0016: Local(24) = Local(8)[8..+8]
+  0017: load Local(32) = MaybeSignedInt(5)
+  0018: Local(40) = Local(24) + Local(32) (int)
+  0019: Local(8)[8..+8] = Local(40)
+  0020: Local(24) = Local(8)[0..+8]
+  0021: Local(32) = Local(8)[8..+8]
+  0022: Local(0) = Local(24) + Local(32) (int)
+  0023: return
+Function nested(...) -> int (stack: 96)
+  0024: load Local(88) = MaybeSignedInt(1)
+  0025: Local(72)[0..+8] = Local(88)
+  0026: load Local(88) = MaybeSignedInt(2)
+  0027: Local(72)[8..+8] = Local(88)
+  0028: Local(40)[0..+16] = Local(72)
+  0029: load Local(88) = MaybeSignedInt(3)
+  0030: Local(72)[0..+8] = Local(88)
+  0031: load Local(88) = MaybeSignedInt(4)
+  0032: Local(72)[8..+8] = Local(88)
+  0033: Local(40)[16..+16] = Local(72)
+  0034: copy Local(8) = Local(40)
+  0035: load Local(40) = MaybeSignedInt(30)
+  0036: Local(48) = &Local(8)[16]
+  0037: *Local(48)[0..+8] = Local(40)
+  0038: Local(40) = Local(8)[0..+16]
+  0039: Local(56) = Local(40)[0..+8]
+  0040: Local(40) = Local(8)[0..+16]
+  0041: Local(64) = Local(40)[8..+8]
+  0042: Local(40) = Local(56) + Local(64) (int)
+  0043: Local(64) = Local(8)[16..+16]
+  0044: Local(48) = Local(64)[0..+8]
+  0045: Local(56) = Local(40) + Local(48) (int)
+  0046: Local(64) = Local(8)[16..+16]
+  0047: Local(40) = Local(64)[8..+8]
+  0048: Local(0) = Local(56) + Local(40) (int)
+  0049: return
+Function scale(...) -> void (stack: 32)
+  0050: Local(16) = *Local(0)[0..+8]
+  0051: Local(24) = Local(16) * Local(8) (int)
+  0052: *Local(0)[0..+8] = Local(24)
+  0053: Local(16) = *Local(0)[8..+8]
+  0054: Local(24) = Local(16) * Local(8) (int)
+  0055: *Local(0)[8..+8] = Local(24)
+  0056: return
+Function pass_by_ref(...) -> int (stack: 64)
+  0057: load Local(40) = MaybeSignedInt(2)
+  0058: Local(24)[0..+8] = Local(40)
+  0059: load Local(40) = MaybeSignedInt(3)
+  0060: Local(24)[8..+8] = Local(40)
+  0061: copy Local(8) = Local(24)
+  0062: Local(24) = &Local(8)
+  0063: copy Local(48) = Local(24)
+  0064: load Local(56) = MaybeSignedInt(4)
+  0065: call scale(..) with sp=Local(48)
+  0066: Local(24) = Local(8)[0..+8]
+  0067: Local(32) = Local(8)[8..+8]
+  0068: Local(0) = Local(24) + Local(32) (int)
+  0069: return
+Function double(...) -> void (stack: 32)
+  0070: Local(8) = *Local(0)
+  0071: load Local(16) = MaybeSignedInt(2)
+  0072: Local(24) = Local(8) * Local(16) (int)
+  0073: copy *Local(0) = Local(24)
+  0074: return
+Function ref_to_field(...) -> int (stack: 56)
+  0075: load Local(40) = MaybeSignedInt(5)
+  0076: Local(24)[0..+8] = Local(40)
+  0077: load Local(40) = MaybeSignedInt(6)
+  0078: Local(24)[8..+8] = Local(40)
+  0079: copy Local(8) = Local(24)
+  0080: Local(24) = &Local(8)[0]
+  0081: copy Local(48) = Local(24)
+  0082: call double(..) with sp=Local(48)
+  0083: Local(24) = Local(8)[0..+8]
+  0084: copy Local(0) = Local(24)
+  0085: return
+Function eq_same(...) -> bool (stack: 57)
+  0086: load Local(33) = MaybeSignedInt(1)
+  0087: Local(17)[0..+8] = Local(33)
+  0088: load Local(33) = MaybeSignedInt(2)
+  0089: Local(17)[8..+8] = Local(33)
+  0090: copy Local(1) = Local(17)
+  0091: load Local(49) = MaybeSignedInt(1)
+  0092: Local(33)[0..+8] = Local(49)
+  0093: load Local(49) = MaybeSignedInt(2)
+  0094: Local(33)[8..+8] = Local(49)
+  0095: copy Local(17) = Local(33)
+  0096: Local(0) = Local(1) == Local(17) (16 bytes)
+  0097: return
+Function eq_diff(...) -> bool (stack: 57)
+  0098: load Local(33) = MaybeSignedInt(1)
+  0099: Local(17)[0..+8] = Local(33)
+  0100: load Local(33) = MaybeSignedInt(2)
+  0101: Local(17)[8..+8] = Local(33)
+  0102: copy Local(1) = Local(17)
+  0103: load Local(49) = MaybeSignedInt(1)
+  0104: Local(33)[0..+8] = Local(49)
+  0105: load Local(49) = MaybeSignedInt(9)
+  0106: Local(33)[8..+8] = Local(49)
+  0107: copy Local(17) = Local(33)
+  0108: Local(0) = Local(1) != Local(17) (16 bytes)
+  0109: return

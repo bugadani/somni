@@ -16,6 +16,34 @@ where
     Function(Function<T>),
     ExternFunction(ExternalFunction),
     GlobalVariable(GlobalVariable<T>),
+    Struct(StructDef),
+}
+
+/// A `struct Name { field: Type, ... }` definition.
+#[derive(Debug, Clone)]
+pub struct StructDef {
+    pub struct_token: Token,
+    pub name: Token,
+    pub opening_brace: Token,
+    pub fields: Vec<StructField>,
+    pub closing_brace: Token,
+}
+
+impl StructDef {
+    pub fn location(&self) -> Location {
+        Location {
+            start: self.struct_token.location.start,
+            end: self.closing_brace.location.end,
+        }
+    }
+}
+
+/// A single `field: Type` entry in a [`StructDef`].
+#[derive(Debug, Clone)]
+pub struct StructField {
+    pub name: Token,
+    pub colon: Token,
+    pub field_type: TypeHint,
 }
 
 #[derive(Debug)]
@@ -474,7 +502,7 @@ where
                 operator,
                 right_expr,
             } => Self::Assignment {
-                left_expr: *left_expr,
+                left_expr: left_expr.clone(),
                 operator: *operator,
                 right_expr: right_expr.clone(),
             },
@@ -507,10 +535,22 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum LeftHandExpression {
-    Name { variable: Token },
-    Deref { operator: Token, name: Token },
+    Name {
+        variable: Token,
+    },
+    Deref {
+        operator: Token,
+        name: Token,
+    },
+    /// A field of a place: `base.field`. `base` may itself be a `Name` or another
+    /// `Field` (field paths), enabling nested writes like `foo.x.y = 1`.
+    Field {
+        base: Box<LeftHandExpression>,
+        dot: Token,
+        field: Token,
+    },
 }
 
 impl LeftHandExpression {
@@ -522,6 +562,14 @@ impl LeftHandExpression {
 
                 location.start = location.start.min(name.location.start);
                 location.end = location.end.max(name.location.end);
+
+                location
+            }
+            LeftHandExpression::Field { base, field, .. } => {
+                let mut location = base.location();
+
+                location.start = location.start.min(field.location.start);
+                location.end = location.end.max(field.location.end);
 
                 location
             }
@@ -552,6 +600,43 @@ where
         name: Token,
         arguments: Box<[Self]>,
     },
+    /// Field access: `base.field` (postfix, chains left-associatively).
+    FieldAccess {
+        base: Box<Self>,
+        dot: Token,
+        field: Token,
+    },
+    /// A struct literal: `Name { field: expr, ... }`.
+    StructLiteral {
+        name: Token,
+        opening_brace: Token,
+        fields: Vec<StructLiteralField<T>>,
+        closing_brace: Token,
+    },
+}
+
+/// A single `field: expr` initializer in a struct literal.
+#[derive(Debug)]
+pub struct StructLiteralField<T>
+where
+    T: TypeSet,
+{
+    pub name: Token,
+    pub colon: Token,
+    pub value: RightHandExpression<T>,
+}
+
+impl<T> Clone for StructLiteralField<T>
+where
+    T: TypeSet,
+{
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name,
+            colon: self.colon,
+            value: self.value.clone(),
+        }
+    }
 }
 
 impl<T> Clone for RightHandExpression<T>
@@ -577,6 +662,22 @@ where
             Self::FunctionCall { name, arguments } => Self::FunctionCall {
                 name: *name,
                 arguments: arguments.clone(),
+            },
+            Self::FieldAccess { base, dot, field } => Self::FieldAccess {
+                base: base.clone(),
+                dot: *dot,
+                field: *field,
+            },
+            Self::StructLiteral {
+                name,
+                opening_brace,
+                fields,
+                closing_brace,
+            } => Self::StructLiteral {
+                name: *name,
+                opening_brace: *opening_brace,
+                fields: fields.clone(),
+                closing_brace: *closing_brace,
             },
         }
     }
@@ -616,6 +717,20 @@ where
                 }
                 location
             }
+            RightHandExpression::FieldAccess { base, field, .. } => {
+                let mut location = base.location();
+                location.start = location.start.min(field.location.start);
+                location.end = location.end.max(field.location.end);
+                location
+            }
+            RightHandExpression::StructLiteral {
+                name,
+                closing_brace,
+                ..
+            } => Location {
+                start: name.location.start,
+                end: closing_brace.location.end,
+            },
         }
     }
 }

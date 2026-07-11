@@ -705,6 +705,12 @@ fn propagate_variable_types_inner<'s>(
                         instruction.source_location,
                     )?;
                 }
+                // Field instructions carry concrete types baked in at IR-build time
+                // (offsets/sizes computed from the struct registry), so no type
+                // inference is needed for them here.
+                ir::Ir::LoadField { .. }
+                | ir::Ir::StoreField { .. }
+                | ir::Ir::AddressOfField { .. } => {}
                 ir::Ir::FreeVariable(_) => {}
             }
         }
@@ -760,6 +766,12 @@ fn propagate_destination(
                     ir::Ir::BinaryOperator(_, _, lhs, rhs) => *lhs == src || *rhs == src,
                     ir::Ir::UnaryOperator(_, _, operand) => *operand == src,
                     ir::Ir::IterHasNext(_, iter) | ir::Ir::IterNext(_, iter) => *iter == src,
+                    ir::Ir::LoadField { base, .. } | ir::Ir::AddressOfField { base, .. } => {
+                        *base == src
+                    }
+                    ir::Ir::StoreField {
+                        base, src: value, ..
+                    } => *base == src || *value == src,
                     _ => false,
                 };
                 if read {
@@ -859,6 +871,19 @@ fn remove_unused_assignments(
                     }
                 }
             }
+            ir::Ir::LoadField { base, .. } | ir::Ir::AddressOfField { base, .. } => {
+                if let Some(base) = base.local_index() {
+                    can_remove.remove(&base);
+                }
+            }
+            ir::Ir::StoreField { base, src, .. } => {
+                if let Some(base) = base.local_index() {
+                    can_remove.remove(&base);
+                }
+                if let Some(src) = src.local_index() {
+                    can_remove.remove(&src);
+                }
+            }
             _ => {}
         };
 
@@ -922,6 +947,22 @@ fn remove_unused_variables(
                 }
                 if let Some(rtv) = rtv.local_index() {
                     can_remove.remove(&rtv);
+                }
+            }
+            ir::Ir::LoadField { dst, base, .. } | ir::Ir::AddressOfField { dst, base, .. } => {
+                if let Some(base) = base.local_index() {
+                    can_remove.remove(&base);
+                }
+                if let Some(dst) = dst.local_index() {
+                    can_remove.remove(&dst);
+                }
+            }
+            ir::Ir::StoreField { base, src, .. } => {
+                if let Some(base) = base.local_index() {
+                    can_remove.remove(&base);
+                }
+                if let Some(src) = src.local_index() {
+                    can_remove.remove(&src);
                 }
             }
             _ => {}

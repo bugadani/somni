@@ -1,0 +1,327 @@
+Globals:
+
+Function: sum_fields
+block 0
+  var return_value: int = None
+  var p: struct#0 = None
+  var temp3: struct#0 = None
+  var temp4: {int/signed} = Some(MaybeSignedInt(3))
+  temp3[0..+8] = temp4
+  free(temp4)
+  var temp5: {int/signed} = Some(MaybeSignedInt(4))
+  temp3[8..+8] = temp5
+  free(temp5)
+  p = temp3
+  free(temp3)
+  var temp6: int = None
+  temp6 = p[0..+8]
+  var temp7: int = None
+  temp7 = p[8..+8]
+  return_value = temp6 + temp7
+  free(temp6)
+  free(temp7)
+  free(p)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+
+Function: field_write
+block 0
+  var return_value: int = None
+  var p: struct#0 = None
+  var temp3: struct#0 = None
+  var temp4: {int/signed} = Some(MaybeSignedInt(1))
+  temp3[0..+8] = temp4
+  free(temp4)
+  var temp5: {int/signed} = Some(MaybeSignedInt(2))
+  temp3[8..+8] = temp5
+  free(temp5)
+  p = temp3
+  free(temp3)
+  var temp6: {int/signed} = Some(MaybeSignedInt(10))
+  p[0..+8] = temp6
+  free(temp6)
+  var temp8: int = None
+  temp8 = p[8..+8]
+  var temp9: int = Some(MaybeSignedInt(5))
+  var temp10: int = None
+  temp10 = temp8 + temp9
+  free(temp8)
+  free(temp9)
+  p[8..+8] = temp10
+  free(temp10)
+  var temp12: int = None
+  temp12 = p[0..+8]
+  var temp13: int = None
+  temp13 = p[8..+8]
+  return_value = temp12 + temp13
+  free(temp12)
+  free(temp13)
+  free(p)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+
+Function: nested
+block 0
+  var return_value: int = None
+  var l: struct#1 = None
+  var temp3: struct#1 = None
+  var temp4: struct#0 = None
+  var temp5: {int/signed} = Some(MaybeSignedInt(1))
+  temp4[0..+8] = temp5
+  free(temp5)
+  var temp6: {int/signed} = Some(MaybeSignedInt(2))
+  temp4[8..+8] = temp6
+  free(temp6)
+  temp3[0..+16] = temp4
+  free(temp4)
+  var temp7: struct#0 = None
+  var temp8: {int/signed} = Some(MaybeSignedInt(3))
+  temp7[0..+8] = temp8
+  free(temp8)
+  var temp9: {int/signed} = Some(MaybeSignedInt(4))
+  temp7[8..+8] = temp9
+  free(temp9)
+  temp3[16..+16] = temp7
+  free(temp7)
+  l = temp3
+  free(temp3)
+  var temp10: {int/signed} = Some(MaybeSignedInt(30))
+  var temp11: &struct#0 = None
+  temp11 = &l[16]
+  *temp11[0..+8] = temp10
+  free(temp11)
+  free(temp10)
+  var temp13: struct#0 = None
+  temp13 = l[0..+16]
+  var temp14: int = None
+  temp14 = temp13[0..+8]
+  free(temp13)
+  var temp15: struct#0 = None
+  temp15 = l[0..+16]
+  var temp16: int = None
+  temp16 = temp15[8..+8]
+  free(temp15)
+  var temp17: int = None
+  temp17 = temp14 + temp16
+  free(temp14)
+  free(temp16)
+  var temp18: struct#0 = None
+  temp18 = l[16..+16]
+  var temp19: int = None
+  temp19 = temp18[0..+8]
+  free(temp18)
+  var temp20: int = None
+  temp20 = temp17 + temp19
+  free(temp17)
+  free(temp19)
+  var temp21: struct#0 = None
+  temp21 = l[16..+16]
+  var temp22: int = None
+  temp22 = temp21[8..+8]
+  free(temp21)
+  return_value = temp20 + temp22
+  free(temp20)
+  free(temp22)
+  free(l)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+
+Function: scale
+block 0
+  var return_value: void = None
+  var p: &struct#0 = None
+  var factor: int = None
+  var temp4: int = None
+  temp4 = *p[0..+8]
+  var temp5: int = None
+  temp5 = temp4 * factor
+  free(temp4)
+  *p[0..+8] = temp5
+  free(temp5)
+  var temp7: int = None
+  temp7 = *p[8..+8]
+  var temp8: int = None
+  temp8 = temp7 * factor
+  free(temp7)
+  *p[8..+8] = temp8
+  free(temp8)
+  free(factor)
+  free(p)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+
+Function: pass_by_ref
+block 0
+  var return_value: int = None
+  var p: struct#0 = None
+  var temp3: struct#0 = None
+  var temp4: {int/signed} = Some(MaybeSignedInt(2))
+  temp3[0..+8] = temp4
+  free(temp4)
+  var temp5: {int/signed} = Some(MaybeSignedInt(3))
+  temp3[8..+8] = temp5
+  free(temp5)
+  p = temp3
+  free(temp3)
+  var temp7: &struct#0 = None
+  temp7 = &p
+  var temp9: int = None
+  var temp10: int = None
+  var temp11: void = None
+  var temp12: &struct#0 = None
+  temp12 = temp7
+  var temp13: {int/signed} = Some(MaybeSignedInt(4))
+  temp11 = call scale(temp12, temp13)
+  free(temp13)
+  free(temp12)
+  free(temp11)
+  free(temp10)
+  free(temp9)
+  free(temp7)
+  var temp14: int = None
+  temp14 = p[0..+8]
+  var temp15: int = None
+  temp15 = p[8..+8]
+  return_value = temp14 + temp15
+  free(temp14)
+  free(temp15)
+  free(p)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+
+Function: double
+block 0
+  var return_value: void = None
+  var v: &int = None
+  var temp3: int = None
+  temp3 = *v
+  var temp4: int = Some(MaybeSignedInt(2))
+  var temp5: int = None
+  temp5 = temp3 * temp4
+  free(temp3)
+  free(temp4)
+  *v = temp5
+  free(temp5)
+  free(v)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+
+Function: ref_to_field
+block 0
+  var return_value: int = None
+  var p: struct#0 = None
+  var temp3: struct#0 = None
+  var temp4: {int/signed} = Some(MaybeSignedInt(5))
+  temp3[0..+8] = temp4
+  free(temp4)
+  var temp5: {int/signed} = Some(MaybeSignedInt(6))
+  temp3[8..+8] = temp5
+  free(temp5)
+  p = temp3
+  free(temp3)
+  var temp7: &int = None
+  temp7 = &p[0]
+  var temp8: int = None
+  var temp9: int = None
+  var temp10: void = None
+  var temp11: &int = None
+  temp11 = temp7
+  temp10 = call double(temp11)
+  free(temp11)
+  free(temp10)
+  free(temp9)
+  free(temp8)
+  free(temp7)
+  var temp12: int = None
+  temp12 = p[0..+8]
+  return_value = temp12
+  free(temp12)
+  free(p)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+
+Function: eq_same
+block 0
+  var return_value: bool = None
+  var a: struct#0 = None
+  var temp3: struct#0 = None
+  var temp4: {int/signed} = Some(MaybeSignedInt(1))
+  temp3[0..+8] = temp4
+  free(temp4)
+  var temp5: {int/signed} = Some(MaybeSignedInt(2))
+  temp3[8..+8] = temp5
+  free(temp5)
+  a = temp3
+  free(temp3)
+  var b: struct#0 = None
+  var temp7: struct#0 = None
+  var temp8: {int/signed} = Some(MaybeSignedInt(1))
+  temp7[0..+8] = temp8
+  free(temp8)
+  var temp9: {int/signed} = Some(MaybeSignedInt(2))
+  temp7[8..+8] = temp9
+  free(temp9)
+  b = temp7
+  free(temp7)
+  return_value = a == b
+  free(b)
+  free(a)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+
+Function: eq_diff
+block 0
+  var return_value: bool = None
+  var a: struct#0 = None
+  var temp3: struct#0 = None
+  var temp4: {int/signed} = Some(MaybeSignedInt(1))
+  temp3[0..+8] = temp4
+  free(temp4)
+  var temp5: {int/signed} = Some(MaybeSignedInt(2))
+  temp3[8..+8] = temp5
+  free(temp5)
+  a = temp3
+  free(temp3)
+  var c: struct#0 = None
+  var temp7: struct#0 = None
+  var temp8: {int/signed} = Some(MaybeSignedInt(1))
+  temp7[0..+8] = temp8
+  free(temp8)
+  var temp9: {int/signed} = Some(MaybeSignedInt(9))
+  temp7[8..+8] = temp9
+  free(temp9)
+  c = temp7
+  free(temp7)
+  return_value = a != c
+  free(c)
+  free(a)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+

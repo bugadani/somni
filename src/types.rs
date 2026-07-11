@@ -150,6 +150,11 @@ impl TypeExt for somni_expr::Type {
             Type::String => <<VmTypeSet as TypeSet>::String as MemoryRepr>::BYTES,
             // Iterators are stored as an 8-byte handle into the iterator registry.
             Type::Iter => <u64 as MemoryRepr>::BYTES,
+            // References are represented in the VM as raw 8-byte addresses.
+            Type::Ref(_) => <u64 as MemoryRepr>::BYTES,
+            // Struct sizes depend on their layout and must be resolved through the
+            // `StructRegistry`; they can't be sized from the scalar type alone.
+            Type::Struct => panic!("struct sizes must be resolved via the struct registry"),
         }
     }
 }
@@ -201,6 +206,11 @@ impl From<somni_expr::TypedValue<VmTypeSet>> for TypedValue {
             somni_expr::TypedValue::Bool(inner) => TypedValue::Bool(inner),
             somni_expr::TypedValue::String(inner) => TypedValue::String(inner),
             somni_expr::TypedValue::Iter(inner) => TypedValue::Iter(inner),
+            // Structs and references are in-language-only in the VM; they never
+            // cross the Rust boundary as a scalar `TypedValue`.
+            somni_expr::TypedValue::Struct(_) | somni_expr::TypedValue::Ref(_) => {
+                panic!("struct and reference values cannot cross the VM boundary")
+            }
         }
     }
 }
@@ -241,6 +251,9 @@ impl TypedValue {
             Type::Bool => Self::Bool(<_>::from_bytes(value)),
             Type::String => Self::String(<_>::from_bytes(value)),
             Type::Iter => Self::Iter(u64::from_bytes(value) as usize),
+            // References are stored as raw 8-byte addresses (like unsigned ints).
+            Type::Ref(_) => Self::Int(u64::from_bytes(value)),
+            Type::Struct => panic!("struct values cannot be read as a scalar TypedValue"),
         }
     }
 }

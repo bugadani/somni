@@ -129,8 +129,43 @@ mod visitor;
 
 pub use function::{DynFunction, FunctionCallError};
 pub use iter::{SomniIterator, WithIterator};
-pub use value::TypedValue;
+pub use value::{Place, Reference, SomniStruct, TypedValue};
 pub use visitor::ExpressionVisitor;
+
+/// Re-exported for use by the [`somni_struct!`] macro. Not a stable API.
+#[doc(hidden)]
+pub use indexmap;
+
+/// Constructs a [`SomniStruct`] value from Rust.
+///
+/// Field values are converted eagerly through the given type context (`&mut T`,
+/// obtainable via [`Context::type_context`]), so string fields are interned and
+/// nested structs may be built with nested invocations.
+///
+/// ```
+/// use somni_expr::{somni_struct, Context, ExprContext, TypedValue};
+///
+/// let mut ctx = Context::new();
+/// let tc = ctx.type_context();
+/// let point = somni_struct!(tc, Point { x: 1u64, y: 2u64 });
+/// assert_eq!(&*point.name, "Point");
+/// assert_eq!(point.fields["x"], TypedValue::Int(1));
+/// ```
+#[macro_export]
+macro_rules! somni_struct {
+    ($ctx:ident, $name:ident { $($field:ident : $value:expr),* $(,)? }) => {{
+        let $ctx: &mut _ = $ctx;
+        let mut fields = $crate::indexmap::IndexMap::new();
+        $(
+            let value = $crate::value::LoadStore::store(&$value, $ctx);
+            fields.insert(::std::boxed::Box::<str>::from(stringify!($field)), value);
+        )*
+        $crate::SomniStruct {
+            name: ::std::boxed::Box::<str>::from(stringify!($name)),
+            fields,
+        }
+    }};
+}
 
 use std::{
     cell::RefCell,
@@ -140,9 +175,9 @@ use std::{
 };
 
 use somni_parser::{
-    ast::{self, Expression, Function, Item, Program},
-    parser::{self, parse, TypeSet as ParserTypeSet},
     Location,
+    ast::{self, Expression, Function, Item, Program},
+    parser::{self, TypeSet as ParserTypeSet, parse},
 };
 
 use crate::{
@@ -151,7 +186,7 @@ use crate::{
     value::{LoadOwned, LoadStore, ValueType},
 };
 
-pub use somni_parser::parser::{DefaultTypeSet, TypeSet128, TypeSet32};
+pub use somni_parser::parser::{DefaultTypeSet, TypeSet32, TypeSet128};
 
 /// Defines the backing types for Somni types.
 ///
@@ -372,18 +407,21 @@ where
     /// Assigns a new value to a variable in the context.
     fn assign_variable(&mut self, variable: &str, value: &TypedValue<T>) -> Result<(), Box<str>>;
 
-    /// Returns a value from the given address.
-    fn at_address(&mut self, address: TypedValue<T>) -> Result<TypedValue<T>, Box<str>>;
+    /// Returns the [`Place`] naming a variable (the root of a reference).
+    fn place_of_variable(&mut self, variable: &str) -> Result<Place, Box<str>>;
 
-    /// Assigns a new value to a variable in the context.
-    fn assign_address(
-        &mut self,
-        address: TypedValue<T>,
-        value: &TypedValue<T>,
-    ) -> Result<(), Box<str>>;
+    /// Loads (a clone of) the value at the given place, descending its field path.
+    fn load_place(&mut self, place: &Place) -> Result<TypedValue<T>, Box<str>>;
 
-    /// Returns the address of a variable in the context.
-    fn address_of(&mut self, variable: &str) -> TypedValue<T>;
+    /// Stores a value into the given place, descending its field path.
+    fn store_place(&mut self, place: &Place, value: &TypedValue<T>) -> Result<(), Box<str>>;
+
+    /// Returns the `(field name, field type name)` pairs of a struct definition,
+    /// in declaration order, or `None` if no such struct is defined.
+    ///
+    /// Used to validate and coerce struct literals and to type-check struct-typed
+    /// annotations.
+    fn struct_fields(&self, struct_name: &str) -> Option<Vec<(Box<str>, Box<str>)>>;
 
     /// Opens a new scope in the current stack frame.
     fn open_scope(&mut self);
@@ -479,7 +517,74 @@ pub enum Type {
     /// Represents an iterator handle. The element type is not part of the type;
     /// it is checked at runtime when a value is produced.
     Iter,
+    /// Represents a struct value. The struct's identity (name and fields) is not
+    /// part of the type; it is carried by the value and checked at runtime.
+    Struct,
+    /// Represents a reference. The pointee *kind* is static; a struct pointee's
+    /// identity is checked at runtime.
+    Ref(RefPointee),
 }
+
+/// The kind of value a reference points to.
+///
+/// References are single-level (there is no `&&T`), so a pointee is always a
+/// non-reference type. A `Struct` pointee carries no identity — which struct it
+/// is gets checked at runtime.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum RefPointee {
+    /// A reference to nothing (uncommon, but representable).
+    Void,
+    /// A reference to an unsigned integer.
+    Int,
+    /// A reference to a signed integer.
+    SignedInt,
+    /// A reference to a float.
+    Float,
+    /// A reference to a boolean.
+    Bool,
+    /// A reference to a string.
+    String,
+    /// A reference to an iterator handle.
+    Iter,
+    /// A reference to a struct (identity checked at runtime).
+    Struct,
+}
+
+impl RefPointee {
+    /// Derives the pointee kind for a reference to a value of the given type.
+    ///
+    /// Returns `None` for `Type::Ref` (references to references are unsupported).
+    /// `MaybeSignedInt` is treated as `Int`.
+    pub fn from_type(ty: Type) -> Option<Self> {
+        Some(match ty {
+            Type::Void => RefPointee::Void,
+            Type::Int | Type::MaybeSignedInt => RefPointee::Int,
+            Type::SignedInt => RefPointee::SignedInt,
+            Type::Float => RefPointee::Float,
+            Type::Bool => RefPointee::Bool,
+            Type::String => RefPointee::String,
+            Type::Iter => RefPointee::Iter,
+            Type::Struct => RefPointee::Struct,
+            Type::Ref(_) => return None,
+        })
+    }
+}
+
+impl Display for RefPointee {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RefPointee::Void => write!(f, "void"),
+            RefPointee::Int => write!(f, "int"),
+            RefPointee::SignedInt => write!(f, "signed"),
+            RefPointee::Float => write!(f, "float"),
+            RefPointee::Bool => write!(f, "bool"),
+            RefPointee::String => write!(f, "string"),
+            RefPointee::Iter => write!(f, "iter"),
+            RefPointee::Struct => write!(f, "struct"),
+        }
+    }
+}
+
 impl Type {
     fn from_name(source: &str) -> Result<Self, Box<str>> {
         match source {
@@ -505,6 +610,8 @@ impl Display for Type {
             Type::String => write!(f, "string"),
             Type::Float => write!(f, "float"),
             Type::Iter => write!(f, "iter"),
+            Type::Struct => write!(f, "struct"),
+            Type::Ref(pointee) => write!(f, "&{pointee}"),
         }
     }
 }
@@ -594,6 +701,8 @@ struct ProgramData<'ctx, T: TypeSet> {
     source: &'ctx str,
     program: Program<T::Parser>,
     program_functions: HashMap<&'ctx str, usize>,
+    // Struct definitions, indexed by name (item index into `program.items`).
+    program_structs: HashMap<&'ctx str, usize>,
     // User-registered functions
     functions: RefCell<HashMap<&'ctx str, ExprFn<'ctx, T>>>,
 }
@@ -668,8 +777,9 @@ where
     /// Loads the given program into a new context.
     pub fn new_from_program(source: &'ctx str, program: Program<T::Parser>) -> Self {
         let mut program_functions = HashMap::new();
+        let mut program_structs = HashMap::new();
         let mut initializers = HashMap::new();
-        // Extract data for O(1) function/initializer lookup
+        // Extract data for O(1) function/initializer/struct lookup
         for (idx, item) in program.items.iter().enumerate() {
             match item {
                 ast::Item::Function(function) => {
@@ -681,6 +791,9 @@ where
                         InitializerState::Unevaluated(idx),
                     );
                 }
+                ast::Item::Struct(struct_def) => {
+                    program_structs.insert(struct_def.name.source(source), idx);
+                }
                 ast::Item::ExternFunction(_) => {}
             }
         }
@@ -689,6 +802,7 @@ where
                 source,
                 program,
                 program_functions,
+                program_structs,
                 functions: RefCell::new(HashMap::new()),
             }),
             stack: vec![StackFrame::new()],
@@ -897,14 +1011,8 @@ where
         Some((index | GLOBAL_VARIABLE, value))
     }
 
-    fn lookup_address(&mut self, address: TypedValue<T>) -> Result<&mut TypedValue<T>, Box<str>> {
-        let TypedValue::Int(address) = address else {
-            return Err(format!("Expected address, got {address:?}").into_boxed_str());
-        };
-
-        let address = T::to_usize(address)
-            .map_err(|_| format!("Invalid address: {address:?}").into_boxed_str())?;
-
+    /// Resolves a raw root address to the variable slot it names.
+    fn lookup_address_raw(&mut self, address: usize) -> Result<&mut TypedValue<T>, Box<str>> {
         if address & GLOBAL_VARIABLE != 0 {
             return self.stack[0].lookup_by_address(address & !GLOBAL_VARIABLE);
         }
@@ -916,6 +1024,22 @@ where
         }
 
         Err(format!("Not a valid memory address: {address}").into_boxed_str())
+    }
+
+    /// Resolves a place to the mutable slot it names, descending its field path.
+    fn resolve_place_mut(&mut self, place: &Place) -> Result<&mut TypedValue<T>, Box<str>> {
+        let mut current = self.lookup_address_raw(place.root)?;
+        for field in place.path.iter() {
+            let TypedValue::Struct(structure) = current else {
+                return Err(
+                    format!("Cannot access field `{field}` of a non-struct value").into_boxed_str(),
+                );
+            };
+            current = structure.fields.get_mut(&**field).ok_or_else(|| {
+                format!("Struct `{}` has no field `{field}`", structure.name).into_boxed_str()
+            })?;
+        }
+        Ok(current)
     }
 }
 
@@ -932,12 +1056,45 @@ where
         self.lookup(variable).map(|(_idx, var)| var)
     }
 
-    fn address_of(&mut self, variable: &str) -> TypedValue<T> {
-        let address = self
+    fn place_of_variable(&mut self, variable: &str) -> Result<Place, Box<str>> {
+        let root = self
             .lookup(variable)
             .map(|(address, _var)| address)
-            .unwrap();
-        TypedValue::Int(T::int_from_usize(address))
+            .ok_or_else(|| format!("Variable not found: {variable}").into_boxed_str())?;
+        Ok(Place {
+            root,
+            path: Box::new([]),
+        })
+    }
+
+    fn load_place(&mut self, place: &Place) -> Result<TypedValue<T>, Box<str>> {
+        self.resolve_place_mut(place).map(|v| v.clone())
+    }
+
+    fn store_place(&mut self, place: &Place, value: &TypedValue<T>) -> Result<(), Box<str>> {
+        let slot = self.resolve_place_mut(place)?;
+        slot.clone_from(value);
+        Ok(())
+    }
+
+    fn struct_fields(&self, struct_name: &str) -> Option<Vec<(Box<str>, Box<str>)>> {
+        let idx = *self.program.program_structs.get(struct_name)?;
+        let Some(Item::Struct(struct_def)) = self.program.program.items.get(idx) else {
+            return None;
+        };
+        let source = self.program.source;
+        Some(
+            struct_def
+                .fields
+                .iter()
+                .map(|field| {
+                    (
+                        Box::from(field.name.source(source)),
+                        Box::from(field.field_type.type_name.source(source)),
+                    )
+                })
+                .collect(),
+        )
     }
 
     /// Declares a variable in the context.
@@ -955,20 +1112,6 @@ where
         }
 
         Err(format!("Variable not found: {variable}").into_boxed_str())
-    }
-
-    fn at_address(&mut self, address: TypedValue<T>) -> Result<TypedValue<T>, Box<str>> {
-        self.lookup_address(address).cloned()
-    }
-
-    fn assign_address(
-        &mut self,
-        address: TypedValue<T>,
-        value: &TypedValue<T>,
-    ) -> Result<(), Box<str>> {
-        let v = self.lookup_address(address)?;
-        v.clone_from(value);
-        Ok(())
     }
 
     fn call_function(
@@ -1143,9 +1286,10 @@ mod test {
             ctx.evaluate::<bool>("multiply_with_global(2) == 6"),
             Ok(true)
         );
-        assert!(ctx
-            .evaluate::<bool>("multiply_with_global(\"2\") == 6")
-            .is_err());
+        assert!(
+            ctx.evaluate::<bool>("multiply_with_global(\"2\") == 6")
+                .is_err()
+        );
     }
 
     #[test]
@@ -1251,6 +1395,143 @@ mod test {
         walk("../tests/eval".as_ref(), &|path| {
             run_eval_test(path);
         });
+    }
+
+    #[test]
+    fn test_struct_literals_and_field_access() {
+        let program = r#"
+struct Point { x: int, y: int }
+
+fn make() -> Point {
+    return Point { x: 3, y: 4 };
+}
+
+fn sum_sq() -> int {
+    var p = make();
+    return p.x * p.x + p.y * p.y;
+}
+"#;
+        let mut ctx = Context::parse(program).unwrap();
+        assert_eq!(ctx.evaluate::<bool>("sum_sq() == 25"), Ok(true));
+    }
+
+    #[test]
+    fn test_struct_field_write() {
+        let program = r#"
+struct Point { x: int, y: int }
+
+fn moved() -> int {
+    var p = Point { x: 1, y: 2 };
+    p.x = 10;
+    p.y = p.y + 5;
+    return p.x + p.y;
+}
+"#;
+        let mut ctx = Context::parse(program).unwrap();
+        assert_eq!(ctx.evaluate::<bool>("moved() == 17"), Ok(true));
+    }
+
+    #[test]
+    fn test_nested_struct() {
+        let program = r#"
+struct Point { x: int, y: int }
+struct Line { start: Point, end: Point }
+
+fn build() -> int {
+    var l = Line { start: Point { x: 1, y: 2 }, end: Point { x: 3, y: 4 } };
+    l.end.x = 30;
+    return l.start.x + l.end.x;
+}
+"#;
+        let mut ctx = Context::parse(program).unwrap();
+        assert_eq!(ctx.evaluate::<bool>("build() == 31"), Ok(true));
+    }
+
+    #[test]
+    fn test_struct_pass_by_reference_and_autoderef() {
+        let program = r#"
+struct Point { x: int, y: int }
+
+fn scale(p: &Point, factor: int) {
+    p.x = p.x * factor;
+    p.y = p.y * factor;
+}
+
+fn run() -> int {
+    var p = Point { x: 2, y: 3 };
+    scale(&p, 4);
+    return p.x + p.y;
+}
+"#;
+        let mut ctx = Context::parse(program).unwrap();
+        assert_eq!(ctx.evaluate::<bool>("run() == 20"), Ok(true));
+    }
+
+    #[test]
+    fn test_reference_to_field() {
+        let program = r#"
+struct Point { x: int, y: int }
+
+fn double(v: &int) {
+    *v = *v * 2;
+}
+
+fn run() -> int {
+    var p = Point { x: 5, y: 6 };
+    double(&p.x);
+    return p.x;
+}
+"#;
+        let mut ctx = Context::parse(program).unwrap();
+        assert_eq!(ctx.evaluate::<bool>("run() == 10"), Ok(true));
+    }
+
+    #[test]
+    fn test_struct_equality() {
+        let program = r#"
+struct Point { x: int, y: int }
+
+fn a() -> Point { return Point { x: 1, y: 2 }; }
+fn b() -> Point { return Point { x: 1, y: 2 }; }
+fn c() -> Point { return Point { x: 1, y: 9 }; }
+"#;
+        let mut ctx = Context::parse(program).unwrap();
+        assert_eq!(ctx.evaluate::<bool>("a() == b()"), Ok(true));
+        assert_eq!(ctx.evaluate::<bool>("a() != c()"), Ok(true));
+        assert_eq!(ctx.evaluate::<bool>("a() == c()"), Ok(false));
+    }
+
+    #[test]
+    fn test_struct_boundary_and_macro() {
+        let program = r#"
+struct Point { x: int, y: int }
+"#;
+        let mut ctx = Context::parse(program).unwrap();
+        ctx.add_function("origin_distance_sq", |p: SomniStruct| -> i64 {
+            let TypedValue::Int(x) = p.fields["x"] else {
+                panic!("x not an int")
+            };
+            let TypedValue::Int(y) = p.fields["y"] else {
+                panic!("y not an int")
+            };
+            (x * x + y * y) as i64
+        });
+
+        // Build a struct from Rust and hand it to the program.
+        let tc = ctx.type_context();
+        let point = somni_struct!(tc, Point { x: 3u64, y: 4u64 });
+        assert_eq!(&*point.name, "Point");
+
+        assert_eq!(
+            ctx.evaluate::<bool>("origin_distance_sq(Point { x: 3, y: 4 }) == 25"),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn test_unknown_struct_is_error() {
+        let mut ctx = Context::new();
+        assert!(ctx.evaluate::<TypedValue>("Nope { x: 1 }").is_err());
     }
 
     #[test]

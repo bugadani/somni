@@ -1,0 +1,13 @@
+fn __tmpl_render() {
+__tmpl_emit_lit(0);
+__tmpl_emit(str(point.x));
+__tmpl_emit_lit(1);
+__tmpl_emit(str(point.y));
+__tmpl_emit_lit(2);
+if (point.x < point.y) {
+__tmpl_emit_lit(3);
+} else {
+__tmpl_emit_lit(4);
+}
+__tmpl_emit_lit(5);
+}

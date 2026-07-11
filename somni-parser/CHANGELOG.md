@@ -1,3 +1,12 @@
+# Unreleased
+
+- Added `struct` definitions, struct literals (`Name { field: value, ... }`), and
+  field access (`value.field`).
+- Assignment targets may now be field paths (`a.b.c = ...`) in addition to
+  variables and dereferences.
+- Struct literals are not allowed in `if`, `while`, and `for` conditions, where `{`
+  opens the body block.
+
 # [0.3.0] - 2026-07-10
 
 - Added iterators and for loops

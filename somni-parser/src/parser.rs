@@ -4,10 +4,13 @@
 //!
 //! ```text
 //! program -> item* EOF;
-//! item -> function | global | extern_fn; // TODO types.
+//! item -> function | global | extern_fn | struct_def; // TODO types.
 //!
 //! extern_fn -> 'extern' 'fn' identifier '(' function_argument ( ',' function_argument )* ','? ')' return_decl? ;
 //! global -> 'var' identifier ':' type '=' static_initializer ';' ;
+//!
+//! struct_def -> 'struct' identifier '{' ( struct_field ( ',' struct_field )* ','? )? '}' ;
+//! struct_field -> identifier ':' type ;
 //!
 //! static_initializer -> right_hand_expression ; // The language does not currently support function calls.
 //!
@@ -21,19 +24,25 @@
 //!            | 'return' right_hand_expression? ';' (statement)?
 //!            | 'break' ';' (statement)?
 //!            | 'continue' ';' (statement)?
-//!            | 'if' right_hand_expression body ( 'else' body )? (statement)?
+//!            | 'if' condition body ( 'else' body )? (statement)?
 //!            | 'loop' body (statement)?
-//!            | 'while' right_hand_expression body (statement)?
-//!            | 'for' identifier ( ':' type )? 'in' right_hand_expression body (statement)?
+//!            | 'while' condition body (statement)?
+//!            | 'for' identifier ( ':' type )? 'in' condition body (statement)?
 //!            | body (statement)?
 //!            | expression ';' (statement)?
 //!            | right_hand_expression // implicit return statmenet
 //!
 //! expression -> (left_hand_expression '=')? right_hand_expression ;
 //!
-//! left_hand_expression -> ( '*' )? identifier ; // Should be a valid expression, too.
+//! // A place: a variable, a whole-value dereference, or a path of field accesses.
+//! left_hand_expression -> '*' identifier
+//!                       | identifier ( '.' identifier )* ; // Should be a valid expression, too.
 //!
+//! // `condition` (used by `if`/`while`/`for`) is identical to `right_hand_expression`
+//! // except a *top-level* struct literal is not allowed, so a `{` unambiguously begins
+//! // the following block. Struct literals remain reachable inside parentheses.
 //! right_hand_expression -> binary2 ( '||' binary2 )* ;
+//! condition             -> right_hand_expression ; // minus a top-level struct_literal in `primary`
 //! binary2 -> binary3 ( '&&' binary3 )* ;
 //! binary3 -> binary4 ( ( '<' | '<=' | '>' | '>=' | '==' | '!=' ) binary4 )* ;
 //! binary4 -> binary5 ( '|' binary5 )* ;
@@ -42,8 +51,14 @@
 //! binary7 -> binary8 ( ( '<<' | '>>' ) binary8 )* ;
 //! binary8 -> binary9 ( ( '+' | '-' ) binary9 )* ;
 //! binary9 -> unary ( ( '*' | '/', '%' ) unary )* ;
-//! unary -> ('!' | '-' | '&' | '*' )* primary | call ;
-//! primary -> ( literal | identifier ( '(' call_arguments ')' )? ) | '(' right_hand_expression ')' ;
+//! unary -> ('!' | '-' | '&' | '*' )* postfix ;
+//! postfix -> primary ( '.' identifier )* ; // field access binds tighter than any unary prefix
+//! primary -> literal
+//!          | identifier struct_literal        // only where struct literals are allowed (see `condition`)
+//!          | identifier ( '(' call_arguments ')' )?
+//!          | '(' right_hand_expression ')' ;
+//! struct_literal -> '{' ( struct_literal_field ( ',' struct_literal_field )* ','? )? '}' ;
+//! struct_literal_field -> identifier ':' right_hand_expression ;
 //! call_arguments -> right_hand_expression ( ',' right_hand_expression )* ','? ;
 //! literal -> NUMBER | STRING | 'true' | 'false' ;
 //! ```
@@ -61,8 +76,8 @@ use crate::{
     ast::{
         Body, Break, Continue, Else, EmptyReturn, Expression, ExternalFunction, For, Function,
         FunctionArgument, GlobalVariable, If, Item, LeftHandExpression, Literal, LiteralValue,
-        Loop, Program, ReturnDecl, ReturnWithValue, RightHandExpression, Statement, TypeHint,
-        VariableDefinition,
+        Loop, Program, ReturnDecl, ReturnWithValue, RightHandExpression, Statement, StructDef,
+        StructField, StructLiteralField, TypeHint, VariableDefinition,
     },
     lexer::{Token, TokenKind, Tokenizer},
     parser::private::Sealed,
@@ -170,6 +185,9 @@ where
     T: TypeSet,
 {
     fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
+        if let Some(struct_def) = StructDef::try_parse(stream)? {
+            return Ok(Item::Struct(struct_def));
+        }
         if let Some(global_var) = GlobalVariable::try_parse(stream)? {
             return Ok(Item::GlobalVariable(global_var));
         }
@@ -180,7 +198,44 @@ where
             return Ok(Item::Function(function));
         }
 
-        Err(stream.error("Expected global variable or function definition"))
+        Err(stream.error("Expected global variable, function, or struct definition"))
+    }
+}
+
+impl StructDef {
+    fn try_parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Option<Self>, Error> {
+        let Some(struct_token) = stream.take_match(TokenKind::Identifier, &["struct"])? else {
+            return Ok(None);
+        };
+
+        let name = stream.expect_match(TokenKind::Identifier, &[])?;
+        let opening_brace = stream.expect_match(TokenKind::Symbol, &["{"])?;
+
+        let mut fields = Vec::new();
+        while let Some(field_name) = stream.take_match(TokenKind::Identifier, &[])? {
+            let colon = stream.expect_match(TokenKind::Symbol, &[":"])?;
+            let field_type = TypeHint::parse(stream)?;
+
+            fields.push(StructField {
+                name: field_name,
+                colon,
+                field_type,
+            });
+
+            if stream.take_match(TokenKind::Symbol, &[","])?.is_none() {
+                break;
+            }
+        }
+
+        let closing_brace = stream.expect_match(TokenKind::Symbol, &["}"])?;
+
+        Ok(Some(StructDef {
+            struct_token,
+            name,
+            opening_brace,
+            fields,
+            closing_brace,
+        }))
     }
 }
 
@@ -425,7 +480,7 @@ where
         }
 
         if let Some(if_token) = stream.take_match(TokenKind::Identifier, &["if"])? {
-            let condition = RightHandExpression::parse(stream)?;
+            let condition = RightHandExpression::parse_no_struct(stream)?;
             let body = Body::parse(stream)?;
 
             let else_branch =
@@ -458,7 +513,7 @@ where
 
         if let Some(while_token) = stream.take_match(TokenKind::Identifier, &["while"])? {
             // Desugar while into loop { if condition { loop_body; } else { break; } }
-            let condition = RightHandExpression::parse(stream)?;
+            let condition = RightHandExpression::parse_no_struct(stream)?;
             let body = Body::parse(stream)?;
             return Ok(ControlFlow::Continue(Statement::Loop(Loop {
                 loop_token: while_token,
@@ -494,7 +549,7 @@ where
                 None => None,
             };
             let in_token = stream.expect_match(TokenKind::Identifier, &["in"])?;
-            let iterable = RightHandExpression::parse(stream)?;
+            let iterable = RightHandExpression::parse_no_struct(stream)?;
             let body = Body::parse(stream)?;
 
             return Ok(ControlFlow::Continue(Statement::For(For {
@@ -640,16 +695,27 @@ fn unescape(s: &str) -> Result<String, usize> {
 impl LeftHandExpression {
     fn parse<T: TypeSet>(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         const UNARY_OPERATORS: &[&str] = &["*"];
-        let expr = if let Some(operator) = stream.take_match(TokenKind::Symbol, UNARY_OPERATORS)? {
-            Self::Deref {
+        if let Some(operator) = stream.take_match(TokenKind::Symbol, UNARY_OPERATORS)? {
+            // `*name` — a whole-value dereference target. Field paths through a
+            // dereference are not valid lvalues (reference fields are unsupported).
+            return Ok(Self::Deref {
                 operator,
                 name: Self::parse_name::<T>(stream)?,
-            }
-        } else {
-            Self::Name {
-                variable: Self::parse_name::<T>(stream)?,
-            }
+            });
+        }
+
+        // A place path: `name` followed by zero or more `.field` accesses.
+        let mut expr = Self::Name {
+            variable: Self::parse_name::<T>(stream)?,
         };
+        while let Some(dot) = stream.take_match(TokenKind::Symbol, &["."])? {
+            let field = stream.expect_match(TokenKind::Identifier, &[])?;
+            expr = Self::Field {
+                base: Box::new(expr),
+                dot,
+                field,
+            };
+        }
 
         Ok(expr)
     }
@@ -710,6 +776,21 @@ where
     T: TypeSet,
 {
     fn parse(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
+        Self::parse_inner(stream, true)
+    }
+
+    /// Parses a right-hand expression that does not permit a *top-level* struct
+    /// literal. Used for control-flow conditions and iterables, where a bare
+    /// `Name { ... }` would be ambiguous with the following block. Struct literals
+    /// remain reachable within parentheses.
+    fn parse_no_struct(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
+        Self::parse_inner(stream, false)
+    }
+
+    fn parse_inner(
+        stream: &mut TokenStream<'_, impl Tokenizer>,
+        allow_struct: bool,
+    ) -> Result<Self, Error> {
         // We define the binary operators from the lowest precedence to the highest.
         // Each recursive call to `parse_binary` will handle one level of precedence, and pass
         // the rest to the inner calls of `parse_binary`.
@@ -725,28 +806,29 @@ where
             &["*", "/", "%"],
         ];
 
-        Self::parse_binary(stream, operators)
+        Self::parse_binary(stream, operators, allow_struct)
     }
 
     fn parse_binary(
         stream: &mut TokenStream<'_, impl Tokenizer>,
         binary_operators: &[&[&str]],
+        allow_struct: bool,
     ) -> Result<Self, Error> {
         let Some((current, higher)) = binary_operators.split_first() else {
             unreachable!("At least one operator set is expected");
         };
 
         let mut expr = if higher.is_empty() {
-            Self::parse_unary(stream)?
+            Self::parse_unary(stream, allow_struct)?
         } else {
-            Self::parse_binary(stream, higher)?
+            Self::parse_binary(stream, higher, allow_struct)?
         };
 
         while let Some(operator) = stream.take_match(TokenKind::Symbol, current)? {
             let rhs = if higher.is_empty() {
-                Self::parse_unary(stream)?
+                Self::parse_unary(stream, allow_struct)?
             } else {
-                Self::parse_binary(stream, higher)?
+                Self::parse_binary(stream, higher, allow_struct)?
             };
 
             expr = Self::BinaryOperator {
@@ -758,20 +840,46 @@ where
         Ok(expr)
     }
 
-    fn parse_unary(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
+    fn parse_unary(
+        stream: &mut TokenStream<'_, impl Tokenizer>,
+        allow_struct: bool,
+    ) -> Result<Self, Error> {
         const UNARY_OPERATORS: &[&str] = &["!", "-", "&", "*"];
         if let Some(operator) = stream.take_match(TokenKind::Symbol, UNARY_OPERATORS)? {
-            let operand = Self::parse_unary(stream)?;
+            let operand = Self::parse_unary(stream, allow_struct)?;
             Ok(Self::UnaryOperator {
                 name: operator,
                 operand: Box::new(operand),
             })
         } else {
-            Self::parse_primary(stream)
+            Self::parse_postfix(stream, allow_struct)
         }
     }
 
-    fn parse_primary(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
+    /// Parses a primary followed by zero or more `.field` accesses. Field access
+    /// is a postfix operator binding tighter than any unary prefix.
+    fn parse_postfix(
+        stream: &mut TokenStream<'_, impl Tokenizer>,
+        allow_struct: bool,
+    ) -> Result<Self, Error> {
+        let mut expr = Self::parse_primary(stream, allow_struct)?;
+
+        while let Some(dot) = stream.take_match(TokenKind::Symbol, &["."])? {
+            let field = stream.expect_match(TokenKind::Identifier, &[])?;
+            expr = Self::FieldAccess {
+                base: Box::new(expr),
+                dot,
+                field,
+            };
+        }
+
+        Ok(expr)
+    }
+
+    fn parse_primary(
+        stream: &mut TokenStream<'_, impl Tokenizer>,
+        allow_struct: bool,
+    ) -> Result<Self, Error> {
         let token = stream.peek_expect()?;
 
         match token.kind {
@@ -781,10 +889,21 @@ where
                     return Ok(Self::Literal { value: literal });
                 }
 
+                // A struct literal `Name { ... }` — only when permitted in this
+                // position, and only when an identifier is directly followed by `{`.
+                if allow_struct {
+                    let name = stream.expect_match(TokenKind::Identifier, &[])?;
+                    if stream.peek_match(TokenKind::Symbol, &["{"])?.is_some() {
+                        return Self::parse_struct_literal(stream, name);
+                    }
+                    return Self::parse_call_tail(stream, name);
+                }
+
                 Self::parse_call(stream)
             }
             TokenKind::Symbol if stream.source(token.location) == "(" => {
                 stream.take_match(token.kind, &[])?;
+                // Inside parentheses, struct literals are always allowed again.
                 let expr = Self::parse(stream)?;
                 stream.expect_match(TokenKind::Symbol, &[")"])?;
                 Ok(expr)
@@ -798,9 +917,50 @@ where
         }
     }
 
+    fn parse_struct_literal(
+        stream: &mut TokenStream<'_, impl Tokenizer>,
+        name: Token,
+    ) -> Result<Self, Error> {
+        let opening_brace = stream.expect_match(TokenKind::Symbol, &["{"])?;
+
+        let mut fields = Vec::new();
+        while let Some(field_name) = stream.take_match(TokenKind::Identifier, &[])? {
+            let colon = stream.expect_match(TokenKind::Symbol, &[":"])?;
+            // Field values are full expressions; struct literals are allowed here.
+            let value = Self::parse(stream)?;
+
+            fields.push(StructLiteralField {
+                name: field_name,
+                colon,
+                value,
+            });
+
+            if stream.take_match(TokenKind::Symbol, &[","])?.is_none() {
+                break;
+            }
+        }
+
+        let closing_brace = stream.expect_match(TokenKind::Symbol, &["}"])?;
+
+        Ok(Self::StructLiteral {
+            name,
+            opening_brace,
+            fields,
+            closing_brace,
+        })
+    }
+
     fn parse_call(stream: &mut TokenStream<'_, impl Tokenizer>) -> Result<Self, Error> {
         let token = stream.expect_match(TokenKind::Identifier, &[])?;
+        Self::parse_call_tail(stream, token)
+    }
 
+    /// Parses the tail of a call/variable reference after the leading identifier
+    /// has already been consumed.
+    fn parse_call_tail(
+        stream: &mut TokenStream<'_, impl Tokenizer>,
+        token: Token,
+    ) -> Result<Self, Error> {
         if stream.take_match(TokenKind::Symbol, &["("])?.is_none() {
             return Ok(Self::Variable { variable: token });
         };
@@ -990,6 +1150,48 @@ mod tests {
         assert_eq!(unescape(r#"Hello\nWorld\t!"#).unwrap(), "Hello\nWorld\t!");
         assert_eq!(unescape(r#"Hello\\World"#).unwrap(), "Hello\\World");
         assert_eq!(unescape(r#"Hello\zWorld"#), Err(6)); // Invalid escape sequence
+    }
+
+    fn parse_ok(source: &str) {
+        parse::<DefaultTypeSet>(source)
+            .unwrap_or_else(|e| panic!("expected `{source}` to parse, got: {e}"));
+    }
+
+    fn parse_err(source: &str) {
+        assert!(
+            parse::<DefaultTypeSet>(source).is_err(),
+            "expected `{source}` to fail parsing"
+        );
+    }
+
+    #[test]
+    fn test_parse_struct_definition() {
+        parse_ok("struct Point { x: int, y: int }");
+        parse_ok("struct Point { x: int, y: int, }"); // trailing comma
+        parse_ok("struct Empty {}");
+        parse_ok("struct Line { start: Point, end: Point }"); // nested struct field
+    }
+
+    #[test]
+    fn test_parse_field_access_and_struct_literal() {
+        parse_ok("fn f() -> int { var p = Point { x: 1, y: 2 }; return p.x; }");
+        parse_ok("fn f() -> int { return foo.x.y; }"); // chained
+        parse_ok("fn f() -> int { return get().x; }"); // on a call result
+        parse_ok("fn f() -> int { return &p.x; }"); // & binds looser than .
+    }
+
+    #[test]
+    fn test_parse_field_assignment() {
+        parse_ok("fn f() { p.x = 1; }");
+        parse_ok("fn f() { p.x.y = 1; }"); // nested write
+    }
+
+    #[test]
+    fn test_struct_literal_forbidden_in_condition() {
+        // A bare struct literal in an `if` condition would be ambiguous with the block.
+        parse_err("fn f() { if Point { x: 1 } { return; } }");
+        // Parenthesizing makes it explicit and legal.
+        parse_ok("fn f() { if (Point { x: 1 }) == p { return; } }");
     }
 
     #[test]

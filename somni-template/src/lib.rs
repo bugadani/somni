@@ -53,7 +53,7 @@ use somni_parser::{ast::Item, Location};
 
 pub use env::Env;
 pub use error::TemplateError;
-pub use somni_expr::{SomniIterator, TypedValue};
+pub use somni_expr::{SomniIterator, SomniStruct, TypedValue};
 pub use syntax::{BlockStyle, Syntax};
 pub use value::{IntoValue, Iter, TemplateTypes};
 

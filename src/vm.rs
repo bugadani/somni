@@ -10,7 +10,8 @@ use crate::{
 use somni_expr::{
     error::MarkInSource,
     value::{LoadOwned, LoadStore, ValueType},
-    DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Type, TypeSet,
+    DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Place, Type,
+    TypeSet,
 };
 use somni_parser::{parser, Location};
 
@@ -258,6 +259,10 @@ macro_rules! dispatch_type {
             Type::String => inner!(StringIndex),
             Type::Iter => inner!(u64),
             Type::Void => inner!(()),
+            // References are raw 8-byte addresses; structs are handled by dedicated
+            // field/copy instructions and never reach scalar operator dispatch.
+            Type::Ref(_) => inner!(u64),
+            Type::Struct => panic!("struct values have no scalar operator dispatch"),
         }
     }};
 }
@@ -770,6 +775,68 @@ impl<'p> EvalContext<'p> {
 
                 self.store_typed(dst, value)?;
             }
+            Instruction::LoadField {
+                dst,
+                base,
+                offset,
+                size,
+                indirect,
+            } => {
+                let src = if indirect {
+                    let ptr = self.load::<u64>(base)? as usize;
+                    MemoryAddress::Global(ptr + offset)
+                } else {
+                    base + offset
+                };
+                self.copy(src, dst, size)?;
+            }
+            Instruction::StoreField {
+                base,
+                offset,
+                size,
+                indirect,
+                src,
+            } => {
+                let dst = if indirect {
+                    let ptr = self.load::<u64>(base)? as usize;
+                    MemoryAddress::Global(ptr + offset)
+                } else {
+                    base + offset
+                };
+                self.copy(src, dst, size)?;
+            }
+            Instruction::AddressOfField {
+                dst,
+                base,
+                offset,
+                indirect,
+            } => {
+                let address = if indirect {
+                    self.load::<u64>(base)? as usize + offset
+                } else {
+                    self.memory.address(base) + offset
+                };
+                self.store_typed(dst, VmTypedValue::Int(address as u64))?;
+            }
+            Instruction::StructEq {
+                dst,
+                lhs,
+                rhs,
+                size,
+                negate,
+            } => {
+                let lhs_bytes = self
+                    .memory
+                    .load(lhs, size)
+                    .map_err(|e| self.runtime_error(format_args!("Failed to compare structs: {e}")))?
+                    .to_vec();
+                let rhs_bytes = self
+                    .memory
+                    .load(rhs, size)
+                    .map_err(|e| self.runtime_error(format_args!("Failed to compare structs: {e}")))?;
+                let equal = lhs_bytes.as_slice() == rhs_bytes;
+                self.store(dst, equal ^ negate)?;
+            }
         }
 
         self.program_counter += 1;
@@ -936,16 +1003,22 @@ impl<'s> ExprContext<VmTypeSet> for EvalContext<'s> {
         unimplemented!()
     }
 
-    fn assign_address(
-        &mut self,
-        _address: TypedValue,
-        _value: &TypedValue,
-    ) -> Result<(), Box<str>> {
+    fn place_of_variable(&mut self, _variable: &str) -> Result<Place, Box<str>> {
+        // This context only evaluates constant global initializers, which never
+        // reference places.
         unimplemented!()
     }
 
-    fn at_address(&mut self, _address: TypedValue) -> Result<TypedValue, Box<str>> {
+    fn load_place(&mut self, _place: &Place) -> Result<TypedValue, Box<str>> {
         unimplemented!()
+    }
+
+    fn store_place(&mut self, _place: &Place, _value: &TypedValue) -> Result<(), Box<str>> {
+        unimplemented!()
+    }
+
+    fn struct_fields(&self, _struct_name: &str) -> Option<Vec<(Box<str>, Box<str>)>> {
+        None
     }
 
     fn open_scope(&mut self) {
@@ -987,19 +1060,6 @@ impl<'s> ExprContext<VmTypeSet> for EvalContext<'s> {
             )),
             EvalEvent::Complete(value) => Ok(value),
         }
-    }
-
-    fn address_of(&mut self, name: &str) -> TypedValue {
-        let name_idx = self
-            .strings
-            .find(name)
-            .unwrap_or_else(|| panic!("Variable '{name}' not found in program"));
-        let addr = self
-            .program
-            .globals
-            .get_index_of(&name_idx)
-            .unwrap_or_else(|| panic!("Variable '{name}' not found in program"));
-        TypedValue::Int(addr as u64)
     }
 }
 

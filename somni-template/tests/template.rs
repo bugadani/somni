@@ -34,7 +34,8 @@
 
 use std::{fs, path::Path};
 
-use somni_template::{BlockStyle, Env, IntoValue, Iter, Syntax, Template};
+use somni_expr::{Context, ExprContext, somni_struct};
+use somni_template::{BlockStyle, Env, IntoValue, Iter, Syntax, Template, TemplateTypes};
 
 /// The data available to every fixture template.
 fn standard_env() -> Env {
@@ -60,6 +61,45 @@ fn standard_env() -> Env {
     // A re-iterable source: a fresh iterator per call (usable in nested loops).
     env.function("seq", || Iter(vec![1u64, 2, 3]).into_value());
     env.function("upper", |s: &str| s.to_uppercase());
+
+    // Structs handed in from the host. Templates read their fields, compare them,
+    // and iterate over collections of them. `somni_struct!` builds the values.
+    let mut ctx = Context::<TemplateTypes>::new_with_types();
+    let tc = ctx.type_context();
+
+    env.value("point", somni_struct!(tc, Point { x: 3u64, y: 4u64 }));
+    env.value("same_point", somni_struct!(tc, Point { x: 3u64, y: 4u64 }));
+    env.value("other_point", somni_struct!(tc, Point { x: 9u64, y: 9u64 }));
+
+    env.value(
+        "points",
+        Iter(vec![
+            somni_struct!(tc, Point { x: 1u64, y: 2u64 }),
+            somni_struct!(tc, Point { x: 3u64, y: 4u64 }),
+            somni_struct!(tc, Point { x: 5u64, y: 6u64 }),
+        ]),
+    );
+
+    // Nested structs must survive the round-trip through the iterator element types.
+    env.value(
+        "lines",
+        Iter(vec![
+            somni_struct!(
+                tc,
+                Line {
+                    start: somni_struct!(tc, Point { x: 1u64, y: 2u64 }),
+                    end: somni_struct!(tc, Point { x: 3u64, y: 4u64 }),
+                }
+            ),
+            somni_struct!(
+                tc,
+                Line {
+                    start: somni_struct!(tc, Point { x: 5u64, y: 6u64 }),
+                    end: somni_struct!(tc, Point { x: 7u64, y: 8u64 }),
+                }
+            ),
+        ]),
+    );
 
     env
 }
@@ -114,8 +154,12 @@ fn parse_syntax(front: &str) -> Syntax {
                     };
                 }
                 Some("paired") => {
-                    let open = parts.next().expect("`block: paired` needs an opening delimiter");
-                    let close = parts.next().expect("`block: paired` needs a closing delimiter");
+                    let open = parts
+                        .next()
+                        .expect("`block: paired` needs an opening delimiter");
+                    let close = parts
+                        .next()
+                        .expect("`block: paired` needs a closing delimiter");
                     block = BlockStyle::Paired {
                         open: open.to_string(),
                         close: close.to_string(),
@@ -178,5 +222,9 @@ fn run_template_fixtures() {
         ran += 1;
     }
 
-    assert!(ran > 0, "no template fixtures were found in {}", root.display());
+    assert!(
+        ran > 0,
+        "no template fixtures were found in {}",
+        root.display()
+    );
 }

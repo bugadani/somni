@@ -1,0 +1,2 @@
+Point is ({{ str(point.x) }}, {{ str(point.y) }}).
+{% if point.x < point.y %}x is smaller than y{% else %}x is not smaller than y{% endif %}

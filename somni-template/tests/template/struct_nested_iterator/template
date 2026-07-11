@@ -1,0 +1,6 @@
+---
+block: line #
+---
+#for l in lines
+({{ str(l.start.x) }}, {{ str(l.start.y) }}) -> ({{ str(l.end.x) }}, {{ str(l.end.y) }})
+#endfor
