@@ -135,7 +135,8 @@ fn nested_loops() {
 fn value_registered_iterator_is_single_pass() {
     // Documents the single-pass semantics: iterating the same value twice yields nothing the
     // second time. Use a function (see `nested_loops`) when re-iteration is needed.
-    let source = "{% for x in xs %}{{ str(x) }}{% endfor %}|{% for x in xs %}{{ str(x) }}{% endfor %}";
+    let source =
+        "{% for x in xs %}{{ str(x) }}{% endfor %}|{% for x in xs %}{{ str(x) }}{% endfor %}";
     let out = render(source, &Syntax::brackets(), |env| {
         env.value("xs", Iter(vec![1u64, 2]));
     });
@@ -237,7 +238,9 @@ fn c_line_comment_directives() {
     // Line directives introduced by `//` (C-style line comments); interpolation is `{{ }}`.
     let syntax = Syntax {
         expr: ("{{".into(), "}}".into()),
-        block: somni_template::BlockStyle::Line { prefix: "//".into() },
+        block: somni_template::BlockStyle::Line {
+            prefix: "//".into(),
+        },
     };
     let source = r#"User: {{ name }}
 // if online
@@ -262,7 +265,9 @@ fn c_line_comment_directives() {
 fn c_line_comment_loop() {
     let syntax = Syntax {
         expr: ("{{".into(), "}}".into()),
-        block: somni_template::BlockStyle::Line { prefix: "//".into() },
+        block: somni_template::BlockStyle::Line {
+            prefix: "//".into(),
+        },
     };
     let source = r#"// for n in xs
 * {{ str(n) }}

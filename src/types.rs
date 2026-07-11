@@ -1,8 +1,8 @@
 use std::{cell::RefCell, fmt, rc::Rc};
 
 use somni_expr::{
-    value::{LoadStore, ValueType},
     OperatorError, Type, TypeSet,
+    value::{LoadStore, ValueType},
 };
 use somni_parser::parser::TypeSet as ParserTypeSet;
 

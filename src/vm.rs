@@ -8,12 +8,12 @@ use crate::{
 };
 
 use somni_expr::{
-    error::MarkInSource,
-    value::{LoadOwned, LoadStore, ValueType},
     DynFunction, ExprContext, ExpressionVisitor, FunctionCallError, OperatorError, Place, Type,
     TypeSet,
+    error::MarkInSource,
+    value::{LoadOwned, LoadStore, ValueType},
 };
-use somni_parser::{parser, Location};
+use somni_parser::{Location, parser};
 
 pub type TypedValue = somni_expr::value::TypedValue<VmTypeSet>;
 
@@ -782,12 +782,7 @@ impl<'p> EvalContext<'p> {
                 size,
                 indirect,
             } => {
-                let src = if indirect {
-                    let ptr = self.load::<u64>(base)? as usize;
-                    MemoryAddress::Global(ptr + offset)
-                } else {
-                    base + offset
-                };
+                let src = self.field_target(base, offset, indirect)?;
                 self.copy(src, dst, size)?;
             }
             Instruction::StoreField {
@@ -797,12 +792,7 @@ impl<'p> EvalContext<'p> {
                 indirect,
                 src,
             } => {
-                let dst = if indirect {
-                    let ptr = self.load::<u64>(base)? as usize;
-                    MemoryAddress::Global(ptr + offset)
-                } else {
-                    base + offset
-                };
+                let dst = self.field_target(base, offset, indirect)?;
                 self.copy(src, dst, size)?;
             }
             Instruction::AddressOfField {
@@ -828,12 +818,13 @@ impl<'p> EvalContext<'p> {
                 let lhs_bytes = self
                     .memory
                     .load(lhs, size)
-                    .map_err(|e| self.runtime_error(format_args!("Failed to compare structs: {e}")))?
+                    .map_err(|e| {
+                        self.runtime_error(format_args!("Failed to compare structs: {e}"))
+                    })?
                     .to_vec();
-                let rhs_bytes = self
-                    .memory
-                    .load(rhs, size)
-                    .map_err(|e| self.runtime_error(format_args!("Failed to compare structs: {e}")))?;
+                let rhs_bytes = self.memory.load(rhs, size).map_err(|e| {
+                    self.runtime_error(format_args!("Failed to compare structs: {e}"))
+                })?;
                 let equal = lhs_bytes.as_slice() == rhs_bytes;
                 self.store(dst, equal ^ negate)?;
             }
@@ -876,6 +867,23 @@ impl<'p> EvalContext<'p> {
             Err(e) => {
                 Err(self.runtime_error(format_args!("Failed to store value at address: {e}")))
             }
+        }
+    }
+
+    /// Computes the memory address of a struct field. When `indirect`, `base`
+    /// holds a pointer that is dereferenced first; otherwise the field lives at
+    /// `base + offset` directly.
+    fn field_target(
+        &self,
+        base: MemoryAddress,
+        offset: usize,
+        indirect: bool,
+    ) -> Result<MemoryAddress, EvalEvent<TypedValue>> {
+        if indirect {
+            let ptr = self.load::<u64>(base)? as usize;
+            Ok(MemoryAddress::Global(ptr + offset))
+        } else {
+            Ok(base + offset)
         }
     }
 

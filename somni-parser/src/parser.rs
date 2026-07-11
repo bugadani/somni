@@ -73,6 +73,7 @@ use std::{
 };
 
 use crate::{
+    Error, Location,
     ast::{
         Body, Break, Continue, Else, EmptyReturn, Expression, ExternalFunction, For, Function,
         FunctionArgument, GlobalVariable, If, Item, LeftHandExpression, Literal, LiteralValue,
@@ -81,7 +82,6 @@ use crate::{
     },
     lexer::{Token, TokenKind, Tokenizer},
     parser::private::Sealed,
-    Error, Location,
 };
 
 mod private {

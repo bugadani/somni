@@ -1,4 +1,4 @@
-use crate::{lexer::Token, parser::TypeSet, Location};
+use crate::{Location, lexer::Token, parser::TypeSet};
 
 #[derive(Debug)]
 pub struct Program<T>

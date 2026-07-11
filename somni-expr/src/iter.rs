@@ -11,7 +11,7 @@
 
 use std::{cell::RefCell, fmt, rc::Rc};
 
-use crate::{value::LoadStore, TypeSet, TypedValue};
+use crate::{TypeSet, TypedValue, value::LoadStore};
 
 /// A boxed, peekable iterator yielding values of the *inner* type set.
 ///
@@ -188,11 +188,7 @@ macro_rules! impl_with_iterator {
                         TypedValue::Iter(never) => match never {},
                         TypedValue::Struct(s) => TypedValue::Struct($crate::SomniStruct {
                             name: s.name,
-                            fields: s
-                                .fields
-                                .into_iter()
-                                .map(|(k, v)| (k, convert(v)))
-                                .collect(),
+                            fields: s.fields.into_iter().map(|(k, v)| (k, convert(v))).collect(),
                         }),
                         TypedValue::Ref(r) => TypedValue::Ref(r),
                     }

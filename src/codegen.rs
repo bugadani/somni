@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     ops::{Add, AddAssign, Sub},
 };
 
@@ -15,7 +15,7 @@ use crate::{
 };
 
 use somni_expr::{Context, Type, TypedValue as ExprTypedValue};
-use somni_parser::{ast::Program as ProgramAst, Location};
+use somni_parser::{Location, ast::Program as ProgramAst};
 
 // This is just to keep the size of Instruction small enough. Re-evaluate this later.
 #[derive(Clone, Copy, Debug)]

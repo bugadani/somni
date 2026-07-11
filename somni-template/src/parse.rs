@@ -303,7 +303,7 @@ impl Parser<'_> {
                         Directive::EndFor => return Err(unexpected(self.source, inner, "endfor")),
                         Directive::Else => return Err(unexpected(self.source, inner, "else")),
                         Directive::ElseIf(_) => {
-                            return Err(unexpected(self.source, inner, "else if"))
+                            return Err(unexpected(self.source, inner, "else if"));
                         }
                     }
                 }
@@ -342,7 +342,7 @@ impl Parser<'_> {
                     return Ok(Node::If {
                         arms,
                         otherwise: None,
-                    })
+                    });
                 }
                 _ => return Err(self.unterminated("if")),
             }

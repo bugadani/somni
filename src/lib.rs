@@ -45,7 +45,7 @@ impl<'ctx> Compiler<'ctx> {
                     source,
                     location: parse_error.location,
                     error: parse_error.error,
-                })
+                });
             }
         };
 
@@ -56,7 +56,7 @@ impl<'ctx> Compiler<'ctx> {
                     source,
                     location: parse_error.location,
                     error: parse_error.error,
-                })
+                });
             }
         };
 

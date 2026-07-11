@@ -11,9 +11,9 @@ use crate::{
 };
 
 use somni_parser::{
+    Location,
     ast::{self, FunctionArgument},
     lexer::Token,
-    Location,
 };
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -578,12 +578,7 @@ impl Program {
                         });
                     }
 
-                    let ty = resolve_type(
-                        source,
-                        &global_variable.type_token,
-                        &strings,
-                        &structs,
-                    )?;
+                    let ty = resolve_type(source, &global_variable.type_token, &strings, &structs)?;
                     if let Type::Struct(_) = ty {
                         return Err(CompileError {
                             source,
@@ -612,7 +607,8 @@ impl Program {
                             error: format!("Function `{name}` is already defined").into_boxed_str(),
                         });
                     }
-                    let func = Function::compile_external(source, function, &mut strings, &structs)?;
+                    let func =
+                        Function::compile_external(source, function, &mut strings, &structs)?;
                     functions.insert(name_idx, func);
                 }
                 ast::Item::Function(function) => {
@@ -675,7 +671,15 @@ fn build_struct_registry<'s>(
     let mut computed: Vec<Option<StructLayout>> = vec![None; defs.len()];
     let mut in_progress = vec![false; defs.len()];
     for i in 0..defs.len() {
-        build_struct_layout(i, &defs, source, strings, &ids, &mut computed, &mut in_progress)?;
+        build_struct_layout(
+            i,
+            &defs,
+            source,
+            strings,
+            &ids,
+            &mut computed,
+            &mut in_progress,
+        )?;
     }
 
     Ok(StructRegistry {
@@ -1076,19 +1080,19 @@ impl<'s> FunctionCompiler<'s, '_> {
         Ok(variable)
     }
 
-    fn declare_temporary(
+    /// Declares a fresh temporary variable and emits its `Declare` instruction.
+    /// The other `declare_*_temporary` helpers are thin wrappers over this.
+    fn declare_temporary_inner(
         &mut self,
         location: Location,
-        init_value: Value,
+        var_type: Option<Variable>,
         allocation_method: AllocationMethod,
+        init_value: Option<Value>,
     ) -> VariableIndex {
         let temp_name = self
             .strings
             .intern(&format!("temp{}", self.variables.len()));
-        let init_value = (init_value != Value::Void).then_some(init_value);
-        let temp = self
-            .variables
-            .declare_variable(temp_name, init_value.map(|v| Variable::Value(v.type_of())));
+        let temp = self.variables.declare_variable(temp_name, var_type);
         self.blocks.push_instruction(
             location,
             Ir::Declare(
@@ -1105,63 +1109,47 @@ impl<'s> FunctionCompiler<'s, '_> {
         VariableIndex::Temporary(temp)
     }
 
+    fn declare_temporary(
+        &mut self,
+        location: Location,
+        init_value: Value,
+        allocation_method: AllocationMethod,
+    ) -> VariableIndex {
+        let init_value = (init_value != Value::Void).then_some(init_value);
+        self.declare_temporary_inner(
+            location,
+            init_value.map(|v| Variable::Value(v.type_of())),
+            allocation_method,
+            init_value,
+        )
+    }
+
     fn declare_typed_temporary(
         &mut self,
         location: Location,
         ty: Type,
         allocation_method: AllocationMethod,
     ) -> VariableIndex {
-        let temp_name = self
-            .strings
-            .intern(&format!("temp{}", self.variables.len()));
-        let temp = self
-            .variables
-            .declare_variable(temp_name, Some(Variable::Value(ty)));
-        self.blocks.push_instruction(
-            location,
-            Ir::Declare(
-                VariableDeclaration {
-                    index: temp,
-                    name: temp_name,
-                    allocation_method,
-                    is_argument: false,
-                },
-                None,
-            ),
-        );
-
-        VariableIndex::Temporary(temp)
+        self.declare_temporary_inner(location, Some(Variable::Value(ty)), allocation_method, None)
     }
 
     /// Declares a temporary holding a reference (a pointer) to a value of type
     /// `pointee`. Used to materialize the address of a field or place.
     fn declare_ref_temporary(&mut self, location: Location, pointee: Type) -> VariableIndex {
-        let temp_name = self
-            .strings
-            .intern(&format!("temp{}", self.variables.len()));
-        let temp = self
-            .variables
-            .declare_variable(temp_name, Some(Variable::Reference(1, pointee)));
-        self.blocks.push_instruction(
+        self.declare_temporary_inner(
             location,
-            Ir::Declare(
-                VariableDeclaration {
-                    index: temp,
-                    name: temp_name,
-                    allocation_method: AllocationMethod::FirstFit,
-                    is_argument: false,
-                },
-                None,
-            ),
-        );
-
-        VariableIndex::Temporary(temp)
+            Some(Variable::Reference(1, pointee)),
+            AllocationMethod::FirstFit,
+            None,
+        )
     }
 
     /// Returns the declared type of a variable, if it is known at IR-build time.
     fn var_type(&self, var: VariableIndex) -> Option<Variable> {
         match var {
-            VariableIndex::Local(idx) | VariableIndex::Temporary(idx) => self.variables.type_of(idx),
+            VariableIndex::Local(idx) | VariableIndex::Temporary(idx) => {
+                self.variables.type_of(idx)
+            }
             VariableIndex::Global(GlobalVariableIndex(idx)) => self
                 .globals
                 .get_index(idx)
@@ -1198,8 +1186,10 @@ impl<'s> FunctionCompiler<'s, '_> {
                 return Err(CompileError {
                     source: self.source,
                     location: field.location,
-                    error: format!("Cannot access field `{field_name}` of non-struct type `{other}`")
-                        .into_boxed_str(),
+                    error: format!(
+                        "Cannot access field `{field_name}` of non-struct type `{other}`"
+                    )
+                    .into_boxed_str(),
                 });
             }
         };
@@ -1219,6 +1209,38 @@ impl<'s> FunctionCompiler<'s, '_> {
         };
 
         Ok((layout_field.offset, layout_field.ty, indirect))
+    }
+
+    /// Looks up a declared variable by its identifier token, erroring if unknown.
+    fn lookup_variable(&mut self, token: &Token) -> Result<VariableIndex, CompileError<'s>> {
+        let name = token.source(self.source);
+        self.find_variable_by_name(name)
+            .ok_or_else(|| CompileError {
+                source: self.source,
+                location: token.location,
+                error: format!("Variable `{name}` is not declared").into_boxed_str(),
+            })
+    }
+
+    /// Materializes a reference to `base.field` by emitting an `AddressOfField`
+    /// into a fresh reference temporary, and returns that temporary.
+    fn emit_address_of_field(
+        &mut self,
+        base_var: VariableIndex,
+        field: &Token,
+    ) -> Result<VariableIndex, CompileError<'s>> {
+        let (offset, field_ty, indirect) = self.struct_field_info(base_var, field)?;
+        let dst = self.declare_ref_temporary(field.location, field_ty);
+        self.blocks.push_instruction(
+            field.location,
+            Ir::AddressOfField {
+                dst,
+                base: base_var,
+                offset,
+                indirect,
+            },
+        );
+        Ok(dst)
     }
 
     fn compile_statement(
@@ -1759,18 +1781,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
                 Ok(temp)
             }
-            ast::RightHandExpression::Variable { variable } => {
-                let name = variable.source(self.source);
-                match self.find_variable_by_name(name) {
-                    // If the variable is already declared, we can just return it.
-                    Some(index) => Ok(index),
-                    None => Err(CompileError {
-                        source: self.source,
-                        location: variable.location,
-                        error: format!("Variable `{name}` is not declared").into_boxed_str(),
-                    }),
-                }
-            }
+            ast::RightHandExpression::Variable { variable } => self.lookup_variable(variable),
             ast::RightHandExpression::UnaryOperator { name, operand } => {
                 self.compile_unary_operator(*name, operand)
             }
@@ -1799,7 +1810,8 @@ impl<'s> FunctionCompiler<'s, '_> {
         let base_var = self.compile_right_hand_expression(base)?;
         let (offset, field_ty, indirect) = self.struct_field_info(base_var, field)?;
         let size = self.structs.size_of(field_ty);
-        let dst = self.declare_typed_temporary(field.location, field_ty, AllocationMethod::FirstFit);
+        let dst =
+            self.declare_typed_temporary(field.location, field_ty, AllocationMethod::FirstFit);
         self.blocks.push_instruction(
             field.location,
             Ir::LoadField {
@@ -1834,7 +1846,11 @@ impl<'s> FunctionCompiler<'s, '_> {
             })?;
 
         let layout = self.structs.layout(id).clone();
-        let s = self.declare_typed_temporary(name.location, Type::Struct(id), AllocationMethod::FirstFit);
+        let s = self.declare_typed_temporary(
+            name.location,
+            Type::Struct(id),
+            AllocationMethod::FirstFit,
+        );
 
         let mut provided = vec![false; layout.fields.len()];
         for field in fields {
@@ -1899,37 +1915,11 @@ impl<'s> FunctionCompiler<'s, '_> {
         lhs: &ast::LeftHandExpression,
     ) -> Result<VariableIndex, CompileError<'s>> {
         match lhs {
-            ast::LeftHandExpression::Name { variable } => {
-                let name = variable.source(self.source);
-                self.find_variable_by_name(name).ok_or_else(|| CompileError {
-                    source: self.source,
-                    location: variable.location,
-                    error: format!("Variable `{name}` is not declared").into_boxed_str(),
-                })
-            }
-            ast::LeftHandExpression::Deref { name, .. } => {
-                let name_str = name.source(self.source);
-                self.find_variable_by_name(name_str)
-                    .ok_or_else(|| CompileError {
-                        source: self.source,
-                        location: name.location,
-                        error: format!("Variable `{name_str}` is not declared").into_boxed_str(),
-                    })
-            }
+            ast::LeftHandExpression::Name { variable: token }
+            | ast::LeftHandExpression::Deref { name: token, .. } => self.lookup_variable(token),
             ast::LeftHandExpression::Field { base, field, .. } => {
                 let base_var = self.compile_place_base_lhs(base)?;
-                let (offset, field_ty, indirect) = self.struct_field_info(base_var, field)?;
-                let ref_tmp = self.declare_ref_temporary(field.location, field_ty);
-                self.blocks.push_instruction(
-                    field.location,
-                    Ir::AddressOfField {
-                        dst: ref_tmp,
-                        base: base_var,
-                        offset,
-                        indirect,
-                    },
-                );
-                Ok(ref_tmp)
+                self.emit_address_of_field(base_var, field)
             }
         }
     }
@@ -1941,28 +1931,10 @@ impl<'s> FunctionCompiler<'s, '_> {
         expr: &ast::RightHandExpression<VmTypeSet>,
     ) -> Result<VariableIndex, CompileError<'s>> {
         match expr {
-            ast::RightHandExpression::Variable { variable } => {
-                let name = variable.source(self.source);
-                self.find_variable_by_name(name).ok_or_else(|| CompileError {
-                    source: self.source,
-                    location: variable.location,
-                    error: format!("Variable `{name}` is not declared").into_boxed_str(),
-                })
-            }
+            ast::RightHandExpression::Variable { variable } => self.lookup_variable(variable),
             ast::RightHandExpression::FieldAccess { base, field, .. } => {
                 let base_var = self.compile_place_base_rhs(base)?;
-                let (offset, field_ty, indirect) = self.struct_field_info(base_var, field)?;
-                let ref_tmp = self.declare_ref_temporary(field.location, field_ty);
-                self.blocks.push_instruction(
-                    field.location,
-                    Ir::AddressOfField {
-                        dst: ref_tmp,
-                        base: base_var,
-                        offset,
-                        indirect,
-                    },
-                );
-                Ok(ref_tmp)
+                self.emit_address_of_field(base_var, field)
             }
             ast::RightHandExpression::UnaryOperator { name, operand }
                 if name.source(self.source) == "*" =>
@@ -2030,22 +2002,8 @@ impl<'s> FunctionCompiler<'s, '_> {
 
         // Taking the address of a struct field: `&base.field`. Resolve the field's
         // place directly, rather than taking the address of a temporary copy.
-        if op == "&" {
-            if let ast::RightHandExpression::FieldAccess { base, field, .. } = operand {
-                let base_var = self.compile_place_base_rhs(base)?;
-                let (offset, field_ty, indirect) = self.struct_field_info(base_var, field)?;
-                let dst = self.declare_ref_temporary(operator.location, field_ty);
-                self.blocks.push_instruction(
-                    operator.location,
-                    Ir::AddressOfField {
-                        dst,
-                        base: base_var,
-                        offset,
-                        indirect,
-                    },
-                );
-                return Ok(dst);
-            }
+        if op == "&" && matches!(operand, ast::RightHandExpression::FieldAccess { .. }) {
+            return self.compile_place_base_rhs(operand);
         }
 
         // Allocate a temporary variable for the result.

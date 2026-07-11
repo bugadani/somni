@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use criterion::Criterion;
 use somni::{
-    vm::{EvalContext, EvalEvent},
     Compiler,
+    vm::{EvalContext, EvalEvent},
 };
 use somni_expr::{Context, ExprContext};
 

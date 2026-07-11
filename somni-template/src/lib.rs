@@ -49,7 +49,7 @@ mod value;
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 use somni_expr::{Context, ExpressionVisitor, TypeSet};
-use somni_parser::{ast::Item, Location};
+use somni_parser::{Location, ast::Item};
 
 pub use env::Env;
 pub use error::TemplateError;
@@ -57,7 +57,7 @@ pub use somni_expr::{SomniIterator, SomniStruct, TypedValue};
 pub use syntax::{BlockStyle, Syntax};
 pub use value::{IntoValue, Iter, TemplateTypes};
 
-use transpile::{Transpiled, EMIT_FN, EMIT_LIT_FN, RENDER_FN};
+use transpile::{EMIT_FN, EMIT_LIT_FN, RENDER_FN, Transpiled};
 
 /// Shared data used by the internal `emit_lit` function to emit literal chunks by index.
 struct Literals {
