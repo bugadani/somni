@@ -107,14 +107,13 @@ fn to_inner(v: TypedValue<TemplateTypes>) -> TypedValue<DefaultTypeSet> {
         TypedValue::String(s) => TypedValue::String(s),
         // Structs are carried through as iterator elements by down-converting their
         // fields recursively.
-        TypedValue::Struct(s) => TypedValue::Struct(SomniStruct {
-            name: s.name,
-            fields: s
-                .fields
-                .into_iter()
-                .map(|(k, v)| (k, to_inner(v)))
-                .collect(),
-        }),
+        TypedValue::Struct(s) => {
+            let (name, fields) = s.into_parts();
+            TypedValue::Struct(SomniStruct::new(
+                name,
+                fields.into_iter().map(|(k, v)| (k, to_inner(v))).collect(),
+            ))
+        }
         // Nested iterators and references cannot be represented as iterator elements.
         TypedValue::Iter(_) | TypedValue::Ref(_) => TypedValue::Void,
     }
@@ -131,7 +130,7 @@ pub(crate) fn default_str(v: TypedValue<TemplateTypes>) -> String {
         TypedValue::String(s) => String::from(s),
         TypedValue::Void => String::new(),
         TypedValue::Iter(_) => String::from("<iter>"),
-        TypedValue::Struct(s) => format!("<struct {}>", s.name),
+        TypedValue::Struct(s) => format!("<struct {}>", s.name()),
         TypedValue::Ref(_) => String::from("<ref>"),
     }
 }

@@ -186,10 +186,13 @@ macro_rules! impl_with_iterator {
                         TypedValue::Bool(v) => TypedValue::Bool(v),
                         TypedValue::String(v) => TypedValue::String(v),
                         TypedValue::Iter(never) => match never {},
-                        TypedValue::Struct(s) => TypedValue::Struct($crate::SomniStruct {
-                            name: s.name,
-                            fields: s.fields.into_iter().map(|(k, v)| (k, convert(v))).collect(),
-                        }),
+                        TypedValue::Struct(s) => {
+                            let (name, fields) = s.into_parts();
+                            TypedValue::Struct($crate::SomniStruct::new(
+                                name,
+                                fields.into_iter().map(|(k, v)| (k, convert(v))).collect(),
+                            ))
+                        }
                         TypedValue::Ref(r) => TypedValue::Ref(r),
                     }
                 }

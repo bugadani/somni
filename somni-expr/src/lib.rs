@@ -148,8 +148,8 @@ pub use indexmap;
 /// let mut ctx = Context::new();
 /// let tc = ctx.type_context();
 /// let point = somni_struct!(tc, Point { x: 1u64, y: 2u64 });
-/// assert_eq!(&*point.name, "Point");
-/// assert_eq!(point.fields["x"], TypedValue::Int(1));
+/// assert_eq!(point.name(), "Point");
+/// assert_eq!(point.fields()["x"], TypedValue::Int(1));
 /// ```
 #[macro_export]
 macro_rules! somni_struct {
@@ -160,10 +160,10 @@ macro_rules! somni_struct {
             let value = $crate::value::LoadStore::store(&$value, $ctx);
             fields.insert(::std::boxed::Box::<str>::from(stringify!($field)), value);
         )*
-        $crate::SomniStruct {
-            name: ::std::boxed::Box::<str>::from(stringify!($name)),
+        $crate::SomniStruct::new(
+            ::std::boxed::Box::<str>::from(stringify!($name)),
             fields,
-        }
+        )
     }};
 }
 
@@ -1035,8 +1035,9 @@ where
                     format!("Cannot access field `{field}` of a non-struct value").into_boxed_str(),
                 );
             };
-            current = structure.fields.get_mut(&**field).ok_or_else(|| {
-                format!("Struct `{}` has no field `{field}`", structure.name).into_boxed_str()
+            let struct_name = structure.name().to_string();
+            current = structure.fields_mut().get_mut(&**field).ok_or_else(|| {
+                format!("Struct `{struct_name}` has no field `{field}`").into_boxed_str()
             })?;
         }
         Ok(current)
@@ -1508,10 +1509,10 @@ struct Point { x: int, y: int }
 "#;
         let mut ctx = Context::parse(program).unwrap();
         ctx.add_function("origin_distance_sq", |p: SomniStruct| -> i64 {
-            let TypedValue::Int(x) = p.fields["x"] else {
+            let TypedValue::Int(x) = p.fields()["x"] else {
                 panic!("x not an int")
             };
-            let TypedValue::Int(y) = p.fields["y"] else {
+            let TypedValue::Int(y) = p.fields()["y"] else {
                 panic!("y not an int")
             };
             (x * x + y * y) as i64
@@ -1520,7 +1521,7 @@ struct Point { x: int, y: int }
         // Build a struct from Rust and hand it to the program.
         let tc = ctx.type_context();
         let point = somni_struct!(tc, Point { x: 3u64, y: 4u64 });
-        assert_eq!(&*point.name, "Point");
+        assert_eq!(point.name(), "Point");
 
         assert_eq!(
             ctx.evaluate::<bool>("origin_distance_sq(Point { x: 3, y: 4 }) == 25"),

@@ -304,13 +304,13 @@ where
                     });
                 };
 
-                match structure.fields.get(field_name) {
+                match structure.fields().get(field_name) {
                     Some(value) => value.clone(),
                     None => {
                         return Err(EvalError {
                             message: format!(
                                 "Struct `{}` has no field `{field_name}`",
-                                structure.name
+                                structure.name()
                             )
                             .into_boxed_str(),
                             location: field.location,
@@ -380,10 +380,10 @@ where
             out.insert(field_name.clone(), coerced);
         }
 
-        Ok(TypedValue::Struct(SomniStruct {
-            name: Box::from(struct_name),
-            fields: out,
-        }))
+        Ok(TypedValue::Struct(SomniStruct::new(
+            Box::from(struct_name),
+            out,
+        )))
     }
 
     /// Resolves the [`Place`] denoted by a right-hand expression used as the
@@ -500,9 +500,9 @@ where
                 location: field.location,
             });
         };
-        if !structure.fields.contains_key(field_name) {
+        if !structure.fields().contains_key(field_name) {
             return Err(EvalError {
-                message: format!("Struct `{}` has no field `{field_name}`", structure.name)
+                message: format!("Struct `{}` has no field `{field_name}`", structure.name())
                     .into_boxed_str(),
                 location: field.location,
             });
@@ -561,11 +561,11 @@ where
             Err(_) => match &value {
                 // A struct-typed position: the value must be a struct with a
                 // matching name (loose, runtime-checked identity).
-                TypedValue::Struct(structure) if &*structure.name == type_name => Ok(value),
+                TypedValue::Struct(structure) if structure.name() == type_name => Ok(value),
                 TypedValue::Struct(structure) => Err(EvalError {
                     message: format!(
                         "Expected struct `{type_name}`, got struct `{}`",
-                        structure.name
+                        structure.name()
                     )
                     .into_boxed_str(),
                     location,
