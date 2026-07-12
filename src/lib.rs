@@ -49,7 +49,7 @@ impl<'ctx> Compiler<'ctx> {
             }
         };
 
-        let ir = match ir::Program::compile(source, &ast) {
+        let mut ir = match ir::Program::compile(source, &ast) {
             Ok(program) => program,
             Err(parse_error) => {
                 return Err(CompileError {
@@ -59,6 +59,11 @@ impl<'ctx> Compiler<'ctx> {
                 });
             }
         };
+
+        // Run the IR transformation/type-propagation pass. Codegen relies on the
+        // types resolved here (e.g. for comparison operands and references); the
+        // test harness runs this same pass between IR compilation and codegen.
+        transform_ir::transform_ir(source, &mut ir)?;
 
         codegen::compile(source, ast, &ir, &self.functions)
     }
@@ -80,7 +85,7 @@ impl<'ctx> Compiler<'ctx> {
     /// compiler.add_function("rust_fn", |a: u64| a + 3);
     ///
     /// compiler.compile(r#"
-    ///     extern fn rust_fn() -> int;
+    ///     extern fn rust_fn(x: int) -> int;
     ///
     ///     var a: int = foo();
     ///
