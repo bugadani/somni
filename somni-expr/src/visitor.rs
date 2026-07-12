@@ -130,7 +130,7 @@ where
                                     .into_boxed_str(),
                                 location: operand.location(),
                             })?;
-                        TypedValue::Ref(Reference { pointee, place })
+                        TypedValue::Ref(Reference::new(pointee, place))
                     }
                     "*" => {
                         let value = self.visit_right_hand_expression(operand)?;
@@ -142,7 +142,7 @@ where
                             });
                         };
                         self.context
-                            .load_place(&reference.place)
+                            .load_place(reference.place())
                             .map_err(|e| EvalError {
                                 message: format!("Failed to load variable from address: {e}")
                                     .into_boxed_str(),
@@ -284,7 +284,7 @@ where
                 let base_value = match base_value {
                     TypedValue::Ref(reference) => self
                         .context
-                        .load_place(&reference.place)
+                        .load_place(reference.place())
                         .map_err(|e| EvalError {
                             message: e,
                             location: base.location(),
@@ -408,7 +408,7 @@ where
             {
                 let value = self.visit_right_hand_expression(operand)?;
                 match value {
-                    TypedValue::Ref(reference) => Ok(reference.place),
+                    TypedValue::Ref(reference) => Ok(reference.into_place()),
                     other => Err(EvalError {
                         message: format!("Cannot dereference {}", other.type_of()).into_boxed_str(),
                         location: operand.location(),
@@ -443,7 +443,7 @@ where
             LeftHandExpression::Deref { name, .. } => {
                 let value = self.visit_variable(name)?;
                 match value {
-                    TypedValue::Ref(reference) => Ok(reference.place),
+                    TypedValue::Ref(reference) => Ok(reference.into_place()),
                     other => Err(EvalError {
                         message: format!("Cannot dereference {}", other.type_of()).into_boxed_str(),
                         location: name.location,
@@ -474,7 +474,7 @@ where
                 location: base_location,
             })?;
         Ok(match base_value {
-            TypedValue::Ref(reference) => reference.place,
+            TypedValue::Ref(reference) => reference.into_place(),
             _ => base_place,
         })
     }

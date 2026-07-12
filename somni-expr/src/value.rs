@@ -383,12 +383,45 @@ pub struct Place {
 }
 
 /// A first-class reference value: the pointee type plus the place it points to.
+///
+/// The representation lives behind a single [`Box`], so `Reference` (and
+/// therefore [`TypedValue`], which embeds it by value) is only one pointer wide.
+/// The internals are reached through [`pointee`](Self::pointee),
+/// [`place`](Self::place) and [`into_place`](Self::into_place).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reference {
-    /// The static kind of the referenced value.
-    pub pointee: RefPointee,
-    /// The place this reference points to.
-    pub place: Place,
+    inner: Box<ReferenceInner>,
+}
+
+/// The heap-allocated payload of a [`Reference`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ReferenceInner {
+    pointee: RefPointee,
+    place: Place,
+}
+
+impl Reference {
+    /// Creates a reference to the given place with the given pointee kind.
+    pub fn new(pointee: RefPointee, place: Place) -> Self {
+        Self {
+            inner: Box::new(ReferenceInner { pointee, place }),
+        }
+    }
+
+    /// Returns the static kind of the referenced value.
+    pub fn pointee(&self) -> RefPointee {
+        self.inner.pointee
+    }
+
+    /// Returns the place this reference points to.
+    pub fn place(&self) -> &Place {
+        &self.inner.place
+    }
+
+    /// Consumes the reference, returning the place it points to.
+    pub fn into_place(self) -> Place {
+        self.inner.place
+    }
 }
 
 impl<T: TypeSet> PartialEq for TypedValue<T> {
@@ -444,7 +477,7 @@ impl<T: TypeSet> TypedValue<T> {
             TypedValue::String(_) => Type::String,
             TypedValue::Iter(_) => Type::Iter,
             TypedValue::Struct(_) => Type::Struct,
-            TypedValue::Ref(r) => Type::Ref(r.pointee),
+            TypedValue::Ref(r) => Type::Ref(r.pointee()),
         }
     }
 }
