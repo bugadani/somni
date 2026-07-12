@@ -11,6 +11,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 somni-parser.workspace = true
+indexmap.workspace = true
 
 [dev-dependencies]
 ansi-parser.workspace = true

@@ -1,0 +1,2 @@
+{% if point == same_point %}point equals same_point{% endif %}
+{% if point != other_point %}point differs from other_point{% endif %}

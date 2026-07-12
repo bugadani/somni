@@ -1,0 +1,9 @@
+fn __tmpl_render() {
+for p in (points) {
+__tmpl_emit_lit(0);
+__tmpl_emit(str(p.x));
+__tmpl_emit_lit(1);
+__tmpl_emit(str(p.y));
+__tmpl_emit_lit(2);
+}
+}

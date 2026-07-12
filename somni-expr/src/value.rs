@@ -1,8 +1,9 @@
 //! Types and operations.
 
+use indexmap::IndexMap;
 use somni_parser::parser::DefaultTypeSet;
 
-use crate::{OperatorError, Type, TypeSet};
+use crate::{OperatorError, RefPointee, Type, TypeSet};
 
 /// A Rust type that is used as the storage for a Somni type.
 pub trait ValueType: Sized + Clone + PartialEq + std::fmt::Debug {
@@ -284,6 +285,143 @@ pub enum TypedValue<T: TypeSet = DefaultTypeSet> {
     String(T::String),
     /// Represents an iterator.
     Iter(T::Iterator),
+    /// Represents a struct value: a named aggregate of typed fields.
+    Struct(SomniStruct<T>),
+    /// Represents a reference to a place (a variable, or a field within one).
+    Ref(Reference),
+}
+
+/// A struct value: a struct name plus its fields, keyed by field name.
+///
+/// This is the runtime representation of a Somni struct and doubles as the
+/// Rust-side boundary type. Field values are stored by name; the field order in
+/// the map reflects the struct's declaration order.
+///
+/// The entire representation lives behind a single [`Box`], so `SomniStruct`
+/// (and therefore [`TypedValue`], which embeds it by value) is only one pointer
+/// wide. Inlining the name and the [`IndexMap`] would bloat every value the
+/// evaluator moves and clones on its hot paths. The internals are reached through
+/// [`name`](Self::name), [`fields`](Self::fields), [`fields_mut`](Self::fields_mut)
+/// and [`into_parts`](Self::into_parts).
+pub struct SomniStruct<T: TypeSet = DefaultTypeSet> {
+    inner: Box<SomniStructInner<T>>,
+}
+
+/// The heap-allocated payload of a [`SomniStruct`].
+struct SomniStructInner<T: TypeSet> {
+    name: Box<str>,
+    fields: IndexMap<Box<str>, TypedValue<T>>,
+}
+
+impl<T: TypeSet> SomniStruct<T> {
+    /// Creates a struct value from its name and fields.
+    pub fn new(name: Box<str>, fields: IndexMap<Box<str>, TypedValue<T>>) -> Self {
+        Self {
+            inner: Box::new(SomniStructInner { name, fields }),
+        }
+    }
+
+    /// Returns the struct type's name.
+    pub fn name(&self) -> &str {
+        &self.inner.name
+    }
+
+    /// Returns the struct's fields, keyed by field name, in declaration order.
+    pub fn fields(&self) -> &IndexMap<Box<str>, TypedValue<T>> {
+        &self.inner.fields
+    }
+
+    /// Returns a mutable reference to the struct's fields.
+    pub fn fields_mut(&mut self) -> &mut IndexMap<Box<str>, TypedValue<T>> {
+        &mut self.inner.fields
+    }
+
+    /// Consumes the struct, returning its name and fields.
+    pub fn into_parts(self) -> (Box<str>, IndexMap<Box<str>, TypedValue<T>>) {
+        let inner = *self.inner;
+        (inner.name, inner.fields)
+    }
+}
+
+impl<T: TypeSet> Clone for SomniStruct<T> {
+    fn clone(&self) -> Self {
+        Self::new(self.inner.name.clone(), self.inner.fields.clone())
+    }
+}
+
+impl<T: TypeSet> std::fmt::Debug for SomniStruct<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SomniStruct")
+            .field("name", &self.inner.name)
+            .field("fields", &self.inner.fields)
+            .finish()
+    }
+}
+
+impl<T: TypeSet> PartialEq for SomniStruct<T> {
+    fn eq(&self, other: &Self) -> bool {
+        // Structural equality: same struct name and equal fields. `IndexMap`'s
+        // `PartialEq` compares entries independent of order.
+        self.inner.name == other.inner.name && self.inner.fields == other.inner.fields
+    }
+}
+
+/// A location that a reference points to: a root variable plus a path of field
+/// names to descend into. An empty path refers to the whole variable.
+///
+/// `root` is an opaque, context-internal variable address (the same encoding the
+/// evaluator uses for variable coordinates); only the owning [`ExprContext`] knows
+/// how to resolve it.
+///
+/// [`ExprContext`]: crate::ExprContext
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Place {
+    /// Opaque root variable address.
+    pub root: usize,
+    /// Field names to descend, from the root. Empty means the whole variable.
+    pub path: Box<[Box<str>]>,
+}
+
+/// A first-class reference value: the pointee type plus the place it points to.
+///
+/// The representation lives behind a single [`Box`], so `Reference` (and
+/// therefore [`TypedValue`], which embeds it by value) is only one pointer wide.
+/// The internals are reached through [`pointee`](Self::pointee),
+/// [`place`](Self::place) and [`into_place`](Self::into_place).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Reference {
+    inner: Box<ReferenceInner>,
+}
+
+/// The heap-allocated payload of a [`Reference`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ReferenceInner {
+    pointee: RefPointee,
+    place: Place,
+}
+
+impl Reference {
+    /// Creates a reference to the given place with the given pointee kind.
+    pub fn new(pointee: RefPointee, place: Place) -> Self {
+        Self {
+            inner: Box::new(ReferenceInner { pointee, place }),
+        }
+    }
+
+    /// Returns the static kind of the referenced value.
+    pub fn pointee(&self) -> RefPointee {
+        self.inner.pointee
+    }
+
+    /// Returns the place this reference points to.
+    pub fn place(&self) -> &Place {
+        &self.inner.place
+    }
+
+    /// Consumes the reference, returning the place it points to.
+    pub fn into_place(self) -> Place {
+        self.inner.place
+    }
 }
 
 impl<T: TypeSet> PartialEq for TypedValue<T> {
@@ -302,6 +440,8 @@ impl<T: TypeSet> PartialEq for TypedValue<T> {
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs == rhs,
             (Self::String(lhs), Self::String(rhs)) => lhs == rhs,
             (Self::Iter(lhs), Self::Iter(rhs)) => lhs == rhs,
+            (Self::Struct(lhs), Self::Struct(rhs)) => lhs == rhs,
+            (Self::Ref(lhs), Self::Ref(rhs)) => lhs == rhs,
             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
         }
     }
@@ -318,6 +458,8 @@ impl<T: TypeSet> Clone for TypedValue<T> {
             Self::Bool(inner) => Self::Bool(*inner),
             Self::String(inner) => Self::String(inner.clone()),
             Self::Iter(inner) => Self::Iter(inner.clone()),
+            Self::Struct(inner) => Self::Struct(inner.clone()),
+            Self::Ref(inner) => Self::Ref(inner.clone()),
         }
     }
 }
@@ -334,6 +476,8 @@ impl<T: TypeSet> TypedValue<T> {
             TypedValue::Bool(_) => Type::Bool,
             TypedValue::String(_) => Type::String,
             TypedValue::Iter(_) => Type::Iter,
+            TypedValue::Struct(_) => Type::Struct,
+            TypedValue::Ref(r) => Type::Ref(r.pointee()),
         }
     }
 }
@@ -523,5 +667,27 @@ impl<T: TypeSet> LoadStore<T> for &str {
     }
     fn store(&self, ctx: &mut T) -> TypedValue<T> {
         TypedValue::String(ctx.store_string(self))
+    }
+}
+
+// A struct value crosses the boundary as itself: its fields are already
+// `TypedValue`s, so no type context is needed to (un)wrap it.
+impl<T: TypeSet> LoadOwned<T> for SomniStruct<T> {
+    type Output = SomniStruct<T>;
+    fn load_owned(_ctx: &T, typed: &TypedValue<T>) -> Option<Self::Output> {
+        if let TypedValue::Struct(s) = typed {
+            Some(s.clone())
+        } else {
+            None
+        }
+    }
+}
+impl<T: TypeSet> LoadStore<T> for SomniStruct<T> {
+    type Output<'s> = SomniStruct<T>;
+    fn load(ctx: &T, typed: &TypedValue<T>) -> Option<Self> {
+        <Self as LoadOwned<T>>::load_owned(ctx, typed)
+    }
+    fn store(&self, _ctx: &mut T) -> TypedValue<T> {
+        TypedValue::Struct(self.clone())
     }
 }

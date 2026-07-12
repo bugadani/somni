@@ -6,14 +6,14 @@ use crate::{
     error::CompileError,
     ir,
     string_interner::{StringIndex, StringInterner},
-    types::{TypedValue, VmTypeSet},
+    types::{TypeExt, TypedValue, VmTypeSet},
     variable_tracker::{LocalVariableIndex, RestorePoint, ScopeData, VariableTracker},
 };
 
 use somni_parser::{
+    Location,
     ast::{self, FunctionArgument},
     lexer::Token,
-    Location,
 };
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -106,6 +106,8 @@ pub enum Type {
     Bool,
     String,
     Iter,
+    /// A struct type, identified by its layout index in [`Program::structs`].
+    Struct(StructId),
 }
 
 impl Display for Type {
@@ -119,7 +121,59 @@ impl Display for Type {
             Type::String => write!(f, "string"),
             Type::Float => write!(f, "float"),
             Type::Iter => write!(f, "iter"),
+            Type::Struct(id) => write!(f, "struct#{}", id.0),
         }
+    }
+}
+
+/// An index into [`Program::structs`], identifying a struct's memory layout.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub struct StructId(pub usize);
+
+/// A field within a [`StructLayout`]: its name, type, and byte offset from the
+/// start of the struct.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StructFieldLayout {
+    pub name: StringIndex,
+    pub ty: Type,
+    pub offset: usize,
+}
+
+/// The packed (no-alignment) memory layout of a struct type.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StructLayout {
+    pub name: StringIndex,
+    pub fields: Vec<StructFieldLayout>,
+    pub size: usize,
+}
+
+/// The set of struct layouts in a program, plus a name-to-id index.
+#[derive(Clone, Debug, Default)]
+pub struct StructRegistry {
+    pub layouts: Vec<StructLayout>,
+    pub ids: IndexMap<StringIndex, StructId>,
+}
+
+impl StructRegistry {
+    pub fn layout(&self, id: StructId) -> &StructLayout {
+        &self.layouts[id.0]
+    }
+
+    pub fn id_of(&self, name: StringIndex) -> Option<StructId> {
+        self.ids.get(&name).copied()
+    }
+
+    /// Returns the byte size of a type, resolving struct sizes via the registry.
+    pub fn size_of(&self, ty: Type) -> usize {
+        match ty {
+            Type::Struct(id) => self.layout(id).size,
+            other => somni_expr::Type::from(other).vm_size_of(),
+        }
+    }
+
+    /// Looks up a field of a struct by name, returning its layout.
+    pub fn field(&self, id: StructId, name: StringIndex) -> Option<&StructFieldLayout> {
+        self.layout(id).fields.iter().find(|f| f.name == name)
     }
 }
 
@@ -217,6 +271,31 @@ pub enum Ir {
     IterHasNext(VariableIndex, VariableIndex),
     /// `dst` (element type) = next value from `iter`.
     IterNext(VariableIndex, VariableIndex),
+
+    /// `dst` = the `size`-byte field at `base` + `offset`. When `indirect`, `base`
+    /// holds an address (a reference); otherwise `base` is the aggregate itself.
+    LoadField {
+        dst: VariableIndex,
+        base: VariableIndex,
+        offset: usize,
+        size: usize,
+        indirect: bool,
+    },
+    /// The `size`-byte field at `base` + `offset` = `src`. `indirect` as above.
+    StoreField {
+        base: VariableIndex,
+        offset: usize,
+        size: usize,
+        indirect: bool,
+        src: VariableIndex,
+    },
+    /// `dst` (a reference) = the address of `base` + `offset`. `indirect` as above.
+    AddressOfField {
+        dst: VariableIndex,
+        base: VariableIndex,
+        offset: usize,
+        indirect: bool,
+    },
 }
 
 impl Ir {
@@ -295,6 +374,41 @@ impl Ir {
                 let dst = dst.name(program, function);
                 let iter = iter.name(program, function);
                 write!(&mut output, "{dst} = next({iter})").unwrap()
+            }
+            Self::LoadField {
+                dst,
+                base,
+                offset,
+                size,
+                indirect,
+            } => {
+                let dst = dst.name(program, function);
+                let base = base.name(program, function);
+                let star = if *indirect { "*" } else { "" };
+                write!(&mut output, "{dst} = {star}{base}[{offset}..+{size}]").unwrap()
+            }
+            Self::StoreField {
+                base,
+                offset,
+                size,
+                indirect,
+                src,
+            } => {
+                let base = base.name(program, function);
+                let src = src.name(program, function);
+                let star = if *indirect { "*" } else { "" };
+                write!(&mut output, "{star}{base}[{offset}..+{size}] = {src}").unwrap()
+            }
+            Self::AddressOfField {
+                dst,
+                base,
+                offset,
+                indirect,
+            } => {
+                let dst = dst.name(program, function);
+                let base = base.name(program, function);
+                let star = if *indirect { "*" } else { "" };
+                write!(&mut output, "{dst} = &{star}{base}[{offset}]").unwrap()
             }
         }
         output
@@ -385,6 +499,36 @@ pub struct Program {
     pub globals: IndexMap<StringIndex, GlobalVariableInfo>,
     pub functions: IndexMap<StringIndex, Function>,
     pub strings: StringInterner,
+    pub structs: StructRegistry,
+}
+
+/// Resolves a type annotation to an IR type, recognizing struct names via the registry.
+fn resolve_type<'s>(
+    source: &'s str,
+    type_token: &ast::TypeHint,
+    strings: &StringInterner,
+    structs: &StructRegistry,
+) -> Result<Type, CompileError<'s>> {
+    let name = type_token.type_name.source(source);
+    Ok(match name {
+        "int" => Type::Int,
+        "signed" => Type::SignedInt,
+        "float" => Type::Float,
+        "bool" => Type::Bool,
+        "string" => Type::String,
+        "iter" => Type::Iter,
+        other => {
+            if let Some(id) = strings.find(other).and_then(|idx| structs.id_of(idx)) {
+                Type::Struct(id)
+            } else {
+                return Err(CompileError {
+                    source,
+                    location: type_token.type_name.location,
+                    error: format!("Unknown type `{other}`").into_boxed_str(),
+                });
+            }
+        }
+    })
 }
 
 impl Program {
@@ -415,9 +559,13 @@ impl Program {
         let mut functions = IndexMap::new();
         let mut globals = IndexMap::new();
 
+        // Build struct layouts first, so that struct type names resolve everywhere else.
+        let structs = build_struct_registry(source, ast, &mut strings)?;
+
         // Declare items first
         for item in &ast.items {
             match item {
+                ast::Item::Struct(_) => {}
                 ast::Item::GlobalVariable(global_variable) => {
                     let name = global_variable.identifier.source(source);
                     let name_idx = strings.intern(name);
@@ -430,21 +578,16 @@ impl Program {
                         });
                     }
 
-                    let ty = match global_variable.type_token.type_name.source(source) {
-                        "int" => Type::Int,
-                        "signed" => Type::SignedInt,
-                        "float" => Type::Float,
-                        "bool" => Type::Bool,
-                        "string" => Type::String,
-                        "iter" => Type::Iter,
-                        other => {
-                            return Err(CompileError {
-                                source,
-                                location: global_variable.type_token.type_name.location,
-                                error: format!("Unknown type `{other}`").into_boxed_str(),
-                            });
-                        }
-                    };
+                    let ty = resolve_type(source, &global_variable.type_token, &strings, &structs)?;
+                    if let Type::Struct(_) = ty {
+                        return Err(CompileError {
+                            source,
+                            location: global_variable.type_token.type_name.location,
+                            error: "Struct-typed global variables are not supported by the VM"
+                                .to_string()
+                                .into_boxed_str(),
+                        });
+                    }
 
                     globals.insert(
                         name_idx,
@@ -464,10 +607,9 @@ impl Program {
                             error: format!("Function `{name}` is already defined").into_boxed_str(),
                         });
                     }
-                    functions.insert(
-                        name_idx,
-                        Function::compile_external(source, function, &mut strings)?,
-                    );
+                    let func =
+                        Function::compile_external(source, function, &mut strings, &structs)?;
+                    functions.insert(name_idx, func);
                 }
                 ast::Item::Function(function) => {
                     let name = function.name.source(source);
@@ -486,7 +628,7 @@ impl Program {
 
         for item in &ast.items {
             if let ast::Item::Function(function) = item {
-                let func = Function::compile(source, function, &mut strings, &globals)?;
+                let func = Function::compile(source, function, &mut strings, &globals, &structs)?;
                 functions.insert(func.name, func);
             }
         }
@@ -495,8 +637,143 @@ impl Program {
             globals,
             functions,
             strings,
+            structs,
         })
     }
+}
+
+/// Builds the [`StructRegistry`] from a program's struct definitions, computing
+/// packed layouts and detecting recursive structs.
+fn build_struct_registry<'s>(
+    source: &'s str,
+    ast: &ast::Program<VmTypeSet>,
+    strings: &mut StringInterner,
+) -> Result<StructRegistry, CompileError<'s>> {
+    let mut defs: Vec<&ast::StructDef> = Vec::new();
+    let mut ids: IndexMap<StringIndex, StructId> = IndexMap::new();
+
+    for item in &ast.items {
+        if let ast::Item::Struct(def) = item {
+            let name = def.name.source(source);
+            let name_idx = strings.intern(name);
+            if ids.contains_key(&name_idx) {
+                return Err(CompileError {
+                    source,
+                    location: def.name.location,
+                    error: format!("Struct `{name}` is already defined").into_boxed_str(),
+                });
+            }
+            ids.insert(name_idx, StructId(defs.len()));
+            defs.push(def);
+        }
+    }
+
+    let mut computed: Vec<Option<StructLayout>> = vec![None; defs.len()];
+    let mut in_progress = vec![false; defs.len()];
+    for i in 0..defs.len() {
+        build_struct_layout(
+            i,
+            &defs,
+            source,
+            strings,
+            &ids,
+            &mut computed,
+            &mut in_progress,
+        )?;
+    }
+
+    Ok(StructRegistry {
+        layouts: computed.into_iter().map(Option::unwrap).collect(),
+        ids,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_struct_layout<'s>(
+    idx: usize,
+    defs: &[&ast::StructDef],
+    source: &'s str,
+    strings: &mut StringInterner,
+    ids: &IndexMap<StringIndex, StructId>,
+    computed: &mut Vec<Option<StructLayout>>,
+    in_progress: &mut Vec<bool>,
+) -> Result<(), CompileError<'s>> {
+    if computed[idx].is_some() {
+        return Ok(());
+    }
+    let def = defs[idx];
+    if in_progress[idx] {
+        return Err(CompileError {
+            source,
+            location: def.name.location,
+            error: format!("Struct `{}` is recursive", def.name.source(source)).into_boxed_str(),
+        });
+    }
+    in_progress[idx] = true;
+
+    let struct_name_idx = strings.intern(def.name.source(source));
+    let mut fields = Vec::new();
+    let mut offset = 0;
+    let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for field in &def.fields {
+        let field_name = field.name.source(source);
+        if !seen.insert(field_name) {
+            return Err(CompileError {
+                source,
+                location: field.name.location,
+                error: format!("Duplicate field `{field_name}`").into_boxed_str(),
+            });
+        }
+
+        let type_name = field.field_type.type_name.source(source);
+        let field_ty = match type_name {
+            "int" => Type::Int,
+            "signed" => Type::SignedInt,
+            "float" => Type::Float,
+            "bool" => Type::Bool,
+            "string" => Type::String,
+            "iter" | "void" => {
+                return Err(CompileError {
+                    source,
+                    location: field.field_type.type_name.location,
+                    error: format!("Struct fields cannot be of type `{type_name}`")
+                        .into_boxed_str(),
+                });
+            }
+            other => {
+                if let Some(dep) = strings.find(other).and_then(|i| ids.get(&i).copied()) {
+                    build_struct_layout(dep.0, defs, source, strings, ids, computed, in_progress)?;
+                    Type::Struct(dep)
+                } else {
+                    return Err(CompileError {
+                        source,
+                        location: field.field_type.type_name.location,
+                        error: format!("Unknown type `{other}`").into_boxed_str(),
+                    });
+                }
+            }
+        };
+
+        let size = match field_ty {
+            Type::Struct(dep) => computed[dep.0].as_ref().unwrap().size,
+            other => somni_expr::Type::from(other).vm_size_of(),
+        };
+        let field_name_idx = strings.intern(field_name);
+        fields.push(StructFieldLayout {
+            name: field_name_idx,
+            ty: field_ty,
+            offset,
+        });
+        offset += size;
+    }
+
+    computed[idx] = Some(StructLayout {
+        name: struct_name_idx,
+        fields,
+        size: offset,
+    });
+    in_progress[idx] = false;
+    Ok(())
 }
 
 pub struct Function {
@@ -568,9 +845,11 @@ impl Function {
         func: &ast::Function<VmTypeSet>,
         strings: &mut StringInterner,
         globals: &IndexMap<StringIndex, GlobalVariableInfo>,
+        structs: &StructRegistry,
     ) -> Result<Function, CompileError<'s>> {
         let mut this = FunctionCompiler {
             source,
+            structs,
             blocks: Blocks {
                 blocks: vec![
                     // Enter function
@@ -600,7 +879,7 @@ impl Function {
         // Allocate a return variable, if the function has a return type.
         let (return_type, return_token) = if let Some(return_type) = &func.return_decl {
             (
-                FunctionCompiler::compile_type(source, &return_type.return_type)?,
+                resolve_type(source, &return_type.return_type, this.strings, this.structs)?,
                 return_type.return_type.type_name,
             )
         } else {
@@ -618,7 +897,7 @@ impl Function {
         // allocate variables for arguments
         let mut arguments = vec![];
         for argument in func.arguments.iter() {
-            let ty = FunctionCompiler::compile_type(source, &argument.arg_type)?;
+            let ty = resolve_type(source, &argument.arg_type, this.strings, this.structs)?;
             let ty = if argument.reference_token.is_some() {
                 Variable::Reference(1, ty)
             } else {
@@ -648,12 +927,13 @@ impl Function {
         source: &'s str,
         func: &ast::ExternalFunction,
         strings: &mut StringInterner,
+        structs: &StructRegistry,
     ) -> Result<Function, CompileError<'s>> {
         Self::validate_arg_names(source, &func.arguments)?;
 
         // Allocate a return variable, if the function has a return type.
         let return_type = if let Some(return_type) = &func.return_decl {
-            FunctionCompiler::compile_type(source, &return_type.return_type)?
+            resolve_type(source, &return_type.return_type, strings, structs)?
         } else {
             Type::Void
         };
@@ -661,7 +941,7 @@ impl Function {
         // allocate variables for arguments
         let mut arguments = vec![];
         for argument in func.arguments.iter() {
-            let ty = FunctionCompiler::compile_type(source, &argument.arg_type)?;
+            let ty = resolve_type(source, &argument.arg_type, strings, structs)?;
             let ty = if argument.reference_token.is_some() {
                 Variable::Reference(1, ty)
             } else {
@@ -768,6 +1048,7 @@ struct FunctionCompiler<'s, 'c> {
     source: &'s str,
     strings: &'c mut StringInterner,
     globals: &'c IndexMap<StringIndex, GlobalVariableInfo>,
+    structs: &'c StructRegistry,
 
     blocks: Blocks,
     variables: VariableTracker,
@@ -799,19 +1080,19 @@ impl<'s> FunctionCompiler<'s, '_> {
         Ok(variable)
     }
 
-    fn declare_temporary(
+    /// Declares a fresh temporary variable and emits its `Declare` instruction.
+    /// The other `declare_*_temporary` helpers are thin wrappers over this.
+    fn declare_temporary_inner(
         &mut self,
         location: Location,
-        init_value: Value,
+        var_type: Option<Variable>,
         allocation_method: AllocationMethod,
+        init_value: Option<Value>,
     ) -> VariableIndex {
         let temp_name = self
             .strings
             .intern(&format!("temp{}", self.variables.len()));
-        let init_value = (init_value != Value::Void).then_some(init_value);
-        let temp = self
-            .variables
-            .declare_variable(temp_name, init_value.map(|v| Variable::Value(v.type_of())));
+        let temp = self.variables.declare_variable(temp_name, var_type);
         self.blocks.push_instruction(
             location,
             Ir::Declare(
@@ -828,32 +1109,138 @@ impl<'s> FunctionCompiler<'s, '_> {
         VariableIndex::Temporary(temp)
     }
 
+    fn declare_temporary(
+        &mut self,
+        location: Location,
+        init_value: Value,
+        allocation_method: AllocationMethod,
+    ) -> VariableIndex {
+        let init_value = (init_value != Value::Void).then_some(init_value);
+        self.declare_temporary_inner(
+            location,
+            init_value.map(|v| Variable::Value(v.type_of())),
+            allocation_method,
+            init_value,
+        )
+    }
+
     fn declare_typed_temporary(
         &mut self,
         location: Location,
         ty: Type,
         allocation_method: AllocationMethod,
     ) -> VariableIndex {
-        let temp_name = self
-            .strings
-            .intern(&format!("temp{}", self.variables.len()));
-        let temp = self
-            .variables
-            .declare_variable(temp_name, Some(Variable::Value(ty)));
-        self.blocks.push_instruction(
-            location,
-            Ir::Declare(
-                VariableDeclaration {
-                    index: temp,
-                    name: temp_name,
-                    allocation_method,
-                    is_argument: false,
-                },
-                None,
-            ),
-        );
+        self.declare_temporary_inner(location, Some(Variable::Value(ty)), allocation_method, None)
+    }
 
-        VariableIndex::Temporary(temp)
+    /// Declares a temporary holding a reference (a pointer) to a value of type
+    /// `pointee`. Used to materialize the address of a field or place.
+    fn declare_ref_temporary(&mut self, location: Location, pointee: Type) -> VariableIndex {
+        self.declare_temporary_inner(
+            location,
+            Some(Variable::Reference(1, pointee)),
+            AllocationMethod::FirstFit,
+            None,
+        )
+    }
+
+    /// Returns the declared type of a variable, if it is known at IR-build time.
+    fn var_type(&self, var: VariableIndex) -> Option<Variable> {
+        match var {
+            VariableIndex::Local(idx) | VariableIndex::Temporary(idx) => {
+                self.variables.type_of(idx)
+            }
+            VariableIndex::Global(GlobalVariableIndex(idx)) => self
+                .globals
+                .get_index(idx)
+                .map(|(_, info)| Variable::Value(info.ty)),
+        }
+    }
+
+    /// Resolves a struct field access on `base`: returns the field's byte offset,
+    /// its type, and whether `base` is a reference (so the access is indirect).
+    ///
+    /// The base's type must be statically known at IR-build time; if it isn't
+    /// (e.g. an un-annotated variable initialized from a function call), a helpful
+    /// error is returned.
+    fn struct_field_info(
+        &self,
+        base: VariableIndex,
+        field: &Token,
+    ) -> Result<(usize, Type, bool), CompileError<'s>> {
+        let field_name = field.source(self.source);
+        let base_ty = self.var_type(base).ok_or_else(|| CompileError {
+            source: self.source,
+            location: field.location,
+            error: format!(
+                "Cannot determine the struct type for field access `.{field_name}`; \
+                 add a type annotation"
+            )
+            .into_boxed_str(),
+        })?;
+
+        let (indirect, id) = match base_ty {
+            Variable::Value(Type::Struct(id)) => (false, id),
+            Variable::Reference(1, Type::Struct(id)) => (true, id),
+            other => {
+                return Err(CompileError {
+                    source: self.source,
+                    location: field.location,
+                    error: format!(
+                        "Cannot access field `{field_name}` of non-struct type `{other}`"
+                    )
+                    .into_boxed_str(),
+                });
+            }
+        };
+
+        let layout_field = self
+            .strings
+            .find(field_name)
+            .and_then(|idx| self.structs.field(id, idx));
+        let Some(layout_field) = layout_field else {
+            let struct_name = self.strings.lookup(self.structs.layout(id).name);
+            return Err(CompileError {
+                source: self.source,
+                location: field.location,
+                error: format!("Struct `{struct_name}` has no field `{field_name}`")
+                    .into_boxed_str(),
+            });
+        };
+
+        Ok((layout_field.offset, layout_field.ty, indirect))
+    }
+
+    /// Looks up a declared variable by its identifier token, erroring if unknown.
+    fn lookup_variable(&mut self, token: &Token) -> Result<VariableIndex, CompileError<'s>> {
+        let name = token.source(self.source);
+        self.find_variable_by_name(name)
+            .ok_or_else(|| CompileError {
+                source: self.source,
+                location: token.location,
+                error: format!("Variable `{name}` is not declared").into_boxed_str(),
+            })
+    }
+
+    /// Materializes a reference to `base.field` by emitting an `AddressOfField`
+    /// into a fresh reference temporary, and returns that temporary.
+    fn emit_address_of_field(
+        &mut self,
+        base_var: VariableIndex,
+        field: &Token,
+    ) -> Result<VariableIndex, CompileError<'s>> {
+        let (offset, field_ty, indirect) = self.struct_field_info(base_var, field)?;
+        let dst = self.declare_ref_temporary(field.location, field_ty);
+        self.blocks.push_instruction(
+            field.location,
+            Ir::AddressOfField {
+                dst,
+                base: base_var,
+                offset,
+                indirect,
+            },
+        );
+        Ok(dst)
     }
 
     fn compile_statement(
@@ -922,17 +1309,31 @@ impl<'s> FunctionCompiler<'s, '_> {
 
         let name = ident.source(self.source);
         let var_ty = if let Some(type_token) = ty {
-            Some(Variable::Value(Self::compile_type(
+            Some(Variable::Value(resolve_type(
                 self.source,
                 type_token,
+                self.strings,
+                self.structs,
             )?))
         } else {
             None
         };
+        let had_annotation = var_ty.is_some();
         let variable = self.declare_variable(name, var_ty, ident.location, false)?;
 
         let rp = self.variables.create_restore_point();
         let expr_result = self.compile_right_hand_expression(initializer)?;
+        // Struct-typed locals need a concrete type at IR-build time so that later
+        // field accesses can resolve their layout. When there's no annotation,
+        // adopt the initializer's (build-time-known) struct type.
+        if !had_annotation {
+            if let Some(
+                ty @ (Variable::Value(Type::Struct(_)) | Variable::Reference(_, Type::Struct(_))),
+            ) = self.var_type(expr_result)
+            {
+                self.variables.set_type(variable, ty);
+            }
+        }
         self.blocks.push_instruction(
             ident.location,
             Ir::Assign(VariableIndex::Local(variable), expr_result),
@@ -1066,7 +1467,12 @@ impl<'s> FunctionCompiler<'s, '_> {
         // omitted, the variable is left untyped and its type is inferred from how
         // it is used in the loop body (like an untyped variable definition).
         let elem_ty = match &for_statement.var_type {
-            Some(var_type) => Some(Variable::Value(Self::compile_type(self.source, var_type)?)),
+            Some(var_type) => Some(Variable::Value(resolve_type(
+                self.source,
+                var_type,
+                self.strings,
+                self.structs,
+            )?)),
             None => None,
         };
 
@@ -1285,22 +1691,6 @@ impl<'s> FunctionCompiler<'s, '_> {
         Ok(())
     }
 
-    fn compile_type(source: &'s str, type_token: &ast::TypeHint) -> Result<Type, CompileError<'s>> {
-        match type_token.type_name.source(source) {
-            "int" => Ok(Type::Int),
-            "signed" => Ok(Type::SignedInt),
-            "float" => Ok(Type::Float),
-            "bool" => Ok(Type::Bool),
-            "string" => Ok(Type::String),
-            "iter" => Ok(Type::Iter),
-            other => Err(CompileError {
-                source,
-                location: type_token.type_name.location,
-                error: format!("Unknown type `{other}`").into_boxed_str(),
-            }),
-        }
-    }
-
     fn compile_expression(
         &mut self,
         expression: &ast::Expression<VmTypeSet>,
@@ -1313,29 +1703,45 @@ impl<'s> FunctionCompiler<'s, '_> {
             } => {
                 let rp = self.variables.create_restore_point();
 
-                let left;
                 // Compile the right operand.
                 let right = self.compile_right_hand_expression(right_expr)?;
 
-                let instruction = match left_expr {
+                match left_expr {
                     ast::LeftHandExpression::Deref { operator: _, name } => {
-                        left = self.compile_right_hand_expression(
+                        let left = self.compile_right_hand_expression(
                             &ast::RightHandExpression::Variable { variable: *name },
                         )?;
-                        Ir::DerefAssign(left, right)
+                        self.blocks
+                            .push_instruction(operator.location, Ir::DerefAssign(left, right));
                     }
                     ast::LeftHandExpression::Name { variable } => {
-                        left = self.compile_right_hand_expression(
+                        let left = self.compile_right_hand_expression(
                             &ast::RightHandExpression::Variable {
                                 variable: *variable,
                             },
                         )?;
-                        Ir::Assign(left, right)
+                        self.blocks
+                            .push_instruction(operator.location, Ir::Assign(left, right));
                     }
-                };
-
-                // Generate the instruction for the assignment.
-                self.blocks.push_instruction(operator.location, instruction);
+                    ast::LeftHandExpression::Field { base, field, .. } => {
+                        // Write into a struct field: address the containing place, then
+                        // store the field bytes at its offset.
+                        let base_var = self.compile_place_base_lhs(base)?;
+                        let (offset, field_ty, indirect) =
+                            self.struct_field_info(base_var, field)?;
+                        let size = self.structs.size_of(field_ty);
+                        self.blocks.push_instruction(
+                            operator.location,
+                            Ir::StoreField {
+                                base: base_var,
+                                offset,
+                                size,
+                                indirect,
+                                src: right,
+                            },
+                        );
+                    }
+                }
 
                 self.rollback_scope(operator.location, rp);
 
@@ -1375,18 +1781,7 @@ impl<'s> FunctionCompiler<'s, '_> {
 
                 Ok(temp)
             }
-            ast::RightHandExpression::Variable { variable } => {
-                let name = variable.source(self.source);
-                match self.find_variable_by_name(name) {
-                    // If the variable is already declared, we can just return it.
-                    Some(index) => Ok(index),
-                    None => Err(CompileError {
-                        source: self.source,
-                        location: variable.location,
-                        error: format!("Variable `{name}` is not declared").into_boxed_str(),
-                    }),
-                }
-            }
+            ast::RightHandExpression::Variable { variable } => self.lookup_variable(variable),
             ast::RightHandExpression::UnaryOperator { name, operand } => {
                 self.compile_unary_operator(*name, operand)
             }
@@ -1396,6 +1791,161 @@ impl<'s> FunctionCompiler<'s, '_> {
             ast::RightHandExpression::FunctionCall { name, arguments } => {
                 self.compile_function_call(*name, arguments)
             }
+            ast::RightHandExpression::FieldAccess { base, field, .. } => {
+                self.compile_field_access(base, field)
+            }
+            ast::RightHandExpression::StructLiteral { name, fields, .. } => {
+                self.compile_struct_literal(*name, fields)
+            }
+        }
+    }
+
+    /// Reads a struct field: `base.field`. The base is auto-dereferenced when it
+    /// is a reference.
+    fn compile_field_access(
+        &mut self,
+        base: &ast::RightHandExpression<VmTypeSet>,
+        field: &Token,
+    ) -> Result<VariableIndex, CompileError<'s>> {
+        let base_var = self.compile_right_hand_expression(base)?;
+        let (offset, field_ty, indirect) = self.struct_field_info(base_var, field)?;
+        let size = self.structs.size_of(field_ty);
+        let dst =
+            self.declare_typed_temporary(field.location, field_ty, AllocationMethod::FirstFit);
+        self.blocks.push_instruction(
+            field.location,
+            Ir::LoadField {
+                dst,
+                base: base_var,
+                offset,
+                size,
+                indirect,
+            },
+        );
+        self.free_if_temporary(base.location(), base_var);
+        Ok(dst)
+    }
+
+    /// Constructs a struct value from a literal `Name { field: expr, ... }`,
+    /// validating field names against the struct's layout and storing each field
+    /// at its offset.
+    fn compile_struct_literal(
+        &mut self,
+        name: Token,
+        fields: &[ast::StructLiteralField<VmTypeSet>],
+    ) -> Result<VariableIndex, CompileError<'s>> {
+        let struct_name = name.source(self.source);
+        let id = self
+            .strings
+            .find(struct_name)
+            .and_then(|idx| self.structs.id_of(idx))
+            .ok_or_else(|| CompileError {
+                source: self.source,
+                location: name.location,
+                error: format!("Unknown struct `{struct_name}`").into_boxed_str(),
+            })?;
+
+        let layout = self.structs.layout(id).clone();
+        let s = self.declare_typed_temporary(
+            name.location,
+            Type::Struct(id),
+            AllocationMethod::FirstFit,
+        );
+
+        let mut provided = vec![false; layout.fields.len()];
+        for field in fields {
+            let field_name = field.name.source(self.source);
+            let pos = self
+                .strings
+                .find(field_name)
+                .and_then(|fi| layout.fields.iter().position(|lf| lf.name == fi));
+            let Some(pos) = pos else {
+                return Err(CompileError {
+                    source: self.source,
+                    location: field.name.location,
+                    error: format!("Struct `{struct_name}` has no field `{field_name}`")
+                        .into_boxed_str(),
+                });
+            };
+            if provided[pos] {
+                return Err(CompileError {
+                    source: self.source,
+                    location: field.name.location,
+                    error: format!("Duplicate field `{field_name}` in struct `{struct_name}`")
+                        .into_boxed_str(),
+                });
+            }
+            provided[pos] = true;
+
+            let rp = self.variables.create_restore_point();
+            let value = self.compile_right_hand_expression(&field.value)?;
+            let layout_field = &layout.fields[pos];
+            let size = self.structs.size_of(layout_field.ty);
+            self.blocks.push_instruction(
+                field.name.location,
+                Ir::StoreField {
+                    base: s,
+                    offset: layout_field.offset,
+                    size,
+                    indirect: false,
+                    src: value,
+                },
+            );
+            self.rollback_scope(field.value.location(), rp);
+        }
+
+        if let Some(missing) = provided.iter().position(|p| !p) {
+            let field_name = self.strings.lookup(layout.fields[missing].name);
+            return Err(CompileError {
+                source: self.source,
+                location: name.location,
+                error: format!("Missing field `{field_name}` in struct `{struct_name}`")
+                    .into_boxed_str(),
+            });
+        }
+
+        Ok(s)
+    }
+
+    /// Resolves the base of an assignment's field path to a variable usable as a
+    /// `StoreField`/`AddressOfField` base: a struct value variable, a reference
+    /// variable, or a freshly materialized reference to a sub-place.
+    fn compile_place_base_lhs(
+        &mut self,
+        lhs: &ast::LeftHandExpression,
+    ) -> Result<VariableIndex, CompileError<'s>> {
+        match lhs {
+            ast::LeftHandExpression::Name { variable: token }
+            | ast::LeftHandExpression::Deref { name: token, .. } => self.lookup_variable(token),
+            ast::LeftHandExpression::Field { base, field, .. } => {
+                let base_var = self.compile_place_base_lhs(base)?;
+                self.emit_address_of_field(base_var, field)
+            }
+        }
+    }
+
+    /// Resolves the base of an address-of field path (`&base.field`) to a variable
+    /// usable as an `AddressOfField` base.
+    fn compile_place_base_rhs(
+        &mut self,
+        expr: &ast::RightHandExpression<VmTypeSet>,
+    ) -> Result<VariableIndex, CompileError<'s>> {
+        match expr {
+            ast::RightHandExpression::Variable { variable } => self.lookup_variable(variable),
+            ast::RightHandExpression::FieldAccess { base, field, .. } => {
+                let base_var = self.compile_place_base_rhs(base)?;
+                self.emit_address_of_field(base_var, field)
+            }
+            ast::RightHandExpression::UnaryOperator { name, operand }
+                if name.source(self.source) == "*" =>
+            {
+                self.compile_right_hand_expression(operand)
+            }
+            other => Err(CompileError {
+                source: self.source,
+                location: other.location(),
+                error: "Cannot take the address of this expression".into(),
+            }),
         }
     }
 
@@ -1449,6 +1999,12 @@ impl<'s> FunctionCompiler<'s, '_> {
         operand: &ast::RightHandExpression<VmTypeSet>,
     ) -> Result<VariableIndex, CompileError<'s>> {
         let op = operator.source(self.source);
+
+        // Taking the address of a struct field: `&base.field`. Resolve the field's
+        // place directly, rather than taking the address of a temporary copy.
+        if op == "&" && matches!(operand, ast::RightHandExpression::FieldAccess { .. }) {
+            return self.compile_place_base_rhs(operand);
+        }
 
         // Allocate a temporary variable for the result.
         let temp =

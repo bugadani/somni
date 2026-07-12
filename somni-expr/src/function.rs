@@ -1,6 +1,6 @@
 //! Support for native Rust functions.
 
-use crate::{for_all_tuples, value::LoadStore, TypeSet, TypedValue};
+use crate::{TypeSet, TypedValue, for_all_tuples, value::LoadStore};
 
 /// An error that occurs when calling a function.
 pub enum FunctionCallError {
@@ -38,7 +38,7 @@ where
     /// - The number of arguments is incorrect
     /// - The types of arguments are incorrect
     fn call(&self, ctx: &mut T, args: &[TypedValue<T>])
-        -> Result<TypedValue<T>, FunctionCallError>;
+    -> Result<TypedValue<T>, FunctionCallError>;
 }
 
 macro_rules! substitute {

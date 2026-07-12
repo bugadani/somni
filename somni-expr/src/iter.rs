@@ -11,7 +11,7 @@
 
 use std::{cell::RefCell, fmt, rc::Rc};
 
-use crate::{value::LoadStore, TypeSet, TypedValue};
+use crate::{TypeSet, TypedValue, value::LoadStore};
 
 /// A boxed, peekable iterator yielding values of the *inner* type set.
 ///
@@ -169,16 +169,34 @@ macro_rules! impl_with_iterator {
             }
 
             fn iter_next(&self, iter: &Self::Iterator) -> Option<$crate::TypedValue<Self>> {
-                iter.next_value().map(|value| match value {
-                    TypedValue::Void => TypedValue::Void,
-                    TypedValue::MaybeSignedInt(v) => TypedValue::MaybeSignedInt(v),
-                    TypedValue::Int(v) => TypedValue::Int(v),
-                    TypedValue::SignedInt(v) => TypedValue::SignedInt(v),
-                    TypedValue::Float(v) => TypedValue::Float(v),
-                    TypedValue::Bool(v) => TypedValue::Bool(v),
-                    TypedValue::String(v) => TypedValue::String(v),
-                    TypedValue::Iter(never) => match never {},
-                })
+                // Rebinds an inner-type-set value to the wrapper type set. All scalar
+                // associated types are shared with the inner type set, so those move
+                // as-is; structs are converted field-wise; references are type-set
+                // independent.
+                fn convert(
+                    value: $crate::TypedValue<$inner>,
+                ) -> $crate::TypedValue<$crate::WithIterator<$inner>> {
+                    use $crate::TypedValue;
+                    match value {
+                        TypedValue::Void => TypedValue::Void,
+                        TypedValue::MaybeSignedInt(v) => TypedValue::MaybeSignedInt(v),
+                        TypedValue::Int(v) => TypedValue::Int(v),
+                        TypedValue::SignedInt(v) => TypedValue::SignedInt(v),
+                        TypedValue::Float(v) => TypedValue::Float(v),
+                        TypedValue::Bool(v) => TypedValue::Bool(v),
+                        TypedValue::String(v) => TypedValue::String(v),
+                        TypedValue::Iter(never) => match never {},
+                        TypedValue::Struct(s) => {
+                            let (name, fields) = s.into_parts();
+                            TypedValue::Struct($crate::SomniStruct::new(
+                                name,
+                                fields.into_iter().map(|(k, v)| (k, convert(v))).collect(),
+                            ))
+                        }
+                        TypedValue::Ref(r) => TypedValue::Ref(r),
+                    }
+                }
+                iter.next_value().map(convert)
             }
         }
     };

@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     ops::{Add, AddAssign, Sub},
 };
 
@@ -15,7 +15,7 @@ use crate::{
 };
 
 use somni_expr::{Context, Type, TypedValue as ExprTypedValue};
-use somni_parser::{ast::Program as ProgramAst, Location};
+use somni_parser::{Location, ast::Program as ProgramAst};
 
 // This is just to keep the size of Instruction small enough. Re-evaluate this later.
 #[derive(Clone, Copy, Debug)]
@@ -125,6 +125,40 @@ pub enum Instruction {
         dst: MemoryAddress,
         iter: MemoryAddress,
     },
+
+    /// `dst` = the `size`-byte field at `base` + `offset`. When `indirect`, `base`
+    /// holds a pointer; otherwise `base` is the aggregate.
+    LoadField {
+        dst: MemoryAddress,
+        base: MemoryAddress,
+        offset: usize,
+        size: usize,
+        indirect: bool,
+    },
+    /// The `size`-byte field at `base` + `offset` = `src`. `indirect` as above.
+    StoreField {
+        base: MemoryAddress,
+        offset: usize,
+        size: usize,
+        indirect: bool,
+        src: MemoryAddress,
+    },
+    /// `dst` (a pointer) = the address of `base` + `offset`. `indirect` as above.
+    AddressOfField {
+        dst: MemoryAddress,
+        base: MemoryAddress,
+        offset: usize,
+        indirect: bool,
+    },
+    /// `dst` (bool) = whether the `size` bytes at `lhs` and `rhs` are equal
+    /// (negated when `negate`). Used for struct value equality.
+    StructEq {
+        dst: MemoryAddress,
+        lhs: MemoryAddress,
+        rhs: MemoryAddress,
+        size: usize,
+        negate: bool,
+    },
 }
 
 impl Instruction {
@@ -178,6 +212,45 @@ impl Instruction {
             }
             Instruction::IterNext { elem_ty, dst, iter } => {
                 format!("{dst:?} = next({iter:?}) ({elem_ty})")
+            }
+            Instruction::LoadField {
+                dst,
+                base,
+                offset,
+                size,
+                indirect,
+            } => {
+                let star = if *indirect { "*" } else { "" };
+                format!("{dst:?} = {star}{base:?}[{offset}..+{size}]")
+            }
+            Instruction::StoreField {
+                base,
+                offset,
+                size,
+                indirect,
+                src,
+            } => {
+                let star = if *indirect { "*" } else { "" };
+                format!("{star}{base:?}[{offset}..+{size}] = {src:?}")
+            }
+            Instruction::AddressOfField {
+                dst,
+                base,
+                offset,
+                indirect,
+            } => {
+                let star = if *indirect { "*" } else { "" };
+                format!("{dst:?} = &{star}{base:?}[{offset}]")
+            }
+            Instruction::StructEq {
+                dst,
+                lhs,
+                rhs,
+                size,
+                negate,
+            } => {
+                let op = if *negate { "!=" } else { "==" };
+                format!("{dst:?} = {lhs:?} {op} {rhs:?} ({size} bytes)")
             }
         }
     }
@@ -244,6 +317,9 @@ impl From<ir::Type> for Type {
             ir::Type::String => Type::String,
             ir::Type::MaybeSignedInt => Type::Int,
             ir::Type::Iter => Type::Iter,
+            ir::Type::Struct(_) => {
+                panic!("struct types have no scalar somni-expr equivalent")
+            }
         }
     }
 }
@@ -455,6 +531,7 @@ pub(crate) fn compile<'s>(
             compiler: &mut this,
             source,
             func,
+            structs: &ir.structs,
             block_addresses: HashMap::new(),
             stack_allocator: StackAllocator::new(),
         };
@@ -498,6 +575,7 @@ struct FunctionCompiler<'s, 'p> {
     compiler: &'p mut Compiler,
     source: &'s str,
     func: &'p ir::Function,
+    structs: &'p ir::StructRegistry,
     block_addresses: HashMap<usize, CodeAddress>,
     stack_allocator: StackAllocator,
 }
@@ -632,9 +710,9 @@ impl<'s> FunctionCompiler<'s, '_> {
         match &instruction.instruction {
             ir::Ir::Declare(var, value) => self.declare_variable(location, *var, *value),
             ir::Ir::Assign(dst, src) => {
-                let ty = self
-                    .type_of_variable(*dst)
-                    .expect("Type of destination variable should be known");
+                // Copy the destination's byte size (struct-aware). Structs are
+                // copied inline as raw bytes.
+                let size = self.size_of_variable(*dst);
                 let dst = self
                     .address_of_variable(*dst)
                     .expect("Variable not found in stack allocator");
@@ -642,10 +720,7 @@ impl<'s> FunctionCompiler<'s, '_> {
                     .address_of_variable(*src)
                     .expect("Variable not found in stack allocator");
 
-                self.push_instruction(
-                    location,
-                    Instruction::Copy(dst, src, ty.vm_size_of() as u32),
-                );
+                self.push_instruction(location, Instruction::Copy(dst, src, size as u32));
             }
             ir::Ir::DerefAssign(dst, src) => {
                 let ty = self
@@ -708,6 +783,38 @@ impl<'s> FunctionCompiler<'s, '_> {
                 let mut rhs_addr = self
                     .address_of_variable(*rhs)
                     .expect("Variable not found in stack allocator");
+
+                // Equality/inequality on struct values is a byte-wise comparison,
+                // since structs have no scalar operator dispatch.
+                if let Some(ir::Variable::Value(ir::Type::Struct(id))) =
+                    self.ir_type_of_variable(*lhs)
+                {
+                    let op_str = self.compiler.program.debug_info.strings.lookup(*op);
+                    let negate = match op_str {
+                        "==" => false,
+                        "!=" => true,
+                        other => {
+                            return Err(CompileError {
+                                source: self.source,
+                                location,
+                                error: format!("Unsupported struct operator: {other}")
+                                    .into_boxed_str(),
+                            });
+                        }
+                    };
+                    let size = self.structs.layout(id).size;
+                    self.push_instruction(
+                        location,
+                        Instruction::StructEq {
+                            dst: dst_addr,
+                            lhs: lhs_addr,
+                            rhs: rhs_addr,
+                            size,
+                            negate,
+                        },
+                    );
+                    return Ok(());
+                }
 
                 let (normalized, swap) = match self.compiler.program.debug_info.strings.lookup(*op)
                 {
@@ -820,6 +927,76 @@ impl<'s> FunctionCompiler<'s, '_> {
                     },
                 );
             }
+            ir::Ir::LoadField {
+                dst,
+                base,
+                offset,
+                size,
+                indirect,
+            } => {
+                let dst_addr = self
+                    .address_of_variable(*dst)
+                    .expect("Variable not found in stack allocator");
+                let base_addr = self
+                    .address_of_variable(*base)
+                    .expect("Variable not found in stack allocator");
+                self.push_instruction(
+                    location,
+                    Instruction::LoadField {
+                        dst: dst_addr,
+                        base: base_addr,
+                        offset: *offset,
+                        size: *size,
+                        indirect: *indirect,
+                    },
+                );
+            }
+            ir::Ir::StoreField {
+                base,
+                offset,
+                size,
+                indirect,
+                src,
+            } => {
+                let base_addr = self
+                    .address_of_variable(*base)
+                    .expect("Variable not found in stack allocator");
+                let src_addr = self
+                    .address_of_variable(*src)
+                    .expect("Variable not found in stack allocator");
+                self.push_instruction(
+                    location,
+                    Instruction::StoreField {
+                        base: base_addr,
+                        offset: *offset,
+                        size: *size,
+                        indirect: *indirect,
+                        src: src_addr,
+                    },
+                );
+            }
+            ir::Ir::AddressOfField {
+                dst,
+                base,
+                offset,
+                indirect,
+            } => {
+                let dst_addr = self
+                    .address_of_variable(*dst)
+                    .expect("Variable not found in stack allocator");
+                let base_addr = self
+                    .address_of_variable(*base)
+                    .expect("Variable not found in stack allocator");
+                self.push_instruction(
+                    location,
+                    Instruction::AddressOfField {
+                        dst: dst_addr,
+                        base: base_addr,
+                        offset: *offset,
+                        indirect: *indirect,
+                    },
+                );
+            }
         }
         Ok(())
     }
@@ -851,16 +1028,52 @@ impl<'s> FunctionCompiler<'s, '_> {
         }
     }
 
+    /// Returns the IR type of a local/temporary variable, preserving struct
+    /// identity (unlike [`Self::type_of_variable`], which maps to the scalar
+    /// `somni-expr` type). Globals are never struct-typed and return `None`.
+    fn ir_type_of_variable(&self, variable: VariableIndex) -> Option<ir::Variable> {
+        match variable {
+            VariableIndex::Local(index) | VariableIndex::Temporary(index) => self
+                .func
+                .implementation
+                .as_ref()
+                .unwrap()
+                .variables
+                .variable(index)
+                .and_then(|v| v.ty),
+            VariableIndex::Global(_) => None,
+        }
+    }
+
+    /// Returns the VM byte size of a variable, resolving struct sizes via the
+    /// struct registry. References are pointer-sized.
+    fn size_of_variable(&self, variable: VariableIndex) -> usize {
+        match variable {
+            VariableIndex::Global(index) => self
+                .compiler
+                .program
+                .globals
+                .get_index(index.0)
+                .map(|(_, g)| g.ty().vm_size_of())
+                .unwrap_or(0),
+            VariableIndex::Local(_) | VariableIndex::Temporary(_) => {
+                match self.ir_type_of_variable(variable) {
+                    Some(ir::Variable::Value(ty)) => self.structs.size_of(ty),
+                    Some(ir::Variable::Reference(_, _)) => <u64 as crate::types::MemoryRepr>::BYTES,
+                    None => 0,
+                }
+            }
+        }
+    }
+
     fn declare_variable(
         &mut self,
         location: Location,
         var: ir::VariableDeclaration,
         value: Option<ir::Value>,
     ) {
-        let ty = self
-            .type_of_variable(VariableIndex::Local(var.index))
-            .expect("At this point, the variable type should be known");
-        let address = self.stack_allocator.allocate_variable(var, ty.vm_size_of());
+        let size = self.size_of_variable(VariableIndex::Local(var.index));
+        let address = self.stack_allocator.allocate_variable(var, size);
 
         if let Some(value) = value {
             self.push_instruction(

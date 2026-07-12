@@ -6,7 +6,7 @@
 //! The templating engine uses the [`WithIterator<DefaultTypeSet>`](somni_expr::WithIterator)
 //! type set, exposed here as [`TemplateTypes`].
 
-use somni_expr::{DefaultTypeSet, SomniIterator, TypedValue, WithIterator};
+use somni_expr::{DefaultTypeSet, SomniIterator, SomniStruct, TypedValue, WithIterator};
 
 /// The Somni type set used by the templating engine.
 ///
@@ -57,6 +57,11 @@ impl IntoValue for TypedValue<TemplateTypes> {
         self
     }
 }
+impl IntoValue for SomniStruct<TemplateTypes> {
+    fn into_value(self) -> TypedValue<TemplateTypes> {
+        TypedValue::Struct(self)
+    }
+}
 
 /// Wraps an iterable so it becomes a loop source (a Somni iterator value).
 ///
@@ -100,8 +105,17 @@ fn to_inner(v: TypedValue<TemplateTypes>) -> TypedValue<DefaultTypeSet> {
         TypedValue::Float(x) => TypedValue::Float(x),
         TypedValue::Bool(b) => TypedValue::Bool(b),
         TypedValue::String(s) => TypedValue::String(s),
-        // Nested iterators cannot be represented as iterator elements.
-        TypedValue::Iter(_) => TypedValue::Void,
+        // Structs are carried through as iterator elements by down-converting their
+        // fields recursively.
+        TypedValue::Struct(s) => {
+            let (name, fields) = s.into_parts();
+            TypedValue::Struct(SomniStruct::new(
+                name,
+                fields.into_iter().map(|(k, v)| (k, to_inner(v))).collect(),
+            ))
+        }
+        // Nested iterators and references cannot be represented as iterator elements.
+        TypedValue::Iter(_) | TypedValue::Ref(_) => TypedValue::Void,
     }
 }
 
@@ -116,5 +130,7 @@ pub(crate) fn default_str(v: TypedValue<TemplateTypes>) -> String {
         TypedValue::String(s) => String::from(s),
         TypedValue::Void => String::new(),
         TypedValue::Iter(_) => String::from("<iter>"),
+        TypedValue::Struct(s) => format!("<struct {}>", s.name()),
+        TypedValue::Ref(_) => String::from("<ref>"),
     }
 }

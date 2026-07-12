@@ -1,15 +1,17 @@
+use indexmap::IndexMap;
 use somni_parser::{
+    Location,
     ast::{
         Body, Expression, For, Function, If, LeftHandExpression, LiteralValue, Loop,
         RightHandExpression, Statement, TypeHint, VariableDefinition,
     },
     lexer,
     parser::DefaultTypeSet,
-    Location,
 };
 
 use crate::{
-    value::LoadStore, EvalError, ExprContext, FunctionCallError, Type, TypeSet, TypedValue,
+    EvalError, ExprContext, FunctionCallError, RefPointee, Type, TypeSet, TypedValue,
+    value::{LoadStore, Place, Reference, SomniStruct},
 };
 
 /// A visitor that can process an abstract syntax tree.
@@ -51,16 +53,13 @@ where
             } => {
                 let rhs = self.visit_right_hand_expression(right_expr)?;
                 let assign_result = match left_expr {
-                    LeftHandExpression::Deref { name, .. } => {
-                        let address =
-                            self.visit_right_hand_expression(&RightHandExpression::Variable {
-                                variable: *name,
-                            })?;
-                        self.context.assign_address(address, &rhs)
-                    }
                     LeftHandExpression::Name { variable } => {
                         let name = variable.source(self.source);
                         self.context.assign_variable(name, &rhs)
+                    }
+                    LeftHandExpression::Deref { .. } | LeftHandExpression::Field { .. } => {
+                        let place = self.resolve_place_lhs(left_expr)?;
+                        self.context.store_place(&place, &rhs)
                     }
                 };
 
@@ -120,26 +119,35 @@ where
                     }
 
                     "&" => {
-                        let RightHandExpression::Variable { variable } = operand.as_ref() else {
+                        let place = self.resolve_place_rhs(operand)?;
+                        let value = self.context.load_place(&place).map_err(|e| EvalError {
+                            message: e,
+                            location: operand.location(),
+                        })?;
+                        let pointee =
+                            RefPointee::from_type(value.type_of()).ok_or_else(|| EvalError {
+                                message: String::from("Cannot take a reference to a reference")
+                                    .into_boxed_str(),
+                                location: operand.location(),
+                            })?;
+                        TypedValue::Ref(Reference::new(pointee, place))
+                    }
+                    "*" => {
+                        let value = self.visit_right_hand_expression(operand)?;
+                        let TypedValue::Ref(reference) = value else {
                             return Err(EvalError {
-                                message: String::from(
-                                    "Cannot take address of non-variable expression",
-                                )
-                                .into_boxed_str(),
+                                message: format!("Cannot dereference {}", value.type_of())
+                                    .into_boxed_str(),
                                 location: operand.location(),
                             });
                         };
-
-                        let name = variable.source(self.source);
-                        self.context.address_of(name)
-                    }
-                    "*" => {
-                        let address = self.visit_right_hand_expression(operand)?;
-                        self.context.at_address(address).map_err(|e| EvalError {
-                            message: format!("Failed to load variable from address: {e}")
-                                .into_boxed_str(),
-                            location: operand.location(),
-                        })?
+                        self.context
+                            .load_place(reference.place())
+                            .map_err(|e| EvalError {
+                                message: format!("Failed to load variable from address: {e}")
+                                    .into_boxed_str(),
+                                location: operand.location(),
+                            })?
                     }
                     _ => {
                         return Err(EvalError {
@@ -170,6 +178,22 @@ where
 
                 // "Normal" binary operators
                 let rhs = self.visit_right_hand_expression(&operands[1])?;
+
+                // Structs and references support only structural equality. Handle
+                // it here since the scalar operator dispatch cannot.
+                if matches!(operator, "==" | "!=") {
+                    let is_aggregate =
+                        |v: &TypedValue<T>| matches!(v, TypedValue::Struct(_) | TypedValue::Ref(_));
+                    if is_aggregate(&lhs) || is_aggregate(&rhs) {
+                        let equal = lhs == rhs;
+                        return Ok(TypedValue::Bool(if operator == "==" {
+                            equal
+                        } else {
+                            !equal
+                        }));
+                    }
+                }
+
                 let type_context = self.context.type_context();
                 let result = match operator {
                     "+" => TypedValue::<T>::add(type_context, lhs, rhs),
@@ -253,9 +277,243 @@ where
                     }
                 }
             }
+            RightHandExpression::FieldAccess { base, field, .. } => {
+                // Reading a field: evaluate the base, auto-dereferencing through a
+                // reference, then clone the named field out of the struct.
+                let base_value = self.visit_right_hand_expression(base)?;
+                let base_value = match base_value {
+                    TypedValue::Ref(reference) => self
+                        .context
+                        .load_place(reference.place())
+                        .map_err(|e| EvalError {
+                            message: e,
+                            location: base.location(),
+                        })?,
+                    other => other,
+                };
+
+                let field_name = field.source(self.source);
+                let TypedValue::Struct(structure) = base_value else {
+                    return Err(EvalError {
+                        message: format!(
+                            "Cannot access field `{field_name}` of {}",
+                            base_value.type_of()
+                        )
+                        .into_boxed_str(),
+                        location: base.location(),
+                    });
+                };
+
+                match structure.fields().get(field_name) {
+                    Some(value) => value.clone(),
+                    None => {
+                        return Err(EvalError {
+                            message: format!(
+                                "Struct `{}` has no field `{field_name}`",
+                                structure.name()
+                            )
+                            .into_boxed_str(),
+                            location: field.location,
+                        });
+                    }
+                }
+            }
+            RightHandExpression::StructLiteral { name, fields, .. } => {
+                self.visit_struct_literal(name, fields, expression.location())?
+            }
         };
 
         Ok(result)
+    }
+
+    /// Constructs a struct value from a struct literal, validating field names
+    /// against the definition and coercing each field to its declared type.
+    fn visit_struct_literal(
+        &mut self,
+        name: &lexer::Token,
+        fields: &[somni_parser::ast::StructLiteralField<T::Parser>],
+        location: Location,
+    ) -> Result<TypedValue<T>, EvalError> {
+        let struct_name = name.source(self.source);
+        let schema = self
+            .context
+            .struct_fields(struct_name)
+            .ok_or_else(|| EvalError {
+                message: format!("Unknown struct `{struct_name}`").into_boxed_str(),
+                location: name.location,
+            })?;
+
+        // Evaluate each provided field, rejecting unknown or duplicate fields.
+        let mut provided: IndexMap<Box<str>, (TypedValue<T>, Location)> = IndexMap::new();
+        for field in fields {
+            let field_name = field.name.source(self.source);
+            if !schema.iter().any(|(n, _)| &**n == field_name) {
+                return Err(EvalError {
+                    message: format!("Struct `{struct_name}` has no field `{field_name}`")
+                        .into_boxed_str(),
+                    location: field.name.location,
+                });
+            }
+            let value = self.visit_right_hand_expression(&field.value)?;
+            if provided
+                .insert(Box::from(field_name), (value, field.name.location))
+                .is_some()
+            {
+                return Err(EvalError {
+                    message: format!("Duplicate field `{field_name}` in struct `{struct_name}`")
+                        .into_boxed_str(),
+                    location: field.name.location,
+                });
+            }
+        }
+
+        // Build the fields in declaration order, coercing to each declared type.
+        let mut out = IndexMap::with_capacity(schema.len());
+        for (field_name, field_type) in &schema {
+            let (value, field_location) =
+                provided.swap_remove(field_name).ok_or_else(|| EvalError {
+                    message: format!("Missing field `{field_name}` in struct `{struct_name}`")
+                        .into_boxed_str(),
+                    location,
+                })?;
+            let coerced = self.typecheck_named(value, field_type, false, field_location)?;
+            out.insert(field_name.clone(), coerced);
+        }
+
+        Ok(TypedValue::Struct(SomniStruct::new(
+            Box::from(struct_name),
+            out,
+        )))
+    }
+
+    /// Resolves the [`Place`] denoted by a right-hand expression used as the
+    /// operand of `&`. Supports variables, field accesses (auto-dereferencing
+    /// through references), and explicit dereferences.
+    fn resolve_place_rhs(
+        &mut self,
+        expr: &RightHandExpression<T::Parser>,
+    ) -> Result<Place, EvalError> {
+        match expr {
+            RightHandExpression::Variable { variable } => {
+                let name = variable.source(self.source);
+                self.context
+                    .place_of_variable(name)
+                    .map_err(|message| EvalError {
+                        message,
+                        location: variable.location,
+                    })
+            }
+            RightHandExpression::UnaryOperator { name, operand }
+                if name.source(self.source) == "*" =>
+            {
+                let value = self.visit_right_hand_expression(operand)?;
+                match value {
+                    TypedValue::Ref(reference) => Ok(reference.into_place()),
+                    other => Err(EvalError {
+                        message: format!("Cannot dereference {}", other.type_of()).into_boxed_str(),
+                        location: operand.location(),
+                    }),
+                }
+            }
+            RightHandExpression::FieldAccess { base, field, .. } => {
+                let base_place = self.resolve_place_rhs(base)?;
+                let container = self.container_place(base_place, base.location())?;
+                self.append_field(container, field)
+            }
+            other => Err(EvalError {
+                message: String::from("Cannot take the address of this expression")
+                    .into_boxed_str(),
+                location: other.location(),
+            }),
+        }
+    }
+
+    /// Resolves the [`Place`] denoted by a left-hand (assignment) expression.
+    fn resolve_place_lhs(&mut self, lhs: &LeftHandExpression) -> Result<Place, EvalError> {
+        match lhs {
+            LeftHandExpression::Name { variable } => {
+                let name = variable.source(self.source);
+                self.context
+                    .place_of_variable(name)
+                    .map_err(|message| EvalError {
+                        message,
+                        location: variable.location,
+                    })
+            }
+            LeftHandExpression::Deref { name, .. } => {
+                let value = self.visit_variable(name)?;
+                match value {
+                    TypedValue::Ref(reference) => Ok(reference.into_place()),
+                    other => Err(EvalError {
+                        message: format!("Cannot dereference {}", other.type_of()).into_boxed_str(),
+                        location: name.location,
+                    }),
+                }
+            }
+            LeftHandExpression::Field { base, field, .. } => {
+                let base_place = self.resolve_place_lhs(base)?;
+                let container = self.container_place(base_place, base.location())?;
+                self.append_field(container, field)
+            }
+        }
+    }
+
+    /// Given the place of a field-access base, returns the place of the aggregate
+    /// to index into: if the base holds a reference, its target (auto-deref);
+    /// otherwise the base place itself.
+    fn container_place(
+        &mut self,
+        base_place: Place,
+        base_location: Location,
+    ) -> Result<Place, EvalError> {
+        let base_value = self
+            .context
+            .load_place(&base_place)
+            .map_err(|message| EvalError {
+                message,
+                location: base_location,
+            })?;
+        Ok(match base_value {
+            TypedValue::Ref(reference) => reference.into_place(),
+            _ => base_place,
+        })
+    }
+
+    /// Appends a field to a container place, validating that the container is a
+    /// struct that has the named field.
+    fn append_field(&mut self, container: Place, field: &lexer::Token) -> Result<Place, EvalError> {
+        let container_value = self
+            .context
+            .load_place(&container)
+            .map_err(|message| EvalError {
+                message,
+                location: field.location,
+            })?;
+        let field_name = field.source(self.source);
+        let TypedValue::Struct(structure) = &container_value else {
+            return Err(EvalError {
+                message: format!(
+                    "Cannot access field `{field_name}` of {}",
+                    container_value.type_of()
+                )
+                .into_boxed_str(),
+                location: field.location,
+            });
+        };
+        if !structure.fields().contains_key(field_name) {
+            return Err(EvalError {
+                message: format!("Struct `{}` has no field `{field_name}`", structure.name())
+                    .into_boxed_str(),
+                location: field.location,
+            });
+        }
+
+        let mut path = container.path.into_vec();
+        path.push(Box::from(field_name));
+        Ok(Place {
+            root: container.root,
+            path: path.into_boxed_slice(),
+        })
     }
 
     fn typecheck_with_hint(
@@ -268,13 +526,69 @@ where
             return Ok(value);
         };
 
-        let ty =
-            Type::from_name(hint.type_name.source(self.source)).map_err(|message| EvalError {
-                message,
-                location: hint.type_name.location,
-            })?;
+        self.typecheck_named(
+            value,
+            hint.type_name.source(self.source),
+            false,
+            hint.type_name.location,
+        )
+    }
 
-        self.typecheck(value, ty, hint.type_name.location)
+    /// Type-checks a value against a named type, which may be a scalar, a struct
+    /// name, or (when `is_ref`) a reference to one of those.
+    fn typecheck_named(
+        &self,
+        value: TypedValue<T>,
+        type_name: &str,
+        is_ref: bool,
+        location: Location,
+    ) -> Result<TypedValue<T>, EvalError> {
+        if is_ref {
+            // Reference-typed position: accept any reference. The pointee kind is
+            // checked loosely and struct identity is checked at runtime on use.
+            return match &value {
+                TypedValue::Ref(_) => Ok(value),
+                other => Err(EvalError {
+                    message: format!("Expected &{type_name}, got {}", other.type_of())
+                        .into_boxed_str(),
+                    location,
+                }),
+            };
+        }
+
+        match Type::from_name(type_name) {
+            Ok(ty) => self.typecheck(value, ty, location),
+            Err(_) => match &value {
+                // A struct-typed position: the value must be a struct with a
+                // matching name (loose, runtime-checked identity).
+                TypedValue::Struct(structure) if structure.name() == type_name => Ok(value),
+                TypedValue::Struct(structure) => Err(EvalError {
+                    message: format!(
+                        "Expected struct `{type_name}`, got struct `{}`",
+                        structure.name()
+                    )
+                    .into_boxed_str(),
+                    location,
+                }),
+                other => {
+                    if self.context.struct_fields(type_name).is_some() {
+                        Err(EvalError {
+                            message: format!(
+                                "Expected struct `{type_name}`, got {}",
+                                other.type_of()
+                            )
+                            .into_boxed_str(),
+                            location,
+                        })
+                    } else {
+                        Err(EvalError {
+                            message: format!("Unknown type `{type_name}`").into_boxed_str(),
+                            location,
+                        })
+                    }
+                }
+            },
+        }
     }
 
     fn typecheck(
@@ -308,7 +622,12 @@ where
         for (arg, arg_value) in function.arguments.iter().zip(args.iter()) {
             let arg_name = arg.name.source(self.source);
 
-            let arg_value = self.typecheck_with_hint(arg_value.clone(), Some(arg.arg_type))?;
+            let arg_value = self.typecheck_named(
+                arg_value.clone(),
+                arg.arg_type.type_name.source(self.source),
+                arg.reference_token.is_some(),
+                arg.arg_type.type_name.location,
+            )?;
 
             self.context.declare(arg_name, arg_value);
         }
@@ -375,7 +694,7 @@ where
                 return self.visit_body(body).map(|r| match r {
                     StatementResult::EndOfBody => None,
                     r => Some(r),
-                })
+                });
             }
             Statement::VariableDefinition(variable_definition) => {
                 self.visit_declaration(variable_definition)?;
@@ -476,9 +795,7 @@ where
             // the type annotation rather than the loop variable name. Without an
             // annotation the value is bound as-is.
             let value = match elem_ty {
-                Some(elem_ty) => {
-                    self.typecheck(value, elem_ty, for_statement.variable.location)?
-                }
+                Some(elem_ty) => self.typecheck(value, elem_ty, for_statement.variable.location)?,
                 None => value,
             };
 

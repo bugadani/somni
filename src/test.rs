@@ -293,7 +293,10 @@ fn sum_range_inferred(start: int, end: int) -> int {
 
     #[test]
     fn sums_a_range_without_type_annotation() {
-        assert_eq!(run(PROGRAM, "sum_range_inferred(0, 5)"), TypedValue::Int(10));
+        assert_eq!(
+            run(PROGRAM, "sum_range_inferred(0, 5)"),
+            TypedValue::Int(10)
+        );
         assert_eq!(run(PROGRAM, "sum_range_inferred(3, 3)"), TypedValue::Int(0));
     }
 }

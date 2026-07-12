@@ -1,0 +1,41 @@
+struct Point { x: int, y: int }
+struct Line { start: Point, end: Point }
+
+fn translate(p: &Point, dx: int, dy: int) {
+    p.x = p.x + dx;
+    p.y = p.y + dy;
+}
+
+fn dot(a: &Point, b: &Point) -> int {
+    return a.x * b.x + a.y * b.y;
+}
+
+fn bump(v: &int) {
+    *v = *v + 1;
+}
+
+fn main() -> int {
+    var acc = 0;
+    var i = 0;
+    loop {
+        if i >= 1000 {
+            break;
+        }
+
+        var line = Line { start: Point { x: i, y: i }, end: Point { x: 1, y: 2 } };
+
+        translate(&line.start, 1, 2);
+        bump(&line.end.x);
+        acc = acc + dot(&line.start, &line.end);
+
+        var mirror = Point { x: line.start.x, y: line.start.y };
+        if mirror == line.start {
+            acc = acc + 1;
+        }
+
+        i = i + 1;
+    }
+    return acc;
+}
+
+//@ main() == 2005000

@@ -1,0 +1,61 @@
+struct Point { x: int, y: int }
+struct Line { start: Point, end: Point }
+
+fn sum_fields() -> int {
+    var p = Point { x: 3, y: 4 };
+    return p.x + p.y;
+}
+
+fn field_write() -> int {
+    var p = Point { x: 1, y: 2 };
+    p.x = 10;
+    p.y = p.y + 5;
+    return p.x + p.y;
+}
+
+fn nested() -> int {
+    var l = Line { start: Point { x: 1, y: 2 }, end: Point { x: 3, y: 4 } };
+    l.end.x = 30;
+    return l.start.x + l.start.y + l.end.x + l.end.y;
+}
+
+fn scale(p: &Point, factor: int) {
+    p.x = p.x * factor;
+    p.y = p.y * factor;
+}
+
+fn pass_by_ref() -> int {
+    var p = Point { x: 2, y: 3 };
+    scale(&p, 4);
+    return p.x + p.y;
+}
+
+fn double(v: &int) {
+    *v = *v * 2;
+}
+
+fn ref_to_field() -> int {
+    var p = Point { x: 5, y: 6 };
+    double(&p.x);
+    return p.x;
+}
+
+fn eq_same() -> bool {
+    var a = Point { x: 1, y: 2 };
+    var b = Point { x: 1, y: 2 };
+    return a == b;
+}
+
+fn eq_diff() -> bool {
+    var a = Point { x: 1, y: 2 };
+    var c = Point { x: 1, y: 9 };
+    return a != c;
+}
+
+//@ sum_fields() == 7
+//@ field_write() == 17
+//@ nested() == 37
+//@ pass_by_ref() == 20
+//@ ref_to_field() == 10
+//@ eq_same()
+//@ eq_diff()

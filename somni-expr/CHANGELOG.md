@@ -1,3 +1,13 @@
+# Unreleased
+
+- Added struct values (`TypedValue::Struct`/`Type::Struct`) with the `SomniStruct`
+  boundary type, struct literals, and field access/assignment.
+- Added references (`TypedValue::Ref`/`Type::Ref`) with the `Place` and `Reference`
+  types and auto-dereferencing.
+- `ExprContext` now exposes `place_of_variable`, `load_place`, `store_place`, and
+  `struct_fields` (replacing the previous address-based methods).
+- Added the `somni_struct!` macro and re-exported `indexmap`.
+
 # [0.3.0] - 2026-07-10
 
 - Bumped Rust version to 1.85.0, and edition to 2024.

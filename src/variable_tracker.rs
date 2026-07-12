@@ -128,6 +128,19 @@ impl VariableTracker {
         self.currently_visible_variables.get(&index).copied()
     }
 
+    /// Returns the declared type of a variable, if it has one.
+    pub fn type_of(&self, index: LocalVariableIndex) -> Option<Variable> {
+        self.data.all_variables.get(index.0).and_then(|v| v.ty)
+    }
+
+    /// Sets the declared type of a variable. Used to record types that are known
+    /// at IR-build time (e.g. struct-typed locals initialized from a literal).
+    pub fn set_type(&mut self, index: LocalVariableIndex, ty: Variable) {
+        if let Some(var) = self.data.all_variables.get_mut(index.0) {
+            var.ty = Some(ty);
+        }
+    }
+
     pub fn is_visible(&self, index: LocalVariableIndex) -> bool {
         self.data
             .all_variables

@@ -1,0 +1,71 @@
+Function translate(...) -> void (stack: 40)
+  0000: Local(24) = *Local(0)[0..+8]
+  0001: Local(32) = Local(24) + Local(8) (int)
+  0002: *Local(0)[0..+8] = Local(32)
+  0003: Local(24) = *Local(0)[8..+8]
+  0004: Local(32) = Local(24) + Local(16) (int)
+  0005: *Local(0)[8..+8] = Local(32)
+  0006: return
+Function dot(...) -> int (stack: 56)
+  0007: Local(24) = *Local(8)[0..+8]
+  0008: Local(32) = *Local(16)[0..+8]
+  0009: Local(40) = Local(24) * Local(32) (int)
+  0010: Local(24) = *Local(8)[8..+8]
+  0011: Local(32) = *Local(16)[8..+8]
+  0012: Local(48) = Local(24) * Local(32) (int)
+  0013: Local(0) = Local(40) + Local(48) (int)
+  0014: return
+Function bump(...) -> void (stack: 32)
+  0015: Local(8) = *Local(0)
+  0016: load Local(16) = MaybeSignedInt(1)
+  0017: Local(24) = Local(8) + Local(16) (int)
+  0018: copy *Local(0) = Local(24)
+  0019: return
+Function main(...) -> int (stack: 120)
+  0020: load Local(8) = MaybeSignedInt(0)
+  0021: load Local(16) = MaybeSignedInt(0)
+  0022: load Local(24) = MaybeSignedInt(1000)
+  0023: Local(32) = Local(24) <= Local(16) (int)
+  0024: if Local(32) == false jump to 27
+  0025: copy Local(0) = Local(8)
+  0026: return
+  0027: Local(96)[0..+8] = Local(16)
+  0028: Local(96)[8..+8] = Local(16)
+  0029: Local(64)[0..+16] = Local(96)
+  0030: load Local(24) = MaybeSignedInt(1)
+  0031: Local(96)[0..+8] = Local(24)
+  0032: load Local(24) = MaybeSignedInt(2)
+  0033: Local(96)[8..+8] = Local(24)
+  0034: Local(64)[16..+16] = Local(96)
+  0035: copy Local(32) = Local(64)
+  0036: Local(24) = &Local(32)[0]
+  0037: copy Local(80) = Local(24)
+  0038: load Local(88) = MaybeSignedInt(1)
+  0039: load Local(96) = MaybeSignedInt(2)
+  0040: call translate(..) with sp=Local(80)
+  0041: Local(24) = &Local(32)[16]
+  0042: Local(64) = &*Local(24)[0]
+  0043: copy Local(88) = Local(64)
+  0044: call bump(..) with sp=Local(88)
+  0045: Local(64) = &Local(32)[0]
+  0046: Local(72) = &Local(32)[16]
+  0047: copy Local(104) = Local(64)
+  0048: copy Local(112) = Local(72)
+  0049: call dot(..) with sp=Local(96)
+  0050: copy Local(24) = Local(96)
+  0051: Local(8) = Local(8) + Local(24) (int)
+  0052: Local(96) = Local(32)[0..+16]
+  0053: Local(24) = Local(96)[0..+8]
+  0054: Local(80)[0..+8] = Local(24)
+  0055: Local(96) = Local(32)[0..+16]
+  0056: Local(24) = Local(96)[8..+8]
+  0057: Local(80)[8..+8] = Local(24)
+  0058: copy Local(64) = Local(80)
+  0059: Local(80) = Local(32)[0..+16]
+  0060: Local(24) = Local(64) == Local(80) (16 bytes)
+  0061: if Local(24) == false jump to 64
+  0062: load Local(80) = MaybeSignedInt(1)
+  0063: Local(8) = Local(8) + Local(80) (int)
+  0064: load Local(24) = MaybeSignedInt(1)
+  0065: Local(16) = Local(16) + Local(24) (int)
+  0066: jump to 22

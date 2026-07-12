@@ -5,7 +5,7 @@
 
 use somni_expr::{Context, DynFunction, TypedValue};
 
-use crate::value::{default_str, IntoValue, TemplateTypes};
+use crate::value::{IntoValue, TemplateTypes, default_str};
 
 /// A deferred registration that installs a function onto a context under a given name.
 ///

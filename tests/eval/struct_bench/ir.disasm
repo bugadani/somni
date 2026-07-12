@@ -1,0 +1,313 @@
+Globals:
+
+Function: translate
+block 0
+  var return_value: void = None
+  var p: &struct#0 = None
+  var dx: int = None
+  var dy: int = None
+  var temp4: void = None
+  var temp5: int = None
+  temp5 = *p[0..+8]
+  var temp6: void = None
+  temp6 = temp5 + dx
+  free(temp5)
+  *p[0..+8] = temp6
+  free(temp6)
+  var temp7: void = None
+  free(temp7)
+  var temp8: int = None
+  temp8 = *p[8..+8]
+  var temp9: void = None
+  temp9 = temp8 + dy
+  free(temp8)
+  *p[8..+8] = temp9
+  free(temp9)
+  var temp10: void = None
+  free(temp10)
+  free(temp4)
+  free(dy)
+  free(dx)
+  free(p)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+
+Function: dot
+block 0
+  var return_value: int = None
+  var a: &struct#0 = None
+  var b: &struct#0 = None
+  var temp3: void = None
+  var temp4: int = None
+  temp4 = *a[0..+8]
+  var temp5: int = None
+  temp5 = *b[0..+8]
+  var temp6: void = None
+  temp6 = temp4 * temp5
+  free(temp4)
+  free(temp5)
+  var temp7: int = None
+  temp7 = *a[8..+8]
+  var temp8: int = None
+  temp8 = *b[8..+8]
+  var temp9: void = None
+  temp9 = temp7 * temp8
+  free(temp7)
+  free(temp8)
+  var temp10: void = None
+  temp10 = temp6 + temp9
+  free(temp6)
+  free(temp9)
+  return_value = temp10
+  free(temp10)
+  free(temp3)
+  free(b)
+  free(a)
+  free(return_value)
+  -> block 2
+
+block 1
+  -> return
+
+block 2
+  -> block 1
+
+block 3
+  free(b)
+  free(a)
+  free(return_value)
+  -> block 1
+
+Function: bump
+block 0
+  var return_value: void = None
+  var v: &int = None
+  var temp2: void = None
+  var temp3: void = None
+  temp3 = *v
+  var temp4: {int/signed} = Some(MaybeSignedInt(1))
+  var temp5: void = None
+  temp5 = temp3 + temp4
+  free(temp3)
+  free(temp4)
+  *v = temp5
+  free(temp5)
+  var temp6: void = None
+  free(temp6)
+  free(temp2)
+  free(v)
+  free(return_value)
+  -> block 1
+
+block 1
+  -> return
+
+Function: main
+block 0
+  var return_value: int = None
+  var temp1: void = None
+  var acc: void = None
+  var temp3: {int/signed} = Some(MaybeSignedInt(0))
+  acc = temp3
+  free(temp3)
+  var i: void = None
+  var temp5: {int/signed} = Some(MaybeSignedInt(0))
+  i = temp5
+  free(temp5)
+  var temp6: void = None
+  -> block 3
+
+block 1
+  -> return
+
+block 2
+  return_value = acc
+  free(temp6)
+  free(i)
+  free(acc)
+  free(temp1)
+  free(return_value)
+  -> block 10
+
+block 3
+  var temp7: void = None
+  var temp8: void = None
+  var temp9: {int/signed} = Some(MaybeSignedInt(1000))
+  var temp10: void = None
+  temp10 = i >= temp9
+  free(temp9)
+  if temp10 -> block 5 else block 4
+
+block 4
+  free(temp10)
+  var line: struct#1 = None
+  var temp13: struct#1 = None
+  var temp14: struct#0 = None
+  temp14[0..+8] = i
+  temp14[8..+8] = i
+  temp13[0..+16] = temp14
+  free(temp14)
+  var temp15: struct#0 = None
+  var temp16: {int/signed} = Some(MaybeSignedInt(1))
+  temp15[0..+8] = temp16
+  free(temp16)
+  var temp17: {int/signed} = Some(MaybeSignedInt(2))
+  temp15[8..+8] = temp17
+  free(temp17)
+  temp13[16..+16] = temp15
+  free(temp15)
+  line = temp13
+  free(temp13)
+  var temp18: void = None
+  var temp19: &struct#0 = None
+  temp19 = &line[0]
+  var temp20: {int/signed} = Some(MaybeSignedInt(1))
+  var temp21: {int/signed} = Some(MaybeSignedInt(2))
+  var temp22: int = None
+  var temp23: int = None
+  var temp24: void = None
+  var temp25: void = None
+  temp25 = temp19
+  var temp26: void = None
+  temp26 = temp20
+  var temp27: void = None
+  temp27 = temp21
+  temp24 = call translate(temp25, temp26, temp27)
+  temp18 = temp24
+  free(temp27)
+  free(temp26)
+  free(temp25)
+  free(temp24)
+  free(temp23)
+  free(temp22)
+  free(temp21)
+  free(temp20)
+  free(temp19)
+  free(temp18)
+  var temp28: void = None
+  var temp29: &struct#0 = None
+  temp29 = &line[16]
+  var temp30: &int = None
+  temp30 = &*temp29[0]
+  var temp31: int = None
+  var temp32: int = None
+  var temp33: void = None
+  var temp34: void = None
+  temp34 = temp30
+  temp33 = call bump(temp34)
+  temp28 = temp33
+  free(temp34)
+  free(temp33)
+  free(temp32)
+  free(temp31)
+  free(temp30)
+  free(temp29)
+  free(temp28)
+  var temp35: void = None
+  var temp36: &struct#0 = None
+  temp36 = &line[0]
+  var temp37: &struct#0 = None
+  temp37 = &line[16]
+  var temp38: int = None
+  var temp39: int = None
+  var temp40: void = None
+  var temp41: void = None
+  temp41 = temp36
+  var temp42: void = None
+  temp42 = temp37
+  temp40 = call dot(temp41, temp42)
+  temp35 = temp40
+  free(temp42)
+  free(temp41)
+  free(temp40)
+  free(temp39)
+  free(temp38)
+  free(temp37)
+  free(temp36)
+  var temp43: void = None
+  temp43 = acc + temp35
+  free(temp35)
+  acc = temp43
+  free(temp43)
+  var temp44: void = None
+  free(temp44)
+  var mirror: struct#0 = None
+  var temp46: struct#0 = None
+  var temp47: struct#0 = None
+  temp47 = line[0..+16]
+  var temp48: int = None
+  temp48 = temp47[0..+8]
+  free(temp47)
+  temp46[0..+8] = temp48
+  free(temp48)
+  var temp49: struct#0 = None
+  temp49 = line[0..+16]
+  var temp50: int = None
+  temp50 = temp49[8..+8]
+  free(temp49)
+  temp46[8..+8] = temp50
+  free(temp50)
+  mirror = temp46
+  free(temp46)
+  var temp51: void = None
+  var temp52: struct#0 = None
+  temp52 = line[0..+16]
+  var temp53: void = None
+  temp53 = mirror == temp52
+  free(temp52)
+  if temp53 -> block 9 else block 8
+
+block 5
+  var temp11: void = None
+  free(temp11)
+  free(temp10)
+  free(temp8)
+  free(temp7)
+  -> block 6
+
+block 6
+  -> block 2
+
+block 7
+  -> block 4
+
+block 8
+  free(temp53)
+  var temp58: {int/signed} = Some(MaybeSignedInt(1))
+  var temp59: void = None
+  temp59 = i + temp58
+  free(temp58)
+  i = temp59
+  free(temp59)
+  var temp60: void = None
+  free(temp60)
+  free(temp51)
+  free(mirror)
+  free(line)
+  free(temp8)
+  free(temp7)
+  -> block 3
+
+block 9
+  var temp54: void = None
+  var temp55: {int/signed} = Some(MaybeSignedInt(1))
+  var temp56: void = None
+  temp56 = acc + temp55
+  free(temp55)
+  acc = temp56
+  free(temp56)
+  var temp57: void = None
+  free(temp57)
+  free(temp54)
+  -> block 8
+
+block 10
+  -> block 1
+
+block 11
+  free(return_value)
+  -> block 1
+

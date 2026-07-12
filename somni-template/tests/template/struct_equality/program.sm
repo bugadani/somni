@@ -1,0 +1,10 @@
+fn __tmpl_render() {
+if (point == same_point) {
+__tmpl_emit_lit(0);
+}
+__tmpl_emit_lit(1);
+if (point != other_point) {
+__tmpl_emit_lit(2);
+}
+__tmpl_emit_lit(3);
+}

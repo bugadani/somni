@@ -1,0 +1,6 @@
+---
+block: line #
+---
+#for p in points
+({{ str(p.x) }}, {{ str(p.y) }})
+#endfor

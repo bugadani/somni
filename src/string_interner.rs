@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use somni_expr::{
-    value::{LoadStore, ValueType},
     OperatorError, Type, TypeSet, TypedValue,
+    value::{LoadStore, ValueType},
 };
 
 /// The ID of a string in the interner.
