@@ -107,16 +107,16 @@ fn interpret(source: &str, inner: Location) -> Result<Directive, TemplateError> 
     let (_kw_loc, keyword, rest) = split_word(source, inner);
 
     match keyword {
-        "if" => Ok(Directive::If(require_expr(rest, source, "if")?)),
-        "endif" => Ok(Directive::EndIf),
-        "for" => parse_for(source, rest),
-        "endfor" => Ok(Directive::EndFor),
-        "else" => {
+        "if" | "IF" => Ok(Directive::If(require_expr(rest, source, "if")?)),
+        "endif" | "ENDIF" => Ok(Directive::EndIf),
+        "for" | "FOR" => parse_for(source, rest),
+        "endfor" | "ENDFOR" => Ok(Directive::EndFor),
+        "else" | "ELSE" => {
             // Could be a bare `else` or `else if <cond>`.
             let (_, second, after) = split_word(source, rest);
             match second {
                 "" => Ok(Directive::Else),
-                "if" => Ok(Directive::ElseIf(require_expr(after, source, "else if")?)),
+                "if" | "IF" => Ok(Directive::ElseIf(require_expr(after, source, "else if")?)),
                 other => Err(TemplateError::new(
                     format!("expected `if` or nothing after `else`, found `{other}`"),
                     rest,
@@ -160,7 +160,7 @@ fn parse_for(source: &str, header: Location) -> Result<Directive, TemplateError>
 
     // `in`
     let (_in_loc, in_kw, iterable) = split_word(source, after_ty);
-    if in_kw != "in" {
+    if let "in" | "IN" = in_kw {
         let annotated = match ty_name {
             Some(ty_name) => format!("for {var_name}: {ty_name}"),
             None => format!("for {var_name}"),
