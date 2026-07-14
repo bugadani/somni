@@ -161,19 +161,19 @@ fn parse_for(source: &str, header: Location) -> Result<Directive, TemplateError>
     // `in`
     let (_in_loc, in_kw, iterable) = split_word(source, after_ty);
     if let "in" | "IN" = in_kw {
+        let iterable = require_expr(iterable, source, "for ... in")?;
+
+        Ok(Directive::For { var, ty, iterable })
+    } else {
         let annotated = match ty_name {
             Some(ty_name) => format!("for {var_name}: {ty_name}"),
             None => format!("for {var_name}"),
         };
-        return Err(TemplateError::new(
+        Err(TemplateError::new(
             format!("expected `in` after `{annotated}`, found `{in_kw}`"),
             after_ty,
-        ));
+        ))
     }
-
-    let iterable = require_expr(iterable, source, "for ... in")?;
-
-    Ok(Directive::For { var, ty, iterable })
 }
 
 /// Splits off the first word, stopping at whitespace *or* a `:` (so `x:type` also works).

@@ -2,6 +2,7 @@
 
 use indexmap::IndexMap;
 use somni_parser::parser::DefaultTypeSet;
+use std::rc::Rc;
 
 use crate::{OperatorError, RefPointee, Type, TypeSet};
 
@@ -297,14 +298,14 @@ pub enum TypedValue<T: TypeSet = DefaultTypeSet> {
 /// Rust-side boundary type. Field values are stored by name; the field order in
 /// the map reflects the struct's declaration order.
 ///
-/// The entire representation lives behind a single [`Box`], so `SomniStruct`
+/// The entire representation lives behind a single [`Rc`], so `SomniStruct`
 /// (and therefore [`TypedValue`], which embeds it by value) is only one pointer
-/// wide. Inlining the name and the [`IndexMap`] would bloat every value the
-/// evaluator moves and clones on its hot paths. The internals are reached through
+/// wide. Clones share the payload until mutation, when [`Rc::make_mut`] provides
+/// copy-on-write value semantics. The internals are reached through
 /// [`name`](Self::name), [`fields`](Self::fields), [`fields_mut`](Self::fields_mut)
 /// and [`into_parts`](Self::into_parts).
 pub struct SomniStruct<T: TypeSet = DefaultTypeSet> {
-    inner: Box<SomniStructInner<T>>,
+    inner: Rc<SomniStructInner<T>>,
 }
 
 /// The heap-allocated payload of a [`SomniStruct`].
@@ -313,11 +314,20 @@ struct SomniStructInner<T: TypeSet> {
     fields: IndexMap<Box<str>, TypedValue<T>>,
 }
 
+impl<T: TypeSet> Clone for SomniStructInner<T> {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            fields: self.fields.clone(),
+        }
+    }
+}
+
 impl<T: TypeSet> SomniStruct<T> {
     /// Creates a struct value from its name and fields.
     pub fn new(name: Box<str>, fields: IndexMap<Box<str>, TypedValue<T>>) -> Self {
         Self {
-            inner: Box::new(SomniStructInner { name, fields }),
+            inner: Rc::new(SomniStructInner { name, fields }),
         }
     }
 
@@ -333,19 +343,21 @@ impl<T: TypeSet> SomniStruct<T> {
 
     /// Returns a mutable reference to the struct's fields.
     pub fn fields_mut(&mut self) -> &mut IndexMap<Box<str>, TypedValue<T>> {
-        &mut self.inner.fields
+        &mut Rc::make_mut(&mut self.inner).fields
     }
 
     /// Consumes the struct, returning its name and fields.
     pub fn into_parts(self) -> (Box<str>, IndexMap<Box<str>, TypedValue<T>>) {
-        let inner = *self.inner;
+        let inner = Rc::try_unwrap(self.inner).unwrap_or_else(|shared| (*shared).clone());
         (inner.name, inner.fields)
     }
 }
 
 impl<T: TypeSet> Clone for SomniStruct<T> {
     fn clone(&self) -> Self {
-        Self::new(self.inner.name.clone(), self.inner.fields.clone())
+        Self {
+            inner: Rc::clone(&self.inner),
+        }
     }
 }
 
@@ -362,7 +374,8 @@ impl<T: TypeSet> PartialEq for SomniStruct<T> {
     fn eq(&self, other: &Self) -> bool {
         // Structural equality: same struct name and equal fields. `IndexMap`'s
         // `PartialEq` compares entries independent of order.
-        self.inner.name == other.inner.name && self.inner.fields == other.inner.fields
+        Rc::ptr_eq(&self.inner, &other.inner)
+            || (self.inner.name == other.inner.name && self.inner.fields == other.inner.fields)
     }
 }
 
