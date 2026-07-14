@@ -1,4 +1,4 @@
-# Unreleased
+# [0.3.1] - 2026-07-14
 
 - Added `struct` definitions, struct literals (`Name { field: value, ... }`), and
   field access (`value.field`).
@@ -36,6 +36,7 @@
 
 - Initial release
 
+[0.3.1]: https://github.com/bugadani/somni/compare/somni-parser-v0.3.0...somni-parser-v0.3.1
 [0.3.0]: https://github.com/bugadani/somni/compare/somni-parser-v0.2.2...somni-parser-v0.3.0
 [0.2.2]: https://github.com/bugadani/somni/compare/somni-parser-v0.2.1...somni-parser-v0.2.2
 [0.2.1]: https://github.com/bugadani/somni/compare/somni-parser-v0.2.0...somni-parser-v0.2.1
