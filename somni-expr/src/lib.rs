@@ -627,7 +627,12 @@ enum InitializerState {
 struct StackFrame<T: TypeSet> {
     start_addr: usize,
     variables: Vec<TypedValue<T>>,
-    scopes: Vec<HashMap<String, usize>>,
+    scopes: Vec<Scope>,
+}
+
+struct Scope {
+    variable_start: usize,
+    variables: HashMap<String, usize>,
 }
 
 impl<T: TypeSet> StackFrame<T> {
@@ -635,16 +640,23 @@ impl<T: TypeSet> StackFrame<T> {
         StackFrame {
             start_addr: 0,
             variables: vec![],
-            scopes: vec![HashMap::new()],
+            scopes: vec![Scope {
+                variable_start: 0,
+                variables: HashMap::new(),
+            }],
         }
     }
 
-    fn next_call_frame(&self) -> StackFrame<T> {
-        StackFrame {
-            start_addr: self.start_addr + self.variables.len(),
-            variables: vec![],
-            scopes: vec![HashMap::new()],
-        }
+    fn next_address(&self) -> usize {
+        self.start_addr + self.variables.len()
+    }
+
+    fn reset(&mut self, start_addr: usize) {
+        self.start_addr = start_addr;
+        self.variables.clear();
+        self.scopes.truncate(1);
+        self.scopes[0].variable_start = 0;
+        self.scopes[0].variables.clear();
     }
 
     fn declare(&mut self, variable: &str, value: TypedValue<T>) -> usize {
@@ -653,13 +665,14 @@ impl<T: TypeSet> StackFrame<T> {
         self.scopes
             .last_mut()
             .unwrap()
+            .variables
             .insert(variable.to_string(), index);
         index + self.start_addr
     }
 
     fn lookup_index(&self, name: &str) -> Option<usize> {
         for scope in self.scopes.iter().rev() {
-            if let Some(idx) = scope.get(name) {
+            if let Some(idx) = scope.variables.get(name) {
                 return Some(*idx);
             }
         }
@@ -689,11 +702,15 @@ impl<T: TypeSet> StackFrame<T> {
     }
 
     fn open_scope(&mut self) {
-        self.scopes.push(HashMap::new());
+        self.scopes.push(Scope {
+            variable_start: self.variables.len(),
+            variables: HashMap::new(),
+        });
     }
 
     fn close_scope(&mut self) {
-        self.scopes.pop().unwrap();
+        let scope = self.scopes.pop().unwrap();
+        self.variables.truncate(scope.variable_start);
     }
 }
 
@@ -723,6 +740,8 @@ where
     // ----
     /// Variable stack. Element 0 is the global scope.
     stack: Vec<StackFrame<T>>,
+    /// Call frames retained for reuse after functions return.
+    frame_pool: Vec<StackFrame<T>>,
     // unevaluated globals
     initializers: HashMap<&'ctx str, InitializerState>,
     type_context: T,
@@ -806,6 +825,7 @@ where
                 functions: RefCell::new(HashMap::new()),
             }),
             stack: vec![StackFrame::new()],
+            frame_pool: Vec::new(),
             type_context: T::default(),
             initializers,
         }
@@ -818,11 +838,13 @@ where
     ) -> Result<TypedValue<T>, EvalError> {
         let source = self.program.clone().source;
 
-        let stack_frame = self
+        let start_addr = self
             .stack
             .last()
             .expect("The global scope must always be present")
-            .next_call_frame();
+            .next_address();
+        let mut stack_frame = self.frame_pool.pop().unwrap_or_else(StackFrame::new);
+        stack_frame.reset(start_addr);
         self.stack.push(stack_frame);
 
         let mut visitor = ExpressionVisitor::<Self, T> {
@@ -833,7 +855,8 @@ where
 
         let result = visitor.visit_function(function_name, args);
 
-        self.stack.pop();
+        let stack_frame = self.stack.pop().unwrap();
+        self.frame_pool.push(stack_frame);
 
         result
     }
@@ -1247,6 +1270,20 @@ mod test {
 
         ctx.evaluate::<()>("value = 5").unwrap();
         assert_eq!(ctx.evaluate::<bool>("value == 5"), Ok(true));
+    }
+
+    #[test]
+    fn closing_scope_releases_its_variables() {
+        let mut frame = StackFrame::<DefaultTypeSet>::new();
+        frame.declare("outer", TypedValue::Int(1));
+        frame.open_scope();
+        frame.declare("inner", TypedValue::Int(2));
+
+        frame.close_scope();
+
+        assert_eq!(frame.variables.len(), 1);
+        assert_eq!(frame.lookup_index("outer"), Some(0));
+        assert_eq!(frame.lookup_index("inner"), None);
     }
 
     #[test]

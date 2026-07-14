@@ -1,3 +1,7 @@
+# Unreleased
+
+- Performance improvements
+
 # [0.3.1] - 2026-07-14
 
 - Added struct values (`TypedValue::Struct`/`Type::Struct`) with the `SomniStruct`
