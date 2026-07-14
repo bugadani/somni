@@ -1,6 +1,6 @@
 [package]
 name = "somni-template"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 rust-version = "1.85.0"
 description = "A configurable templating engine built on the Somni expression language"
