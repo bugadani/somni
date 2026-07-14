@@ -1,3 +1,7 @@
+# Unreleased
+
+- Fixed `for ... in` parsing
+
 # [0.3.1] - 2026-07-14
 
 - templates can now use uppercase keywords: `IF`, `ELSE`, `ENDIF`, `FOR`, `ENDFOR`
