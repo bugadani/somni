@@ -2,11 +2,10 @@
 //!
 //! A small, configurable templating engine built on top of [`somni-expr`](somni_expr).
 //!
-//! Templates are **transpiled** into a Somni program (a render function plus any include
-//! functions) and then executed. Literal text is carried out-of-band (by span into the
-//! original template / include arena) and emitted through an internal `emit` function, while
-//! `{{ expr }}` interpolations, `if`/`for` conditions, and loop iterables are handed to Somni
-//! verbatim.
+//! Templates are **transpiled** into a Somni program and then executed. Literal text is
+//! emitted verbatim; interpolations and directive expressions are evaluated by Somni.
+//!
+//! **Language guide:** [`_template_book`].
 //!
 //! ## Example
 //!
@@ -25,28 +24,12 @@
 //! assert_eq!(tmpl.render(env).unwrap(), "1,\n2,\n3,\n");
 //! ```
 //!
-//! ## Syntax
-//!
-//! - Interpolation: `{{ expr }}` (the expression must evaluate to a `string`; use a
-//!   conversion such as `str(x)` for other types).
-//! - Directives: `if` / `else if` / `else` / `endif`, `for <var> in <expr>` / `endfor`,
-//!   `replace "literal" with <expr>` / `endreplace`, and `include "path"` (optional
-//!   `with name: type = expr, …`), in either bracket ([`Syntax::brackets`]) or line
-//!   ([`Syntax::lines`]) style. Includes are loaded at compile time via
-//!   [`Template::compile_with`]. A bare `include` (no `with`) is expanded in place and
-//!   shares the caller’s context; `include … with …` compiles to a separate Somni function
-//!   invoked with the listed bindings.
-//! - Optional `---`-fenced **frontmatter** at the start of a template may override the
-//!   [`Syntax`] passed to [`Template::compile`] (frontmatter wins for keys it sets). An
-//!   optional [`Syntax::text_prefix`] strips a line marker so the rest of the line is
-//!   ordinary text (so conditional output can hide behind a comment when the template is
-//!   also a valid program in another language).
-//!
 //! See [`Env`] for supplying data, [`IntoValue`]/[`Iter`] for values and loop sources, and
 //! [`TemplateError`] for diagnostics (which always point into the original template).
 
 #![warn(missing_docs)]
 
+pub mod _template_book;
 pub mod error;
 pub mod syntax;
 
