@@ -89,14 +89,14 @@ impl Template {
     /// Returns a [`TemplateError`] (pointing into the original `source`, including any
     /// frontmatter) on malformed directives or expressions.
     pub fn compile(source: &str, syntax: &Syntax) -> Result<Template, TemplateError> {
-        let original = source;
-        let (syntax, body, body_offset) = resolve_syntax(original, syntax)?;
-        let nodes = parse::parse(body, &syntax).map_err(|e| e.offset(body_offset))?;
-        let mut transpiled = transpile::transpile(body, &nodes);
-        transpiled.offset_template_locations(body_offset);
+        let (syntax, _body, body_offset) = resolve_syntax(source, syntax)?;
+        // Scan/parse/transpile the full source starting at `body_offset` so locations are
+        // absolute (frontmatter-aware) without a post-hoc shift.
+        let nodes = parse::parse(source, &syntax, body_offset)?;
+        let transpiled = transpile::transpile(source, &nodes);
 
         // Validate the generated program so that expression syntax errors surface at compile
-        // time, mapped back to the original template (frontmatter included).
+        // time, mapped back to the original template.
         if let Err(err) =
             somni_parser::parser::parse::<<TemplateTypes as TypeSet>::Parser>(&transpiled.source)
         {
@@ -113,9 +113,7 @@ impl Template {
         }
 
         Ok(Template {
-            // Keep the full original source so locations and `emit_lit` spans align with
-            // what the caller passes to [`TemplateError::display_with`].
-            template: original.to_string(),
+            template: source.to_string(),
             transpiled,
         })
     }

@@ -320,9 +320,11 @@ fn trim_start_loc(source: &str, span: Location) -> Location {
     }
 }
 
-/// Parses a template source into a node tree.
-pub fn parse(source: &str, syntax: &Syntax) -> Result<Vec<Node>, TemplateError> {
-    let segments = crate::scan::scan(source, syntax)?;
+/// Parses `source[from..]` into a node tree.
+///
+/// Locations in the returned tree are absolute into `source` (they include `from`).
+pub fn parse(source: &str, syntax: &Syntax, from: usize) -> Result<Vec<Node>, TemplateError> {
+    let segments = crate::scan::scan(source, syntax, from)?;
     let mut parser = Parser {
         source,
         segments: &segments,
@@ -556,7 +558,7 @@ mod tests {
     #[test]
     fn text_and_interp() {
         let src = "a {{ b }} c";
-        let nodes = parse(src, &Syntax::brackets()).unwrap();
+        let nodes = parse(src, &Syntax::brackets(), 0).unwrap();
         assert_eq!(nodes.len(), 3);
         assert!(matches!(nodes[0], Node::Text(_)));
         assert!(matches!(nodes[1], Node::Interp(_)));
@@ -566,7 +568,7 @@ mod tests {
     #[test]
     fn if_else_if_else() {
         let src = "{% if a %}A{% else if b %}B{% else %}C{% endif %}";
-        let nodes = parse(src, &Syntax::brackets()).unwrap();
+        let nodes = parse(src, &Syntax::brackets(), 0).unwrap();
         let Node::If { arms, otherwise } = &nodes[0] else {
             panic!("expected if, got {nodes:?}");
         };
@@ -579,7 +581,7 @@ mod tests {
     #[test]
     fn for_header_parsing() {
         let src = "#for item: string in items\n{{ item }}\n#endfor\n";
-        let nodes = parse(src, &Syntax::lines()).unwrap();
+        let nodes = parse(src, &Syntax::lines(), 0).unwrap();
         let Node::For {
             var,
             ty,
@@ -598,7 +600,7 @@ mod tests {
     #[test]
     fn for_header_without_type_annotation() {
         let src = "#for item in items\n{{ item }}\n#endfor\n";
-        let nodes = parse(src, &Syntax::lines()).unwrap();
+        let nodes = parse(src, &Syntax::lines(), 0).unwrap();
         let Node::For {
             var,
             ty,
@@ -617,7 +619,7 @@ mod tests {
     #[test]
     fn nested_for_in_if() {
         let src = "{% if show %}{% for x in xs %}{{ x }}{% endfor %}{% endif %}";
-        let nodes = parse(src, &Syntax::brackets()).unwrap();
+        let nodes = parse(src, &Syntax::brackets(), 0).unwrap();
         let Node::If { arms, .. } = &nodes[0] else {
             panic!("expected if");
         };
@@ -627,7 +629,7 @@ mod tests {
     #[test]
     fn dangling_endif_errors() {
         let src = "hello{% endif %}";
-        let err = parse(src, &Syntax::brackets()).unwrap_err();
+        let err = parse(src, &Syntax::brackets(), 0).unwrap_err();
         assert!(
             err.message.contains("unexpected `endif`"),
             "{}",
@@ -638,7 +640,7 @@ mod tests {
     #[test]
     fn unterminated_for_errors() {
         let src = "#for x: int in xs\n{{ x }}\n";
-        let err = parse(src, &Syntax::lines()).unwrap_err();
+        let err = parse(src, &Syntax::lines(), 0).unwrap_err();
         assert!(
             err.message.contains("unterminated `for`"),
             "{}",
@@ -649,21 +651,21 @@ mod tests {
     #[test]
     fn omitted_type_annotation_is_allowed() {
         let src = "{% for x in xs %}{% endfor %}";
-        let nodes = parse(src, &Syntax::brackets()).unwrap();
+        let nodes = parse(src, &Syntax::brackets(), 0).unwrap();
         assert!(matches!(nodes[0], Node::For { ty: None, .. }));
     }
 
     #[test]
     fn empty_type_annotation_still_errors() {
         let src = "{% for x: %}{% endfor %}";
-        let err = parse(src, &Syntax::brackets()).unwrap_err();
+        let err = parse(src, &Syntax::brackets(), 0).unwrap_err();
         assert!(err.message.contains("type"), "{}", err.message);
     }
 
     #[test]
     fn replace_block_parses() {
         let src = "#replace \"X\" with name\nhello X\n#endreplace\n";
-        let nodes = parse(src, &Syntax::lines()).unwrap();
+        let nodes = parse(src, &Syntax::lines(), 0).unwrap();
         assert_eq!(nodes.len(), 1);
         match &nodes[0] {
             Node::Replace {
@@ -686,7 +688,7 @@ mod tests {
     #[test]
     fn replace_empty_literal_errors() {
         let src = "#replace \"\" with name\nx\n#endreplace\n";
-        let err = parse(src, &Syntax::lines()).unwrap_err();
+        let err = parse(src, &Syntax::lines(), 0).unwrap_err();
         assert!(err.message.contains("empty"), "{}", err.message);
     }
 }

@@ -46,11 +46,17 @@ fn find_from(source: &str, from: usize, needle: &str) -> Option<usize> {
     source[from..].find(needle).map(|i| from + i)
 }
 
-/// Scans a template into segments according to the given [`Syntax`].
-pub fn scan(source: &str, syntax: &Syntax) -> Result<Vec<Segment>, TemplateError> {
+/// Scans `source[from..]` into segments according to the given [`Syntax`].
+///
+/// Produced locations are absolute offsets into `source` (they already include `from`),
+/// so callers that stripped a prefix (e.g. frontmatter) can pass the full source and the
+/// body start offset.
+pub fn scan(source: &str, syntax: &Syntax, from: usize) -> Result<Vec<Segment>, TemplateError> {
     match &syntax.block {
-        BlockStyle::Paired { open, close } => scan_paired(source, &syntax.expr, open, close),
-        BlockStyle::Line { prefix } => scan_lines(source, &syntax.expr, prefix),
+        BlockStyle::Paired { open, close } => {
+            scan_paired(source, &syntax.expr, open, close, from)
+        }
+        BlockStyle::Line { prefix } => scan_lines(source, &syntax.expr, prefix, from),
     }
 }
 
@@ -66,10 +72,11 @@ fn scan_paired(
     expr: &(String, String),
     block_open: &str,
     block_close: &str,
+    from: usize,
 ) -> Result<Vec<Segment>, TemplateError> {
     let (expr_open, expr_close) = expr;
     let mut out = Vec::new();
-    let mut pos = 0;
+    let mut pos = from;
 
     while pos < source.len() {
         let next_expr = find_from(source, pos, expr_open);
@@ -135,11 +142,12 @@ fn scan_lines(
     source: &str,
     expr: &(String, String),
     prefix: &str,
+    from: usize,
 ) -> Result<Vec<Segment>, TemplateError> {
     let (expr_open, expr_close) = expr;
     let mut out = Vec::new();
     // Offset of the start of the current line.
-    let mut line_start = 0;
+    let mut line_start = from;
 
     while line_start < source.len() {
         // Find the end of this physical line (index of '\n', exclusive) and the index of
@@ -229,14 +237,14 @@ mod tests {
     #[test]
     fn plain_text_is_single_text_segment() {
         let src = "hello world";
-        let segs = scan(src, &Syntax::brackets()).unwrap();
+        let segs = scan(src, &Syntax::brackets(), 0).unwrap();
         assert_eq!(segs, vec![Segment::Text(Location { start: 0, end: 11 })]);
     }
 
     #[test]
     fn brackets_interpolation() {
         let src = "hi {{ name }}!";
-        let segs = scan(src, &Syntax::brackets()).unwrap();
+        let segs = scan(src, &Syntax::brackets(), 0).unwrap();
         assert_eq!(segs.len(), 3);
         assert_eq!(text(src, &segs[0]), "hi ");
         assert!(matches!(segs[1], Segment::Interp(_)));
@@ -247,7 +255,7 @@ mod tests {
     #[test]
     fn brackets_directive_and_expr_ordering() {
         let src = "{% if x %}a{{ y }}{% endif %}";
-        let segs = scan(src, &Syntax::brackets()).unwrap();
+        let segs = scan(src, &Syntax::brackets(), 0).unwrap();
         assert!(matches!(segs[0], Segment::Directive { .. }));
         assert_eq!(text(src, &segs[0]), "if x");
         assert_eq!(text(src, &segs[1]), "a");
@@ -258,7 +266,7 @@ mod tests {
     #[test]
     fn line_directive_swallows_whole_line() {
         let src = "#if x\nhello\n#endif\n";
-        let segs = scan(src, &Syntax::lines()).unwrap();
+        let segs = scan(src, &Syntax::lines(), 0).unwrap();
         // if-directive, "hello\n" text, endif-directive
         assert!(matches!(segs[0], Segment::Directive { .. }));
         assert_eq!(text(src, &segs[0]), "if x");
@@ -271,7 +279,7 @@ mod tests {
     #[test]
     fn line_style_interpolation_inline() {
         let src = "name: {{ user }}\n";
-        let segs = scan(src, &Syntax::lines()).unwrap();
+        let segs = scan(src, &Syntax::lines(), 0).unwrap();
         assert_eq!(text(src, &segs[0]), "name: ");
         assert_eq!(text(src, &segs[1]), "user");
         assert_eq!(text(src, &segs[2]), "\n");
@@ -280,7 +288,21 @@ mod tests {
     #[test]
     fn unterminated_interpolation_errors() {
         let src = "hi {{ name";
-        let err = scan(src, &Syntax::brackets()).unwrap_err();
+        let err = scan(src, &Syntax::brackets(), 0).unwrap_err();
         assert!(err.message.contains("unterminated interpolation"));
+    }
+
+    #[test]
+    fn scan_from_skips_prefix() {
+        let src = "IGNORE{{ name }}";
+        let segs = scan(src, &Syntax::brackets(), "IGNORE".len()).unwrap();
+        assert_eq!(segs.len(), 1);
+        assert!(matches!(segs[0], Segment::Interp(_)));
+        assert_eq!(text(src, &segs[0]), "name");
+        // Location is absolute into `src` (past the skipped prefix).
+        let Segment::Interp(loc) = segs[0] else {
+            panic!("expected Interp");
+        };
+        assert_eq!(loc.start, "IGNORE{{ ".len());
     }
 }

@@ -59,20 +59,6 @@ impl Transpiled {
         })
     }
 
-    /// Shifts all template-side locations by `offset` (e.g. to account for stripped frontmatter).
-    pub fn offset_template_locations(&mut self, offset: usize) {
-        if offset == 0 {
-            return;
-        }
-        for lit in &mut self.literals {
-            lit.start += offset;
-            lit.end += offset;
-        }
-        for e in &mut self.map {
-            e.tmpl_start += offset;
-        }
-    }
-
     fn map_offset(&self, off: usize) -> Option<usize> {
         for e in &self.map {
             if off >= e.gen_start && off <= e.gen_start + e.len {
@@ -253,7 +239,7 @@ mod tests {
     use crate::{parse::parse, syntax::Syntax};
 
     fn transpile_str(src: &str, syntax: &Syntax) -> Transpiled {
-        let nodes = parse(src, syntax).unwrap();
+        let nodes = parse(src, syntax, 0).unwrap();
         transpile(src, &nodes)
     }
 
