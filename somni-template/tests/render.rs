@@ -308,6 +308,137 @@ fn frontmatter_keeps_unmentioned_rust_settings() {
 }
 
 #[test]
+fn replace_basic() {
+    let source = r#"#replace "NAME" with name
+Hello, NAME!
+#endreplace
+"#;
+    let out = render(source, &Syntax::lines(), |env| {
+        env.value("name", "Ada");
+    });
+    assert_eq!(out, "Hello, Ada!\n");
+}
+
+#[test]
+fn replace_all_occurrences() {
+    let source = r#"#replace "X" with v
+X and X
+#endreplace
+"#;
+    let out = render(source, &Syntax::lines(), |env| {
+        env.value("v", "ok");
+    });
+    assert_eq!(out, "ok and ok\n");
+}
+
+#[test]
+fn replace_missing_literal_is_noop() {
+    let source = r#"#replace "ZZZ" with v
+hello
+#endreplace
+"#;
+    let out = render(source, &Syntax::lines(), |env| {
+        env.value("v", "nope");
+    });
+    assert_eq!(out, "hello\n");
+}
+
+#[test]
+fn replace_injects_string_value_not_template() {
+    // The `with` expression is emitted as a string value, not reparsed as template source.
+    let source = r#"#replace "PH" with ph
+PH
+#endreplace
+"#;
+    let out = render(source, &Syntax::lines(), |env| {
+        env.value("ph", "{{ name }}");
+        env.value("name", "Ada");
+    });
+    assert_eq!(out, "{{ name }}\n");
+}
+
+#[test]
+fn replace_inside_for_uses_loop_var() {
+    let source = r#"#for n in nums
+#replace "N" with str(n)
+[N]
+#endreplace
+#endfor
+"#;
+    let out = render(source, &Syntax::lines(), |env| {
+        env.value("nums", Iter(vec![1u64, 2]));
+    });
+    assert_eq!(out, "[1]\n[2]\n");
+}
+
+#[test]
+fn replace_with_non_string_is_error() {
+    let source = r#"#replace "X" with count
+X
+#endreplace
+"#;
+    let tmpl = Template::compile(source, &Syntax::lines()).unwrap();
+    let mut env = Env::new();
+    env.value("count", 3u64);
+    let err = tmpl.render(env).unwrap_err();
+    assert!(
+        err.message.contains("argument") || err.message.contains("&str") || err.message.contains("string"),
+        "unexpected: {}",
+        err.message
+    );
+}
+
+#[test]
+fn replace_empty_literal_is_compile_error() {
+    let source = r#"#replace "" with name
+x
+#endreplace
+"#;
+    let err = Template::compile(source, &Syntax::lines()).unwrap_err();
+    assert!(
+        err.message.contains("empty"),
+        "unexpected: {}",
+        err.message
+    );
+}
+
+#[test]
+fn replace_paired_style() {
+    let source = r#"{% replace "X" with v %}X{% endreplace %}"#;
+    let out = render(source, &Syntax::brackets(), |env| {
+        env.value("v", "yes");
+    });
+    assert_eq!(out, "yes");
+}
+
+#[test]
+fn replace_escapes_in_literal() {
+    let source = "#replace \"a\\\"b\" with v\na\"b\n#endreplace\n";
+    let out = render(source, &Syntax::lines(), |env| {
+        env.value("v", "Q");
+    });
+    assert_eq!(out, "Q\n");
+}
+
+#[test]
+fn compile_error_accounts_for_frontmatter() {
+    let source = "---\nblock: line #\n---\nvalue: {{ 1 + }}\n";
+    let err = Template::compile(source, &Syntax::brackets()).unwrap_err();
+    // Location must point into the full source, past the frontmatter.
+    assert!(
+        err.location.start >= "---\nblock: line #\n---\n".len(),
+        "location {:?} should be after frontmatter; display:\n{}",
+        err.location,
+        err.display_with(source)
+    );
+    let marked = err.display_with(source).to_string();
+    assert!(
+        marked.contains("value: {{ 1 + }}") || marked.contains("1 +"),
+        "marked error should show the body line:\n{marked}"
+    );
+}
+
+#[test]
 fn runtime_error_maps_to_template_location() {
     // `missing` is not registered -> unknown variable at render time.
     let source = "before {{ missing }} after";

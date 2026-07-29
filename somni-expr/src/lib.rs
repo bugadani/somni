@@ -128,6 +128,7 @@ pub mod value;
 mod visitor;
 
 pub use function::{DynFunction, FunctionCallError};
+use function::ExprFn;
 pub use iter::{SomniIterator, WithIterator};
 pub use value::{Place, Reference, SomniStruct, TypedValue};
 pub use visitor::ExpressionVisitor;
@@ -182,7 +183,6 @@ use somni_parser::{
 
 use crate::{
     error::MarkInSource,
-    function::ExprFn,
     value::{LoadOwned, LoadStore, ValueType},
 };
 

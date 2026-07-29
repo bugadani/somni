@@ -28,9 +28,11 @@
 //!
 //! - Interpolation: `{{ expr }}` (the expression must evaluate to a `string`; use a
 //!   conversion such as `str(x)` for other types).
-//! - Directives: `if` / `else if` / `else` / `endif` and `for <var> in <expr>` / `endfor` (the
-//!   loop variable may carry an optional `: <type>` annotation), in either bracket
-//!   ([`Syntax::brackets`]) or line ([`Syntax::lines`]) style.
+//! - Directives: `if` / `else if` / `else` / `endif`, `for <var> in <expr>` / `endfor`, and
+//!   `replace "literal" with <expr>` / `endreplace` (the loop variable may carry an optional
+//!   `: <type>` annotation), in either bracket ([`Syntax::brackets`]) or line
+//!   ([`Syntax::lines`]) style. A `replace` block rewrites literal text in its body into
+//!   prefix / `with`-expression / suffix emit triples at compile time.
 //! - Optional `---`-fenced **frontmatter** at the start of a template may override the
 //!   [`Syntax`] passed to [`Template::compile`] (frontmatter wins for keys it sets).
 //!
@@ -56,10 +58,8 @@ use somni_parser::{Location, ast::Item};
 pub use env::Env;
 pub use error::TemplateError;
 pub use somni_expr::{SomniIterator, SomniStruct, TypedValue};
-pub use syntax::{BlockStyle, Syntax};
+pub use syntax::{BlockStyle, Syntax, resolve_syntax, split_frontmatter};
 pub use value::{IntoValue, Iter, TemplateTypes};
-
-use syntax::resolve_syntax;
 
 use transpile::{EMIT_FN, EMIT_LIT_FN, RENDER_FN, Transpiled};
 
@@ -86,21 +86,26 @@ impl Template {
     /// `syntax` (frontmatter takes precedence for keys it sets) and only the body after the
     /// closing fence is compiled. See [`Syntax::with_frontmatter`].
     ///
-    /// Returns a [`TemplateError`] (pointing into the compiled body, or into frontmatter when
-    /// that is malformed) on malformed directives or expressions.
+    /// Returns a [`TemplateError`] (pointing into the original `source`, including any
+    /// frontmatter) on malformed directives or expressions.
     pub fn compile(source: &str, syntax: &Syntax) -> Result<Template, TemplateError> {
-        let (syntax, source) = resolve_syntax(source, syntax)?;
-        let nodes = parse::parse(source, &syntax)?;
-        let transpiled = transpile::transpile(source, &nodes);
+        let original = source;
+        let (syntax, body, body_offset) = resolve_syntax(original, syntax)?;
+        let nodes = parse::parse(body, &syntax).map_err(|e| e.offset(body_offset))?;
+        let mut transpiled = transpile::transpile(body, &nodes);
+        transpiled.offset_template_locations(body_offset);
 
         // Validate the generated program so that expression syntax errors surface at compile
-        // time, mapped back to the template.
+        // time, mapped back to the original template (frontmatter included).
         if let Err(err) =
             somni_parser::parser::parse::<<TemplateTypes as TypeSet>::Parser>(&transpiled.source)
         {
             let location = transpiled
                 .map_location(err.location)
-                .unwrap_or(Location { start: 0, end: 0 });
+                .unwrap_or(Location {
+                    start: body_offset,
+                    end: body_offset,
+                });
             return Err(TemplateError::new(
                 format!("invalid expression: {}", err.error),
                 location,
@@ -108,7 +113,9 @@ impl Template {
         }
 
         Ok(Template {
-            template: source.to_string(),
+            // Keep the full original source so locations and `emit_lit` spans align with
+            // what the caller passes to [`TemplateError::display_with`].
+            template: original.to_string(),
             transpiled,
         })
     }
@@ -157,11 +164,6 @@ impl Template {
 
         env.apply(&mut ctx, &names);
 
-        // Parse a private copy of the generated program to obtain the render function AST,
-        // which we drive directly through the visitor. This keeps evaluation errors
-        // structured (with locations into the generated source) so we can map them back to
-        // the template, instead of the stringified form produced when calling through
-        // `Context::evaluate`.
         let program = somni_parser::parser::parse::<<TemplateTypes as TypeSet>::Parser>(
             &self.transpiled.source,
         )
@@ -175,8 +177,6 @@ impl Template {
             })
             .expect("generated program always defines the render function");
 
-        // Scope the visitor so its mutable borrow of `ctx` (and `ctx` itself) is released
-        // before we reclaim the output buffer, which is shared with the emit closures.
         let result = {
             let mut visitor = ExpressionVisitor::<Context<'_, TemplateTypes>, TemplateTypes> {
                 context: &mut ctx,
@@ -194,7 +194,6 @@ impl Template {
             TemplateError::new(err.message, location)
         })?;
 
-        // Release the context (and thus the emit closures' buffer handles) before reclaiming.
         drop(ctx);
 
         let output = Rc::try_unwrap(buffer)

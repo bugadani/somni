@@ -59,6 +59,20 @@ impl Transpiled {
         })
     }
 
+    /// Shifts all template-side locations by `offset` (e.g. to account for stripped frontmatter).
+    pub fn offset_template_locations(&mut self, offset: usize) {
+        if offset == 0 {
+            return;
+        }
+        for lit in &mut self.literals {
+            lit.start += offset;
+            lit.end += offset;
+        }
+        for e in &mut self.map {
+            e.tmpl_start += offset;
+        }
+    }
+
     fn map_offset(&self, off: usize) -> Option<usize> {
         for e in &self.map {
             if off >= e.gen_start && off <= e.gen_start + e.len {
@@ -93,26 +107,65 @@ impl Writer<'_> {
     }
 
     fn emit_literal(&mut self, span: Location) {
+        if span.start >= span.end {
+            return;
+        }
         let index = self.literals.len();
         self.literals.push(span);
         self.push(&format!("{EMIT_LIT_FN}({index});\n"));
     }
 
-    fn nodes(&mut self, nodes: &[Node]) {
-        for node in nodes {
-            self.node(node);
+    fn emit_expr(&mut self, expr: Location) {
+        self.push(&format!("{EMIT_FN}("));
+        self.push_verbatim(expr);
+        self.push(");\n");
+    }
+
+    /// Emits `span` as alternating prefix / `with_expr` / suffix chunks around each
+    /// occurrence of `literal` (left-to-right, non-overlapping).
+    fn emit_text_with_replace(&mut self, span: Location, literal: &str, with_expr: Location) {
+        let text = span.extract(self.template);
+        let mut start = 0;
+        while let Some(found) = text[start..].find(literal) {
+            let abs = start + found;
+            if found > 0 {
+                self.emit_literal(Location {
+                    start: span.start + start,
+                    end: span.start + abs,
+                });
+            }
+            self.emit_expr(with_expr);
+            start = abs + literal.len();
+        }
+        if start < text.len() {
+            self.emit_literal(Location {
+                start: span.start + start,
+                end: span.end,
+            });
+        } else if start == 0 {
+            // No occurrence: emit the whole span unchanged.
+            self.emit_literal(span);
         }
     }
 
-    fn node(&mut self, node: &Node) {
+    fn nodes(&mut self, nodes: &[Node], replace: Option<(&str, Location)>) {
+        for node in nodes {
+            self.node(node, replace);
+        }
+    }
+
+    fn node(&mut self, node: &Node, replace: Option<(&str, Location)>) {
         match node {
-            Node::Text(span) => self.emit_literal(*span),
-            Node::Interp(expr) => {
-                self.push(&format!("{EMIT_FN}("));
-                self.push_verbatim(*expr);
-                self.push(");\n");
+            Node::Text(span) => match replace {
+                Some((literal, with_expr)) => {
+                    self.emit_text_with_replace(*span, literal, with_expr)
+                }
+                None => self.emit_literal(*span),
+            },
+            Node::Interp(expr) => self.emit_expr(*expr),
+            Node::If { arms, otherwise } => {
+                self.if_chain(arms, otherwise.as_deref(), replace)
             }
-            Node::If { arms, otherwise } => self.if_chain(arms, otherwise.as_deref()),
             Node::For {
                 var,
                 ty,
@@ -128,34 +181,47 @@ impl Writer<'_> {
                 self.push(" in (");
                 self.push_verbatim(*iterable);
                 self.push(") {\n");
-                self.nodes(body);
+                self.nodes(body, replace);
                 self.push("}\n");
+            }
+            Node::Replace {
+                literal,
+                with_expr,
+                body,
+            } => {
+                // Nested `replace` applies its own literal; an outer replacement does not
+                // rewrite through it.
+                self.nodes(body, Some((literal, *with_expr)));
             }
         }
     }
 
-    fn if_chain(&mut self, arms: &[Arm], otherwise: Option<&[Node]>) {
+    fn if_chain(
+        &mut self,
+        arms: &[Arm],
+        otherwise: Option<&[Node]>,
+        replace: Option<(&str, Location)>,
+    ) {
         let (first, rest) = arms.split_first().expect("if always has >= 1 arm");
 
         self.push("if (");
         self.push_verbatim(first.cond);
         self.push(") {\n");
-        self.nodes(&first.body);
+        self.nodes(&first.body, replace);
         self.push("}");
 
         if rest.is_empty() {
             match otherwise {
                 Some(body) => {
                     self.push(" else {\n");
-                    self.nodes(body);
+                    self.nodes(body, replace);
                     self.push("}\n");
                 }
                 None => self.push("\n"),
             }
         } else {
-            // Chain remaining arms as a nested `else { if ... }`.
             self.push(" else {\n");
-            self.if_chain(rest, otherwise);
+            self.if_chain(rest, otherwise, replace);
             self.push("}\n");
         }
     }
@@ -171,7 +237,7 @@ pub fn transpile(template: &str, nodes: &[Node]) -> Transpiled {
     };
 
     w.push(&format!("fn {RENDER_FN}() {{\n"));
-    w.nodes(nodes);
+    w.nodes(nodes, None);
     w.push("}\n");
 
     Transpiled {
@@ -238,5 +304,29 @@ mod tests {
         };
         let tmpl_loc = t.map_location(gen_loc).unwrap();
         assert_eq!(tmpl_loc.extract(src), "boom");
+    }
+
+    #[test]
+    fn replace_becomes_prefix_expr_suffix() {
+        let src = "#replace \"N\" with str(n)\n[N]\n#endreplace\n";
+        let t = transpile_str(src, &Syntax::lines());
+        assert!(
+            t.source.contains(&format!("{EMIT_LIT_FN}(0)")),
+            "{}",
+            t.source
+        );
+        assert!(
+            t.source.contains(&format!("{EMIT_FN}(str(n))")),
+            "{}",
+            t.source
+        );
+        assert!(
+            t.source.contains(&format!("{EMIT_LIT_FN}(1)")),
+            "{}",
+            t.source
+        );
+        assert_eq!(t.literals[0].extract(src), "[");
+        assert_eq!(t.literals[1].extract(src), "]\n");
+        assert!(!t.source.contains("replace"), "{}", t.source);
     }
 }

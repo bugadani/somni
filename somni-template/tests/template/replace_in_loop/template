@@ -1,0 +1,9 @@
+---
+# Line directives so replace/endreplace are easy to read in the source.
+block: line #
+---
+#replace "N" with str(n)
+#for n in nums
+[N]
+#endfor
+#endreplace

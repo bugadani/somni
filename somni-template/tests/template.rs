@@ -37,6 +37,7 @@
 
 use std::{fs, path::Path};
 
+use pretty_assertions::assert_eq;
 use somni_expr::{Context, ExprContext, somni_struct};
 use somni_template::{Env, IntoValue, Iter, Syntax, Template, TemplateTypes};
 
@@ -135,15 +136,16 @@ fn run_template_fixtures() {
         let name = dir.file_name().unwrap().to_string_lossy().into_owned();
         let template = normalize(&fs::read_to_string(&template_path).unwrap());
 
-        let compiled = Template::compile(&template, &Syntax::brackets())
-            .unwrap_or_else(|e| panic!("[{name}] compile failed: {e:?}"));
+        let compiled = Template::compile(&template, &Syntax::brackets()).unwrap_or_else(|e| {
+            panic!("[{name}] compile failed:\n{}", e.display_with(&template));
+        });
 
         // Always save the generated Somni program as an artifact (never compared).
         fs::write(dir.join("program.sm"), compiled.generated_program()).unwrap();
 
-        let actual = compiled
-            .render(standard_env())
-            .unwrap_or_else(|e| panic!("[{name}] render failed: {e:?}"));
+        let actual = compiled.render(standard_env()).unwrap_or_else(|e| {
+            panic!("[{name}] render failed:\n{}", e.display_with(&template));
+        });
 
         let output_path = dir.join("output");
         if bless {

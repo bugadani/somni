@@ -215,14 +215,15 @@ pub fn split_frontmatter(source: &str) -> Option<(&str, &str)> {
 /// Resolves the effective [`Syntax`] for a template source.
 ///
 /// When frontmatter is present, its settings overlay `base` (frontmatter wins). Returns the
-/// effective syntax and the template body with frontmatter stripped. Without frontmatter,
-/// returns a clone of `base` and the original `source`.
+/// effective syntax, the template body with frontmatter stripped, and the byte offset of the
+/// body within the original `source`. Without frontmatter, returns a clone of `base`, the
+/// original `source`, and offset `0`.
 pub fn resolve_syntax<'a>(
     source: &'a str,
     base: &Syntax,
-) -> Result<(Syntax, &'a str), TemplateError> {
+) -> Result<(Syntax, &'a str, usize), TemplateError> {
     let Some((front, body)) = split_frontmatter(source) else {
-        return Ok((base.clone(), source));
+        return Ok((base.clone(), source, 0));
     };
 
     // `front` begins immediately after the opening `---\n` / `---\r\n` fence.
@@ -241,7 +242,9 @@ pub fn resolve_syntax<'a>(
             },
         )
     })?;
-    Ok((syntax, body))
+    // `body` is always a suffix of `source`.
+    let body_offset = source.len() - body.len();
+    Ok((syntax, body, body_offset))
 }
 
 fn line_span(front: &str, line_start: usize, line_len: usize) -> Location {
@@ -338,8 +341,9 @@ mod tests {
     fn resolve_prefers_frontmatter_over_base() {
         let base = Syntax::lines();
         let source = "---\nblock: paired /* */\n---\n/* if x */y/* endif */";
-        let (syntax, body) = resolve_syntax(source, &base).unwrap();
+        let (syntax, body, body_offset) = resolve_syntax(source, &base).unwrap();
         assert_eq!(body, "/* if x */y/* endif */");
+        assert_eq!(&source[body_offset..], body);
         assert_eq!(
             syntax.block,
             BlockStyle::Paired {

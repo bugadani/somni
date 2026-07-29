@@ -33,6 +33,19 @@ pub enum Node {
         /// The loop body.
         body: Vec<Node>,
     },
+    /// A `replace "literal" with expr` … `endreplace` block.
+    ///
+    /// At transpile time, each occurrence of `literal` in body text is rewritten into a
+    /// prefix / `with_expr` / suffix emit triple. The body is otherwise a normal nested
+    /// template.
+    Replace {
+        /// The search literal (already unescaped).
+        literal: String,
+        /// The `with` expression span (must evaluate to a string at render time).
+        with_expr: Location,
+        /// Parsed body.
+        body: Vec<Node>,
+    },
 }
 
 /// A single conditional arm: a condition and its body.
@@ -45,7 +58,7 @@ pub struct Arm {
 }
 
 /// An interpreted directive keyword and its payload.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum Directive {
     If(Location),
     ElseIf(Location),
@@ -57,6 +70,11 @@ enum Directive {
         iterable: Location,
     },
     EndFor,
+    Replace {
+        literal: String,
+        with_expr: Location,
+    },
+    EndReplace,
 }
 
 /// The first whitespace-delimited word within `span`, and the trimmed remainder span.
@@ -111,6 +129,8 @@ fn interpret(source: &str, inner: Location) -> Result<Directive, TemplateError> 
         "endif" | "ENDIF" => Ok(Directive::EndIf),
         "for" | "FOR" => parse_for(source, rest),
         "endfor" | "ENDFOR" => Ok(Directive::EndFor),
+        "replace" | "REPLACE" => parse_replace_header(source, rest),
+        "endreplace" | "ENDREPLACE" => Ok(Directive::EndReplace),
         "else" | "ELSE" => {
             // Could be a bare `else` or `else if <cond>`.
             let (_, second, after) = split_word(source, rest);
@@ -128,6 +148,97 @@ fn interpret(source: &str, inner: Location) -> Result<Directive, TemplateError> 
             inner,
         )),
     }
+}
+
+/// Parses ` "LITERAL" with <expr> ` after the `replace` keyword.
+fn parse_replace_header(source: &str, rest: Location) -> Result<Directive, TemplateError> {
+    let rest = trim_start_loc(source, rest);
+    let (literal, literal_span, after) = parse_quoted_string(source, rest)?;
+    if literal.is_empty() {
+        return Err(TemplateError::new(
+            "`replace` literal must not be empty",
+            literal_span,
+        ));
+    }
+    let (_with_loc, with_kw, expr) = split_word(source, after);
+    match with_kw {
+        "with" | "WITH" => {
+            let with_expr = require_expr(expr, source, "replace ... with")?;
+            Ok(Directive::Replace { literal, with_expr })
+        }
+        "" => Err(TemplateError::new(
+            "expected `with` after `replace` literal",
+            after,
+        )),
+        other => Err(TemplateError::new(
+            format!("expected `with` after `replace` literal, found `{other}`"),
+            after,
+        )),
+    }
+}
+
+/// Parses a double-quoted string with `\\`, `\"`, `\n`, and `\t` escapes.
+///
+/// Returns `(unescaped, literal_span_including_quotes, rest_after_closing_quote)`.
+fn parse_quoted_string(
+    source: &str,
+    span: Location,
+) -> Result<(String, Location, Location), TemplateError> {
+    let text = span.extract(source);
+    if !text.starts_with('"') {
+        return Err(TemplateError::new(
+            "expected a double-quoted string literal",
+            span,
+        ));
+    }
+
+    let mut out = String::new();
+    let mut chars = text[1..].char_indices();
+    while let Some((i, ch)) = chars.next() {
+        match ch {
+            '"' => {
+                let end = span.start + 1 + i + 1;
+                let literal_span = Location {
+                    start: span.start,
+                    end,
+                };
+                let after = Location {
+                    start: end,
+                    end: span.end,
+                };
+                return Ok((out, literal_span, trim_start_loc(source, after)));
+            }
+            '\\' => {
+                let Some((_, esc)) = chars.next() else {
+                    return Err(TemplateError::new(
+                        "unterminated escape in string literal",
+                        span,
+                    ));
+                };
+                match esc {
+                    '\\' => out.push('\\'),
+                    '"' => out.push('"'),
+                    'n' => out.push('\n'),
+                    't' => out.push('\t'),
+                    other => {
+                        return Err(TemplateError::new(
+                            format!("unknown string escape `\\{other}`"),
+                            Location {
+                                start: span.start + 1 + i,
+                                end: span.start + 1 + i + 1 + other.len_utf8(),
+                            },
+                        ));
+                    }
+                }
+            }
+            c => out.push(c),
+        }
+    }
+
+    Err(TemplateError::new(
+        "unterminated string literal",
+        span,
+    ))
 }
 
 /// Parses a `for` header: `var (: type)? in iterable`.
@@ -245,6 +356,7 @@ enum Stop {
     Else,
     EndIf,
     EndFor,
+    EndReplace,
 }
 
 struct Parser<'a> {
@@ -298,9 +410,16 @@ impl Parser<'_> {
                             self.pos += 1;
                             nodes.push(self.parse_for(var, ty, iterable)?);
                         }
+                        Directive::Replace { literal, with_expr } => {
+                            self.pos += 1;
+                            nodes.push(self.parse_replace(literal, with_expr)?);
+                        }
                         // Any closer/continuation we did not expect here.
                         Directive::EndIf => return Err(unexpected(self.source, inner, "endif")),
                         Directive::EndFor => return Err(unexpected(self.source, inner, "endfor")),
+                        Directive::EndReplace => {
+                            return Err(unexpected(self.source, inner, "endreplace"));
+                        }
                         Directive::Else => return Err(unexpected(self.source, inner, "else")),
                         Directive::ElseIf(_) => {
                             return Err(unexpected(self.source, inner, "else if"));
@@ -367,6 +486,22 @@ impl Parser<'_> {
         }
     }
 
+    fn parse_replace(
+        &mut self,
+        literal: String,
+        with_expr: Location,
+    ) -> Result<Node, TemplateError> {
+        let (body, stop) = self.parse_until(&[is_endreplace as fn(&Directive) -> bool])?;
+        match stop {
+            Stop::EndReplace => Ok(Node::Replace {
+                literal,
+                with_expr,
+                body,
+            }),
+            _ => Err(self.unterminated("replace")),
+        }
+    }
+
     fn unterminated(&self, what: &str) -> TemplateError {
         let end = self.source.len();
         TemplateError::new(
@@ -387,7 +522,10 @@ fn stop_of(d: &Directive) -> Stop {
         Directive::Else => Stop::Else,
         Directive::EndIf => Stop::EndIf,
         Directive::EndFor => Stop::EndFor,
-        Directive::If(_) | Directive::For { .. } => unreachable!("not a stopper"),
+        Directive::EndReplace => Stop::EndReplace,
+        Directive::If(_) | Directive::For { .. } | Directive::Replace { .. } => {
+            unreachable!("not a stopper")
+        }
     }
 }
 
@@ -402,6 +540,9 @@ fn is_endif(d: &Directive) -> bool {
 }
 fn is_endfor(d: &Directive) -> bool {
     matches!(d, Directive::EndFor)
+}
+fn is_endreplace(d: &Directive) -> bool {
+    matches!(d, Directive::EndReplace)
 }
 
 #[cfg(test)]
@@ -517,5 +658,35 @@ mod tests {
         let src = "{% for x: %}{% endfor %}";
         let err = parse(src, &Syntax::brackets()).unwrap_err();
         assert!(err.message.contains("type"), "{}", err.message);
+    }
+
+    #[test]
+    fn replace_block_parses() {
+        let src = "#replace \"X\" with name\nhello X\n#endreplace\n";
+        let nodes = parse(src, &Syntax::lines()).unwrap();
+        assert_eq!(nodes.len(), 1);
+        match &nodes[0] {
+            Node::Replace {
+                literal,
+                with_expr,
+                body,
+            } => {
+                assert_eq!(literal, "X");
+                assert_eq!(ex(src, *with_expr), "name");
+                assert_eq!(body.len(), 1);
+                let Node::Text(span) = &body[0] else {
+                    panic!("expected text body");
+                };
+                assert_eq!(span.extract(src), "hello X\n");
+            }
+            other => panic!("expected Replace, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn replace_empty_literal_errors() {
+        let src = "#replace \"\" with name\nx\n#endreplace\n";
+        let err = parse(src, &Syntax::lines()).unwrap_err();
+        assert!(err.message.contains("empty"), "{}", err.message);
     }
 }

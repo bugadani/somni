@@ -30,6 +30,20 @@ impl TemplateError {
         }
     }
 
+    /// Returns a copy of this error with its location shifted by `offset` bytes.
+    pub fn offset(self, offset: usize) -> Self {
+        if offset == 0 {
+            return self;
+        }
+        Self {
+            message: self.message,
+            location: Location {
+                start: self.location.start + offset,
+                end: self.location.end + offset,
+            },
+        }
+    }
+
     /// Renders the error as a caret-marked snippet against the given template source.
     pub fn display_with<'s>(&'s self, template: &'s str) -> impl Display + 's {
         MarkedTemplateError {

@@ -1,6 +1,7 @@
 # Unreleased
 
 - Specify template style options in `---`-fenced frontmatter
+- `#replace "SOMETHING" with expression` blocks
 
 # [0.3.2] - 2026-07-15
 
