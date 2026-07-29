@@ -1,3 +1,7 @@
+# Unreleased
+
+- Specify template style options in `---`-fenced frontmatter
+
 # [0.3.2] - 2026-07-15
 
 - Fixed `for ... in` parsing

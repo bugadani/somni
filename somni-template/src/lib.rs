@@ -31,6 +31,8 @@
 //! - Directives: `if` / `else if` / `else` / `endif` and `for <var> in <expr>` / `endfor` (the
 //!   loop variable may carry an optional `: <type>` annotation), in either bracket
 //!   ([`Syntax::brackets`]) or line ([`Syntax::lines`]) style.
+//! - Optional `---`-fenced **frontmatter** at the start of a template may override the
+//!   [`Syntax`] passed to [`Template::compile`] (frontmatter wins for keys it sets).
 //!
 //! See [`Env`] for supplying data, [`IntoValue`]/[`Iter`] for values and loop sources, and
 //! [`TemplateError`] for diagnostics (which always point into the original template).
@@ -57,6 +59,8 @@ pub use somni_expr::{SomniIterator, SomniStruct, TypedValue};
 pub use syntax::{BlockStyle, Syntax};
 pub use value::{IntoValue, Iter, TemplateTypes};
 
+use syntax::resolve_syntax;
+
 use transpile::{EMIT_FN, EMIT_LIT_FN, RENDER_FN, Transpiled};
 
 /// Shared data used by the internal `emit_lit` function to emit literal chunks by index.
@@ -78,10 +82,15 @@ pub struct Template {
 impl Template {
     /// Compiles a template from source using the given [`Syntax`].
     ///
-    /// Returns a [`TemplateError`] (pointing into `source`) on malformed directives or
-    /// expressions.
+    /// If `source` begins with a `---`-fenced frontmatter block, those settings overlay
+    /// `syntax` (frontmatter takes precedence for keys it sets) and only the body after the
+    /// closing fence is compiled. See [`Syntax::with_frontmatter`].
+    ///
+    /// Returns a [`TemplateError`] (pointing into the compiled body, or into frontmatter when
+    /// that is malformed) on malformed directives or expressions.
     pub fn compile(source: &str, syntax: &Syntax) -> Result<Template, TemplateError> {
-        let nodes = parse::parse(source, syntax)?;
+        let (syntax, source) = resolve_syntax(source, syntax)?;
+        let nodes = parse::parse(source, &syntax)?;
         let transpiled = transpile::transpile(source, &nodes);
 
         // Validate the generated program so that expression syntax errors surface at compile

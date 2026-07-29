@@ -3,7 +3,7 @@
 //! Each subfolder of `tests/template/` is one test case with these files:
 //!
 //! - `template` — the template source (required), optionally prefixed with a frontmatter
-//!   block that configures the [`Syntax`] (see [`parse_template_file`]).
+//!   block that configures the [`Syntax`] (see [`somni_template::split_frontmatter`]).
 //! - `output`   — the expected rendered output (required).
 //!
 //! All fixtures render against the same [`standard_env`], so templates may reference the
@@ -12,7 +12,8 @@
 //!
 //! ## Frontmatter
 //!
-//! A template file may begin with a `---`-fenced frontmatter block selecting the syntax:
+//! A template file may begin with a `---`-fenced frontmatter block selecting the syntax.
+//! Frontmatter keys overlay the Rust-provided base syntax ([`Syntax::brackets`] here):
 //!
 //! ```text
 //! ---
@@ -22,11 +23,13 @@
 //! Status: /* if online */up/* else */down/* endif */ for {{ name }}
 //! ```
 //!
-//! Recognized keys (all optional; defaults are the bracket style):
+//! Recognized keys (all optional):
 //!
-//! - `expr: <open> <close>` — interpolation delimiters (default `{{ }}`).
-//! - `block: paired <open> <close>` — paired block directives (default `{% %}`).
-//! - `block: line <prefix>` — line directives (e.g. `#`).
+//! - `expr: <open> <close>` — interpolation delimiters.
+//! - `block: paired <open> <close>` — paired block directives.
+//! - `block: line <prefix>` — line directives.
+//!
+//! Lines starting with `#` are comments and ignored.
 //!
 //! Without a leading `---`, the whole file is the template and the bracket style is used.
 //!
@@ -35,7 +38,7 @@
 use std::{fs, path::Path};
 
 use somni_expr::{Context, ExprContext, somni_struct};
-use somni_template::{BlockStyle, Env, IntoValue, Iter, Syntax, Template, TemplateTypes};
+use somni_template::{Env, IntoValue, Iter, Syntax, Template, TemplateTypes};
 
 /// The data available to every fixture template.
 fn standard_env() -> Env {
@@ -108,72 +111,6 @@ fn normalize(s: &str) -> String {
     s.replace("\r\n", "\n")
 }
 
-/// Splits an (already newline-normalized) template file into its [`Syntax`] and body.
-///
-/// If the file begins with a `---`-fenced frontmatter block it is parsed for syntax keys;
-/// otherwise the bracket style is used and the whole file is the template body.
-fn parse_template_file(content: &str) -> (Syntax, String) {
-    if let Some(rest) = content.strip_prefix("---\n") {
-        if let Some(end) = rest.find("\n---\n") {
-            let front = &rest[..end];
-            let body = &rest[end + "\n---\n".len()..];
-            return (parse_syntax(front), body.to_string());
-        }
-    }
-    (Syntax::brackets(), content.to_string())
-}
-
-fn parse_syntax(front: &str) -> Syntax {
-    let mut expr = ("{{".to_string(), "}}".to_string());
-    let mut block = BlockStyle::Paired {
-        open: "{%".to_string(),
-        close: "%}".to_string(),
-    };
-
-    for line in front.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let (key, value) = line
-            .split_once(':')
-            .unwrap_or_else(|| panic!("frontmatter line is not `key: value`: {line:?}"));
-        let mut parts = value.split_whitespace();
-
-        match key.trim() {
-            "expr" => {
-                let open = parts.next().expect("`expr` needs an opening delimiter");
-                let close = parts.next().expect("`expr` needs a closing delimiter");
-                expr = (open.to_string(), close.to_string());
-            }
-            "block" => match parts.next() {
-                Some("line") => {
-                    let prefix = parts.next().expect("`block: line` needs a prefix");
-                    block = BlockStyle::Line {
-                        prefix: prefix.to_string(),
-                    };
-                }
-                Some("paired") => {
-                    let open = parts
-                        .next()
-                        .expect("`block: paired` needs an opening delimiter");
-                    let close = parts
-                        .next()
-                        .expect("`block: paired` needs a closing delimiter");
-                    block = BlockStyle::Paired {
-                        open: open.to_string(),
-                        close: close.to_string(),
-                    };
-                }
-                other => panic!("unknown block style: {other:?}"),
-            },
-            other => panic!("unknown frontmatter key: {other:?}"),
-        }
-    }
-
-    Syntax { expr, block }
-}
-
 #[test]
 fn run_template_fixtures() {
     let bless = std::env::var("BLESS").as_deref() == Ok("1");
@@ -196,10 +133,9 @@ fn run_template_fixtures() {
         }
 
         let name = dir.file_name().unwrap().to_string_lossy().into_owned();
-        let raw = normalize(&fs::read_to_string(&template_path).unwrap());
-        let (syntax, template) = parse_template_file(&raw);
+        let template = normalize(&fs::read_to_string(&template_path).unwrap());
 
-        let compiled = Template::compile(&template, &syntax)
+        let compiled = Template::compile(&template, &Syntax::brackets())
             .unwrap_or_else(|e| panic!("[{name}] compile failed: {e:?}"));
 
         // Always save the generated Somni program as an artifact (never compared).

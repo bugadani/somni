@@ -280,6 +280,34 @@ fn c_line_comment_loop() {
 }
 
 #[test]
+fn frontmatter_overrides_rust_syntax() {
+    // Rust asks for line `#` directives; frontmatter selects C-comment blocks instead.
+    let source = "---\nblock: paired /* */\n---\n/* if online */yes/* else */no/* endif */";
+    let out = render(source, &Syntax::lines(), |env| {
+        env.value("online", true);
+    });
+    assert_eq!(out, "yes");
+}
+
+#[test]
+fn frontmatter_keeps_unmentioned_rust_settings() {
+    // Only `block` is overridden; the Rust-provided expr delimiters remain.
+    let base = Syntax {
+        expr: ("[[".into(), "]]".into()),
+        block: somni_template::BlockStyle::Paired {
+            open: "{%".into(),
+            close: "%}".into(),
+        },
+    };
+    let source = "---\nblock: line #\n---\n# if online\n[[ name ]]\n# endif\n";
+    let out = render(source, &base, |env| {
+        env.value("online", true);
+        env.value("name", "Ada");
+    });
+    assert_eq!(out, "Ada\n");
+}
+
+#[test]
 fn runtime_error_maps_to_template_location() {
     // `missing` is not registered -> unknown variable at render time.
     let source = "before {{ missing }} after";
