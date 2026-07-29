@@ -1,0 +1,9 @@
+---
+block: paired {% %}
+text_prefix: //>
+---
+{% if online %}
+//>up
+{% else %}
+//>down
+{% endif %}

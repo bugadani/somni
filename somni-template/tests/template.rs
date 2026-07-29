@@ -34,6 +34,7 @@
 //! - `expr: <open> <close>` — interpolation delimiters.
 //! - `block: paired <open> <close>` — paired block directives.
 //! - `block: line <prefix>` — line directives.
+//! - `text_prefix: <prefix>` — strip this line prefix; remainder is verbatim text.
 //!
 //! Lines starting with `#` are comments and ignored.
 //!

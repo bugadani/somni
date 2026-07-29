@@ -52,11 +52,14 @@ fn find_from(source: &str, from: usize, needle: &str) -> Option<usize> {
 /// so callers that stripped a prefix (e.g. frontmatter) can pass the full source and the
 /// body start offset.
 pub fn scan(source: &str, syntax: &Syntax, from: usize) -> Result<Vec<Segment>, TemplateError> {
+    let text_prefix = syntax.text_prefix.as_deref();
     match &syntax.block {
         BlockStyle::Paired { open, close } => {
-            scan_paired(source, &syntax.expr, open, close, from)
+            scan_paired(source, &syntax.expr, open, close, text_prefix, from)
         }
-        BlockStyle::Line { prefix } => scan_lines(source, &syntax.expr, prefix, from),
+        BlockStyle::Line { prefix } => {
+            scan_lines(source, &syntax.expr, prefix, text_prefix, from)
+        }
     }
 }
 
@@ -72,6 +75,7 @@ fn scan_paired(
     expr: &(String, String),
     block_open: &str,
     block_close: &str,
+    text_prefix: Option<&str>,
     from: usize,
 ) -> Result<Vec<Segment>, TemplateError> {
     let (expr_open, expr_close) = expr;
@@ -84,7 +88,15 @@ fn scan_paired(
 
         let (at, is_expr) = match (next_expr, next_block) {
             (None, None) => {
-                push_text(&mut out, pos, source.len());
+                scan_text_region(
+                    source,
+                    pos,
+                    source.len(),
+                    expr_open,
+                    expr_close,
+                    text_prefix,
+                    &mut out,
+                )?;
                 break;
             }
             (Some(e), None) => (e, true),
@@ -98,7 +110,7 @@ fn scan_paired(
             }
         };
 
-        push_text(&mut out, pos, at);
+        scan_text_region(source, pos, at, expr_open, expr_close, text_prefix, &mut out)?;
 
         if is_expr {
             let inner_start = at + expr_open.len();
@@ -142,6 +154,7 @@ fn scan_lines(
     source: &str,
     expr: &(String, String),
     prefix: &str,
+    text_prefix: Option<&str>,
     from: usize,
 ) -> Result<Vec<Segment>, TemplateError> {
     let (expr_open, expr_close) = expr;
@@ -157,13 +170,29 @@ fn scan_lines(
             None => (source.len(), source.len()),
         };
 
-        // Is this a directive line? Its first non-whitespace must be `prefix`.
+        // Is this a directive / text-prefix line? First non-whitespace must match.
         let line = &source[line_start..line_end];
         let leading_ws = line.len() - line.trim_start().len();
         let content_start = line_start + leading_ws;
-        let is_directive = source[content_start..line_end].starts_with(prefix);
+        let content = &source[content_start..line_end];
 
-        if is_directive {
+        let is_directive = content.starts_with(prefix);
+        let is_text_prefixed = text_prefix.is_some_and(|tp| content.starts_with(tp));
+
+        // When both match, the longer prefix wins (e.g. `//>` over `//`).
+        let use_text_prefix = match (is_directive, is_text_prefixed, text_prefix) {
+            (true, true, Some(tp)) => tp.len() >= prefix.len(),
+            (false, true, Some(_)) => true,
+            _ => false,
+        };
+
+        if use_text_prefix {
+            let tp = text_prefix.expect("use_text_prefix implies text_prefix");
+            let after = content_start + tp.len();
+            // Leading whitespace and the prefix are discarded; remainder (incl. newline) is text.
+            scan_text_run(source, after, next_line, expr_open, expr_close, &mut out)?;
+            line_start = next_line;
+        } else if is_directive {
             let inner_start = content_start + prefix.len();
             out.push(Segment::Directive {
                 inner: trimmed(source, inner_start, line_end),
@@ -185,6 +214,69 @@ fn scan_lines(
     }
 
     Ok(out)
+}
+
+/// Scans a text region, stripping [`Syntax::text_prefix`] from physical lines that begin
+/// (within the region) with that prefix.
+fn scan_text_region(
+    source: &str,
+    start: usize,
+    end: usize,
+    expr_open: &str,
+    expr_close: &str,
+    text_prefix: Option<&str>,
+    out: &mut Vec<Segment>,
+) -> Result<(), TemplateError> {
+    let Some(tp) = text_prefix else {
+        return scan_text_run(source, start, end, expr_open, expr_close, out);
+    };
+    if start >= end {
+        return Ok(());
+    }
+
+    let mut pos = start;
+    while pos < end {
+        // End of the physical line content (index of '\n' or `end`), and end of the portion
+        // to consider including a trailing newline when it lies inside the region.
+        let nl = find_from(source, pos, "\n");
+        let (line_content_end, portion_end) = match nl {
+            Some(n) if n < end => (n, n + 1),
+            _ => (end, end),
+        };
+
+        // Physical start of the line that contains `pos`.
+        let phys_start = source[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        // Only strip when we see the beginning of the line inside this text region.
+        let at_line_start = pos == phys_start;
+
+        let emit_from = if at_line_start {
+            let line = &source[phys_start..line_content_end];
+            let leading_ws = line.len() - line.trim_start().len();
+            let content_start = phys_start + leading_ws;
+            if content_start < line_content_end
+                && source[content_start..line_content_end].starts_with(tp)
+            {
+                // Drop leading whitespace + prefix; keep the rest of the portion.
+                content_start + tp.len()
+            } else {
+                pos
+            }
+        } else {
+            pos
+        };
+
+        let emit_from = emit_from.max(pos).min(portion_end);
+        scan_text_run(
+            source,
+            emit_from,
+            portion_end,
+            expr_open,
+            expr_close,
+            out,
+        )?;
+        pos = portion_end;
+    }
+    Ok(())
 }
 
 /// Scans `source[start..end]` (a text region) for interpolations, emitting Text/Interp.

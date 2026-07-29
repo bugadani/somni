@@ -1,9 +1,12 @@
 ---
+# Showcases C-style line comments as syntax, with text_prefix to
+# output directly while hiding the template line from a C IDE.
 block: line //
+text_prefix: //>
 ---
 User: {{ name }}
 // if online
-(online)
+//>(online)
 // endif
 // for n in nums
 * {{ str(n) }}

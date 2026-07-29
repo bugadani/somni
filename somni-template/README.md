@@ -11,8 +11,11 @@ while `{{ expr }}` interpolations, `if`/`for` conditions and loop iterables are 
 
 - **Configurable syntax.** Interpolation delimiters and block-directive style are both
   configurable. Block directives can be a delimiter pair (e.g. `{% ... %}`, `/* ... */`) or a
-  line prefix (e.g. `#`, `//`). Optional `---`-fenced **frontmatter** at the start of a template
-  may override the syntax passed to `Template::compile` (frontmatter wins for keys it sets).
+  line prefix (e.g. `#`, `//`). An optional **text line prefix** (e.g. `//>`) is stripped from
+  matching lines so the remainder is emitted as text — useful when the template is also a
+  valid program and conditional output must stay commented if run directly. Optional
+  `---`-fenced **frontmatter** at the start of a template may override the syntax passed to
+  `Template::compile` (frontmatter wins for keys it sets).
 - **Control flow.** `if` / `else if` / `else` and `for <var> in <iterable>` (with an optional
   `<var>: <type>` annotation), arbitrarily nestable.
 - **Strongly typed output.** Interpolation is string-only; convert other types explicitly

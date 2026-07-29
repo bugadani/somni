@@ -3,6 +3,7 @@
 - Specify template style options in `---`-fenced frontmatter
 - `#replace "SOMETHING" with expression` blocks
 - `#include "path"` blocks
+- `text_prefix` line marker to output verbatim text with the comment-like syntax in the output language.
 
 # [0.3.2] - 2026-07-15
 

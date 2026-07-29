@@ -1,11 +1,15 @@
 //! Configuration of the template surface syntax.
 //!
-//! A [`Syntax`] describes two independent axes:
+//! A [`Syntax`] describes three independent axes:
 //!
 //! - **Expression interpolation**: always a delimiter pair, defaulting to `{{` … `}}`.
 //! - **Block directives**: either a delimiter pair ([`BlockStyle::Paired`], e.g. `{%` … `%}`)
 //!   or a line prefix ([`BlockStyle::Line`], e.g. `#`), where a directive occupies a whole
 //!   physical line.
+//! - **Text line prefix** ([`Syntax::text_prefix`]): an optional line prefix that is stripped;
+//!   the remainder of the line is emitted as ordinary template text. Useful when a template is
+//!   also a valid program in another language — conditional output can sit behind a comment
+//!   marker so it is inert if the file is compiled/run directly.
 //!
 //! Exactly one [`BlockStyle`] is used per compiled template.
 //!
@@ -44,6 +48,15 @@ pub struct Syntax {
     pub expr: (String, String),
     /// How block directives are delimited.
     pub block: BlockStyle,
+    /// Optional line prefix that is stripped; content after it is emitted as text.
+    ///
+    /// A physical line whose first non-whitespace characters equal this prefix has the leading
+    /// whitespace and the prefix removed. The rest of the line (including a trailing newline)
+    /// is ordinary template text and may contain interpolations.
+    ///
+    /// When both this and a [`BlockStyle::Line`] prefix could match the same line, the longer
+    /// prefix wins. They must not be identical (see [`Syntax::validate`]).
+    pub text_prefix: Option<String>,
 }
 
 impl Default for Syntax {
@@ -53,7 +66,7 @@ impl Default for Syntax {
 }
 
 /// Frontmatter keys that may appear at most once.
-const FRONTMATTER_KEYS: &[&str] = &["expr", "block"];
+const FRONTMATTER_KEYS: &[&str] = &["expr", "block", "text_prefix"];
 
 impl Syntax {
     /// Bracket style: `{{ expr }}` interpolation and `{% ... %}` block directives.
@@ -64,6 +77,7 @@ impl Syntax {
                 open: "{%".into(),
                 close: "%}".into(),
             },
+            text_prefix: None,
         }
     }
 
@@ -72,7 +86,32 @@ impl Syntax {
         Self {
             expr: ("{{".into(), "}}".into()),
             block: BlockStyle::Line { prefix: "#".into() },
+            text_prefix: None,
         }
+    }
+
+    /// Checks that this syntax configuration is internally consistent.
+    ///
+    /// Currently rejects an empty `text_prefix` and a `text_prefix` identical to the block
+    /// line prefix.
+    pub fn validate(&self) -> Result<(), TemplateError> {
+        if let Some(tp) = &self.text_prefix {
+            if tp.is_empty() {
+                return Err(TemplateError::new(
+                    "`text_prefix` must not be empty",
+                    Location { start: 0, end: 0 },
+                ));
+            }
+            if let BlockStyle::Line { prefix } = &self.block {
+                if prefix == tp {
+                    return Err(TemplateError::new(
+                        "`text_prefix` must differ from the block line prefix",
+                        Location { start: 0, end: 0 },
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Applies frontmatter key/value overrides onto a copy of this syntax.
@@ -82,6 +121,7 @@ impl Syntax {
     /// - `expr: <open> <close>` — interpolation delimiters.
     /// - `block: paired <open> <close>` — paired block directives.
     /// - `block: line <prefix>` — line directives.
+    /// - `text_prefix: <prefix>` — strip this line prefix; remainder is verbatim text.
     ///
     /// Blank lines and lines whose first non-whitespace character is `#` are ignored
     /// (comments). Keys present in `front` replace the corresponding fields of `self`;
@@ -148,6 +188,12 @@ impl Syntax {
                                 line_span(front, line_start, line.len()),
                             )
                         })?;
+                        if syntax.text_prefix.as_deref() == Some(prefix) {
+                            return Err(TemplateError::new(
+                                "`text_prefix` must differ from the block line prefix",
+                                line_span(front, line_start, line.len()),
+                            ));
+                        }
                         syntax.block = BlockStyle::Line {
                             prefix: prefix.to_string(),
                         };
@@ -177,10 +223,31 @@ impl Syntax {
                         ));
                     }
                 },
+                "text_prefix" => {
+                    let prefix = parts.next().ok_or_else(|| {
+                        TemplateError::new(
+                            "`text_prefix` needs a prefix",
+                            line_span(front, line_start, line.len()),
+                        )
+                    })?;
+                    if let BlockStyle::Line {
+                        prefix: block_prefix,
+                    } = &syntax.block
+                    {
+                        if block_prefix == prefix {
+                            return Err(TemplateError::new(
+                                "`text_prefix` must differ from the block line prefix",
+                                line_span(front, line_start, line.len()),
+                            ));
+                        }
+                    }
+                    syntax.text_prefix = Some(prefix.to_string());
+                }
                 _ => unreachable!("key matched FRONTMATTER_KEYS"),
             }
         }
 
+        syntax.validate()?;
         Ok(syntax)
     }
 }
@@ -223,6 +290,7 @@ pub fn resolve_syntax<'a>(
     base: &Syntax,
 ) -> Result<(Syntax, &'a str, usize), TemplateError> {
     let Some((front, body)) = split_frontmatter(source) else {
+        base.validate()?;
         return Ok((base.clone(), source, 0));
     };
 
@@ -291,8 +359,11 @@ mod tests {
                 open: "{%".into(),
                 close: "%}".into(),
             },
+            text_prefix: None,
         };
-        let merged = base.with_frontmatter("block: line //").unwrap();
+        let merged = base
+            .with_frontmatter("block: line //\ntext_prefix: //>")
+            .unwrap();
         assert_eq!(merged.expr, ("[[".into(), "]]".into()));
         assert_eq!(
             merged.block,
@@ -300,6 +371,7 @@ mod tests {
                 prefix: "//".into()
             }
         );
+        assert_eq!(merged.text_prefix.as_deref(), Some("//>"));
     }
 
     #[test]

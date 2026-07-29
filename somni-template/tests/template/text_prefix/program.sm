@@ -1,0 +1,10 @@
+fn __tmpl_render() {
+if (online) {
+__tmpl_emit_lit(0);
+__tmpl_emit_lit(1);
+} else {
+__tmpl_emit_lit(2);
+__tmpl_emit_lit(3);
+}
+__tmpl_emit_lit(4);
+}

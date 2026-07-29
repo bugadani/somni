@@ -186,6 +186,7 @@ fn configurable_delimiters() {
             open: "<%".into(),
             close: "%>".into(),
         },
+        text_prefix: None,
     };
     let out = render("<% if ok %>yes:${ name }<% endif %>", &syntax, |env| {
         env.value("ok", true);
@@ -203,6 +204,7 @@ fn c_style_comment_delimiters() {
             open: "/*".into(),
             close: "*/".into(),
         },
+        text_prefix: None,
     };
     let source = "Hi {{ name }}, you are /* if online */online/* else */offline/* endif */.";
     let up = render(source, &syntax, |env| {
@@ -225,6 +227,7 @@ fn c_style_comment_loop() {
             open: "/*".into(),
             close: "*/".into(),
         },
+        text_prefix: None,
     };
     let source = "/* for n in xs */[{{ str(n) }}]/* endfor */";
     let out = render(source, &syntax, |env| {
@@ -241,6 +244,7 @@ fn c_line_comment_directives() {
         block: somni_template::BlockStyle::Line {
             prefix: "//".into(),
         },
+        text_prefix: None,
     };
     let source = r#"User: {{ name }}
 // if online
@@ -268,6 +272,7 @@ fn c_line_comment_loop() {
         block: somni_template::BlockStyle::Line {
             prefix: "//".into(),
         },
+        text_prefix: None,
     };
     let source = r#"// for n in xs
 * {{ str(n) }}
@@ -298,6 +303,7 @@ fn frontmatter_keeps_unmentioned_rust_settings() {
             open: "{%".into(),
             close: "%}".into(),
         },
+        text_prefix: None,
     };
     let source = "---\nblock: line #\n---\n# if online\n[[ name ]]\n# endif\n";
     let out = render(source, &base, |env| {

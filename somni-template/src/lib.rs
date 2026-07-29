@@ -37,7 +37,10 @@
 //!   shares the caller’s context; `include … with …` compiles to a separate Somni function
 //!   invoked with the listed bindings.
 //! - Optional `---`-fenced **frontmatter** at the start of a template may override the
-//!   [`Syntax`] passed to [`Template::compile`] (frontmatter wins for keys it sets).
+//!   [`Syntax`] passed to [`Template::compile`] (frontmatter wins for keys it sets). An
+//!   optional [`Syntax::text_prefix`] strips a line marker so the rest of the line is
+//!   ordinary text (so conditional output can hide behind a comment when the template is
+//!   also a valid program in another language).
 //!
 //! See [`Env`] for supplying data, [`IntoValue`]/[`Iter`] for values and loop sources, and
 //! [`TemplateError`] for diagnostics (which always point into the original template).
