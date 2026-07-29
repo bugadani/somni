@@ -1,0 +1,13 @@
+fn __tmpl_inc_0(x: int) {
+__tmpl_emit_lit(0);
+__tmpl_emit(str(x));
+__tmpl_emit_lit(1);
+}
+fn __tmpl_inc_1(v: int) {
+__tmpl_emit_lit(2);
+__tmpl_inc_0(v);
+__tmpl_emit_lit(3);
+}
+fn __tmpl_render() {
+__tmpl_inc_1(count);
+}

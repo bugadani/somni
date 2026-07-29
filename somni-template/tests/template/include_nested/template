@@ -1,0 +1,1 @@
+{% include "outer.tmpl" with v: int = count %}

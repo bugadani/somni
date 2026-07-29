@@ -1,0 +1,6 @@
+fn __tmpl_inc_0(label: string) {
+__tmpl_emit(upper(label));
+}
+fn __tmpl_render() {
+__tmpl_inc_0(name);
+}

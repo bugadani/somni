@@ -1,0 +1,6 @@
+---
+block: line #
+---
+#for n in nums
+#include "row.tmpl" with item: int = n
+#endfor

@@ -1,0 +1,8 @@
+fn __tmpl_render() {
+for n in (nums) {
+if (n > 1) {
+__tmpl_emit(str(n));
+__tmpl_emit_lit(0);
+}
+}
+}

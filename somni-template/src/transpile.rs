@@ -1,11 +1,11 @@
 //! Transpilation of a parsed template tree into a Somni program.
 //!
-//! The generated program is a single function (named [`RENDER_FN`]) whose body drives an
-//! output buffer through two internal functions:
+//! The generated program defines one render function ([`RENDER_FN`]) plus one function per
+//! resolved include module. Bodies drive an output buffer through two internal functions:
 //!
 //! - [`EMIT_FN`]`(s)` appends a string produced by an interpolation, and
 //! - [`EMIT_LIT_FN`]`(i)` appends the `i`-th literal chunk (looked up by span into the
-//!   original template — literal text is never embedded in the generated source).
+//!   shared source arena — literal text is never embedded in the generated source).
 //!
 //! Every expression copied verbatim from the template (interpolations, conditions, loop
 //! iterables and headers) records a [`MapEntry`] so that evaluation errors — whose locations
@@ -13,7 +13,10 @@
 
 use somni_parser::Location;
 
-use crate::parse::{Arm, Node};
+use crate::{
+    parse::{Arm, Node},
+    resolve::ResolvedModule,
+};
 
 /// Name of the generated render function.
 pub const RENDER_FN: &str = "__tmpl_render";
@@ -38,7 +41,7 @@ pub struct MapEntry {
 pub struct Transpiled {
     /// The generated Somni source.
     pub source: String,
-    /// Literal chunk spans into the *original template*, indexed by chunk id.
+    /// Literal chunk spans into the *source arena*, indexed by chunk id.
     pub literals: Vec<Location>,
     /// Source map entries for verbatim-copied expression regions.
     pub map: Vec<MapEntry>,
@@ -71,6 +74,7 @@ impl Transpiled {
 
 struct Writer<'a> {
     template: &'a str,
+    modules: &'a [ResolvedModule],
     out: String,
     literals: Vec<Location>,
     map: Vec<MapEntry>,
@@ -179,6 +183,19 @@ impl Writer<'_> {
                 // rewrite through it.
                 self.nodes(body, Some((literal, *with_expr)));
             }
+            Node::Include { args, module_id, .. } => {
+                let id = module_id.expect("includes must be resolved before transpile");
+                let module = &self.modules[id];
+                self.push(&module.fn_name);
+                self.push("(");
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.push(", ");
+                    }
+                    self.push_verbatim(arg.value);
+                }
+                self.push(");\n");
+            }
         }
     }
 
@@ -211,16 +228,36 @@ impl Writer<'_> {
             self.push("}\n");
         }
     }
+
+    fn emit_module(&mut self, module: &ResolvedModule) {
+        self.push(&format!("fn {}(", module.fn_name));
+        for (i, (name, ty)) in module.params.iter().enumerate() {
+            if i > 0 {
+                self.push(", ");
+            }
+            self.push(name);
+            self.push(": ");
+            self.push(ty);
+        }
+        self.push(") {\n");
+        self.nodes(&module.nodes, None);
+        self.push("}\n");
+    }
 }
 
-/// Transpiles a parsed template into a Somni program.
-pub fn transpile(template: &str, nodes: &[Node]) -> Transpiled {
+/// Transpiles a parsed template (and any resolved include modules) into a Somni program.
+pub fn transpile(template: &str, nodes: &[Node], modules: &[ResolvedModule]) -> Transpiled {
     let mut w = Writer {
         template,
+        modules,
         out: String::new(),
         literals: Vec::new(),
         map: Vec::new(),
     };
+
+    for module in modules {
+        w.emit_module(module);
+    }
 
     w.push(&format!("fn {RENDER_FN}() {{\n"));
     w.nodes(nodes, None);
@@ -240,7 +277,7 @@ mod tests {
 
     fn transpile_str(src: &str, syntax: &Syntax) -> Transpiled {
         let nodes = parse(src, syntax, 0).unwrap();
-        transpile(src, &nodes)
+        transpile(src, &nodes, &[])
     }
 
     #[test]

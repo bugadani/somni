@@ -2,10 +2,11 @@
 //!
 //! A small, configurable templating engine built on top of [`somni-expr`](somni_expr).
 //!
-//! Templates are **transpiled** into a Somni program (a single render function) and then
-//! executed. Literal text is carried out-of-band (by span into the original template) and
-//! emitted through an internal `emit` function, while `{{ expr }}` interpolations,
-//! `if`/`for` conditions, and loop iterables are handed to Somni verbatim.
+//! Templates are **transpiled** into a Somni program (a render function plus any include
+//! functions) and then executed. Literal text is carried out-of-band (by span into the
+//! original template / include arena) and emitted through an internal `emit` function, while
+//! `{{ expr }}` interpolations, `if`/`for` conditions, and loop iterables are handed to Somni
+//! verbatim.
 //!
 //! ## Example
 //!
@@ -28,11 +29,13 @@
 //!
 //! - Interpolation: `{{ expr }}` (the expression must evaluate to a `string`; use a
 //!   conversion such as `str(x)` for other types).
-//! - Directives: `if` / `else if` / `else` / `endif`, `for <var> in <expr>` / `endfor`, and
-//!   `replace "literal" with <expr>` / `endreplace` (the loop variable may carry an optional
-//!   `: <type>` annotation), in either bracket ([`Syntax::brackets`]) or line
-//!   ([`Syntax::lines`]) style. A `replace` block rewrites literal text in its body into
-//!   prefix / `with`-expression / suffix emit triples at compile time.
+//! - Directives: `if` / `else if` / `else` / `endif`, `for <var> in <expr>` / `endfor`,
+//!   `replace "literal" with <expr>` / `endreplace`, and `include "path"` (optional
+//!   `with name: type = expr, …`), in either bracket ([`Syntax::brackets`]) or line
+//!   ([`Syntax::lines`]) style. Includes are loaded at compile time via
+//!   [`Template::compile_with`]. A bare `include` (no `with`) is expanded in place and
+//!   shares the caller’s context; `include … with …` compiles to a separate Somni function
+//!   invoked with the listed bindings.
 //! - Optional `---`-fenced **frontmatter** at the start of a template may override the
 //!   [`Syntax`] passed to [`Template::compile`] (frontmatter wins for keys it sets).
 //!
@@ -46,6 +49,7 @@ pub mod syntax;
 
 mod env;
 mod parse;
+mod resolve;
 mod scan;
 mod transpile;
 mod value;
@@ -82,6 +86,8 @@ pub struct Template {
 impl Template {
     /// Compiles a template from source using the given [`Syntax`].
     ///
+    /// Equivalent to [`Template::compile_with`] with a loader that rejects every include.
+    ///
     /// If `source` begins with a `---`-fenced frontmatter block, those settings overlay
     /// `syntax` (frontmatter takes precedence for keys it sets) and only the body after the
     /// closing fence is compiled. See [`Syntax::with_frontmatter`].
@@ -89,11 +95,35 @@ impl Template {
     /// Returns a [`TemplateError`] (pointing into the original `source`, including any
     /// frontmatter) on malformed directives or expressions.
     pub fn compile(source: &str, syntax: &Syntax) -> Result<Template, TemplateError> {
+        Self::compile_with(source, syntax, &mut |path| {
+            Err(format!(
+                "include `{path}` requires Template::compile_with with a loader"
+            ))
+        })
+    }
+
+    /// Compiles a template, loading `include` paths through `loader`.
+    ///
+    /// `loader` is called with the path string from each `include "…"` directive. Returned
+    /// source may itself contain frontmatter and nested includes. Cycles are rejected.
+    ///
+    /// Each distinct `(path, with-parameter signature)` becomes its own Somni function
+    /// called with the listed bindings. A bare `include` (no `with`) is inlined instead and
+    /// shares the caller’s context. Host functions and Env values are visible in both forms.
+    pub fn compile_with(
+        source: &str,
+        syntax: &Syntax,
+        loader: &mut dyn FnMut(&str) -> Result<String, String>,
+    ) -> Result<Template, TemplateError> {
         let (syntax, _body, body_offset) = resolve_syntax(source, syntax)?;
-        // Scan/parse/transpile the full source starting at `body_offset` so locations are
-        // absolute (frontmatter-aware) without a post-hoc shift.
-        let nodes = parse::parse(source, &syntax, body_offset)?;
-        let transpiled = transpile::transpile(source, &nodes);
+        // Scan/parse the full source starting at `body_offset` so locations are absolute
+        // (frontmatter-aware) without a post-hoc shift.
+        let mut nodes = parse::parse(source, &syntax, body_offset)?;
+
+        let mut arena = source.to_string();
+        let modules = resolve::resolve_includes(&mut arena, &mut nodes, &syntax, loader)
+            .map_err(|e| e.with_diagnostic_source(arena.clone()))?;
+        let transpiled = transpile::transpile(&arena, &nodes, &modules);
 
         // Validate the generated program so that expression syntax errors surface at compile
         // time, mapped back to the original template.
@@ -109,11 +139,12 @@ impl Template {
             return Err(TemplateError::new(
                 format!("invalid expression: {}", err.error),
                 location,
-            ));
+            )
+            .with_diagnostic_source(arena));
         }
 
         Ok(Template {
-            template: source.to_string(),
+            template: arena,
             transpiled,
         })
     }
@@ -190,6 +221,7 @@ impl Template {
                 .map_location(err.location)
                 .unwrap_or(Location { start: 0, end: 0 });
             TemplateError::new(err.message, location)
+                .with_diagnostic_source(self.template.clone())
         })?;
 
         drop(ctx);
@@ -198,5 +230,20 @@ impl Template {
             .map(RefCell::into_inner)
             .unwrap_or_else(|rc| rc.borrow().clone());
         Ok(output)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compile_rejects_include_without_loader() {
+        let err = Template::compile(r#"{% include "x.tmpl" %}"#, &Syntax::brackets()).unwrap_err();
+        assert!(
+            err.message.contains("compile_with") || err.message.contains("loader"),
+            "unexpected: {}",
+            err.message
+        );
     }
 }

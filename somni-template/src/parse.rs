@@ -1,12 +1,24 @@
 //! Template parser: turns the flat [`Segment`] stream into a nested [`Node`] tree.
 //!
-//! Directive keywords are fixed (`if` / `else` / `else if` / `endif`, `for` / `endfor`).
+//! Directive keywords are fixed (`if` / `else` / `else if` / `endif`, `for` / `endfor`,
+//! `replace` / `endreplace`, `include`).
 //! Expressions and loop iterables are kept as [`Location`]s into the template and handed to
 //! Somni verbatim during transpilation.
 
 use somni_parser::Location;
 
 use crate::{error::TemplateError, scan::Segment, syntax::Syntax};
+
+/// One `name: type = expr` binding on an [`Node::Include`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IncludeArg {
+    /// Parameter name span (becomes a Somni function parameter).
+    pub name: Location,
+    /// Parameter type span (required; Somni function args are typed).
+    pub ty: Location,
+    /// Call-site expression span passed as that argument.
+    pub value: Location,
+}
 
 /// A node in the parsed template tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,6 +58,20 @@ pub enum Node {
         /// Parsed body.
         body: Vec<Node>,
     },
+    /// An `include "path"` (optional `with name: type = expr, …`) directive.
+    ///
+    /// Without `with`, resolve expands the body in place (caller context). With `with`,
+    /// resolve fills `module_id` and transpile emits a call to a dedicated include function.
+    Include {
+        /// Include path (unescaped, without quotes).
+        path: String,
+        /// Span of the quoted path (for diagnostics).
+        path_span: Location,
+        /// Explicit bindings passed into the include.
+        args: Vec<IncludeArg>,
+        /// Index into the resolved module table.
+        module_id: Option<usize>,
+    },
 }
 
 /// A single conditional arm: a condition and its body.
@@ -75,6 +101,11 @@ enum Directive {
         with_expr: Location,
     },
     EndReplace,
+    Include {
+        path: String,
+        path_span: Location,
+        args: Vec<IncludeArg>,
+    },
 }
 
 /// The first whitespace-delimited word within `span`, and the trimmed remainder span.
@@ -131,6 +162,7 @@ fn interpret(source: &str, inner: Location) -> Result<Directive, TemplateError> 
         "endfor" | "ENDFOR" => Ok(Directive::EndFor),
         "replace" | "REPLACE" => parse_replace_header(source, rest),
         "endreplace" | "ENDREPLACE" => Ok(Directive::EndReplace),
+        "include" | "INCLUDE" => parse_include_header(source, rest),
         "else" | "ELSE" => {
             // Could be a bare `else` or `else if <cond>`.
             let (_, second, after) = split_word(source, rest);
@@ -174,6 +206,189 @@ fn parse_replace_header(source: &str, rest: Location) -> Result<Directive, Templ
             format!("expected `with` after `replace` literal, found `{other}`"),
             after,
         )),
+    }
+}
+
+/// Parses ` "PATH" (with name: type = expr, …)? ` after the `include` keyword.
+fn parse_include_header(source: &str, rest: Location) -> Result<Directive, TemplateError> {
+    let rest = trim_start_loc(source, rest);
+    let (path, path_span, after) = parse_quoted_string(source, rest)?;
+    if path.is_empty() {
+        return Err(TemplateError::new(
+            "`include` path must not be empty",
+            path_span,
+        ));
+    }
+    let after = trim_start_loc(source, after);
+    if after.extract(source).trim().is_empty() {
+        return Ok(Directive::Include {
+            path,
+            path_span,
+            args: Vec::new(),
+        });
+    }
+    let (_with_loc, with_kw, args_span) = split_word(source, after);
+    match with_kw {
+        "with" | "WITH" => {
+            let args = parse_with_args(source, args_span)?;
+            Ok(Directive::Include {
+                path,
+                path_span,
+                args,
+            })
+        }
+        other => Err(TemplateError::new(
+            format!("expected `with` after `include` path, found `{other}`"),
+            after,
+        )),
+    }
+}
+
+/// Parses `name: type = expr (, name: type = expr)*`.
+fn parse_with_args(source: &str, span: Location) -> Result<Vec<IncludeArg>, TemplateError> {
+    let mut cur = trim_start_loc(source, span);
+    if cur.extract(source).trim().is_empty() {
+        return Err(TemplateError::new(
+            "`include ... with` requires at least one binding",
+            span,
+        ));
+    }
+
+    let mut args = Vec::new();
+    loop {
+        let (name, name_str, rest) = split_word_at_colon(source, cur)?;
+        if name_str.is_empty() {
+            return Err(TemplateError::new(
+                "expected a parameter name in `include ... with`",
+                cur,
+            ));
+        }
+        let rest = trim_start_loc(source, rest);
+        if !rest.extract(source).starts_with(':') {
+            return Err(TemplateError::new(
+                format!("expected `: <type>` after include parameter `{name_str}`"),
+                rest,
+            ));
+        }
+        let after_colon = Location {
+            start: rest.start + 1,
+            end: rest.end,
+        };
+        let (ty, ty_str, rest) = split_word(source, trim_start_loc(source, after_colon));
+        if ty_str.is_empty() {
+            return Err(TemplateError::new(
+                format!("include parameter `{name_str}` requires a type after `:`"),
+                after_colon,
+            ));
+        }
+        let rest = trim_start_loc(source, rest);
+        if !rest.extract(source).starts_with('=') {
+            return Err(TemplateError::new(
+                format!("expected `=` after include parameter `{name_str}: {ty_str}`"),
+                rest,
+            ));
+        }
+        let after_eq = trim_start_loc(
+            source,
+            Location {
+                start: rest.start + 1,
+                end: rest.end,
+            },
+        );
+        let (value, after) = split_expr_at_comma(source, after_eq)?;
+        if value.extract(source).trim().is_empty() {
+            return Err(TemplateError::new(
+                format!("include parameter `{name_str}` requires an expression after `=`"),
+                after_eq,
+            ));
+        }
+        args.push(IncludeArg { name, ty, value });
+
+        let after = trim_start_loc(source, after);
+        if after.extract(source).trim().is_empty() {
+            break;
+        }
+        if !after.extract(source).starts_with(',') {
+            return Err(TemplateError::new(
+                "expected `,` between include `with` bindings",
+                after,
+            ));
+        }
+        cur = trim_start_loc(
+            source,
+            Location {
+                start: after.start + 1,
+                end: after.end,
+            },
+        );
+        if cur.extract(source).trim().is_empty() {
+            return Err(TemplateError::new(
+                "expected another binding after `,` in `include ... with`",
+                after,
+            ));
+        }
+    }
+    Ok(args)
+}
+
+/// Splits `span` into an expression and the remainder at the first top-level comma.
+fn split_expr_at_comma(
+    source: &str,
+    span: Location,
+) -> Result<(Location, Location), TemplateError> {
+    let text = span.extract(source);
+    let mut depth_paren = 0i32;
+    let mut depth_brack = 0i32;
+    let mut depth_brace = 0i32;
+    let mut in_string = false;
+    let mut chars = text.char_indices().peekable();
+    while let Some((i, ch)) = chars.next() {
+        if in_string {
+            if ch == '\\' {
+                let _ = chars.next();
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '(' => depth_paren += 1,
+            ')' => depth_paren -= 1,
+            '[' => depth_brack += 1,
+            ']' => depth_brack -= 1,
+            '{' => depth_brace += 1,
+            '}' => depth_brace -= 1,
+            ',' if depth_paren == 0 && depth_brack == 0 && depth_brace == 0 => {
+                let value = Location {
+                    start: span.start,
+                    end: span.start + i,
+                };
+                let rest = Location {
+                    start: span.start + i,
+                    end: span.end,
+                };
+                return Ok((trim_end_loc(source, value), rest));
+            }
+            _ => {}
+        }
+    }
+    Ok((
+        trim_end_loc(source, span),
+        Location {
+            start: span.end,
+            end: span.end,
+        },
+    ))
+}
+
+/// Returns `span` with trailing whitespace removed.
+fn trim_end_loc(source: &str, span: Location) -> Location {
+    let text = span.extract(source);
+    let trimmed = text.trim_end();
+    Location {
+        start: span.start,
+        end: span.start + trimmed.len(),
     }
 }
 
@@ -416,6 +631,19 @@ impl Parser<'_> {
                             self.pos += 1;
                             nodes.push(self.parse_replace(literal, with_expr)?);
                         }
+                        Directive::Include {
+                            path,
+                            path_span,
+                            args,
+                        } => {
+                            self.pos += 1;
+                            nodes.push(Node::Include {
+                                path,
+                                path_span,
+                                args,
+                                module_id: None,
+                            });
+                        }
                         // Any closer/continuation we did not expect here.
                         Directive::EndIf => return Err(unexpected(self.source, inner, "endif")),
                         Directive::EndFor => return Err(unexpected(self.source, inner, "endfor")),
@@ -525,7 +753,10 @@ fn stop_of(d: &Directive) -> Stop {
         Directive::EndIf => Stop::EndIf,
         Directive::EndFor => Stop::EndFor,
         Directive::EndReplace => Stop::EndReplace,
-        Directive::If(_) | Directive::For { .. } | Directive::Replace { .. } => {
+        Directive::If(_)
+        | Directive::For { .. }
+        | Directive::Replace { .. }
+        | Directive::Include { .. } => {
             unreachable!("not a stopper")
         }
     }
@@ -690,5 +921,55 @@ mod tests {
         let src = "#replace \"\" with name\nx\n#endreplace\n";
         let err = parse(src, &Syntax::lines(), 0).unwrap_err();
         assert!(err.message.contains("empty"), "{}", err.message);
+    }
+
+    #[test]
+    fn include_with_args_parses() {
+        let src = r#"{% include "row.tmpl" with item: int = n, label: string = name %}"#;
+        let nodes = parse(src, &Syntax::brackets(), 0).unwrap();
+        assert_eq!(nodes.len(), 1);
+        match &nodes[0] {
+            Node::Include {
+                path,
+                args,
+                module_id,
+                ..
+            } => {
+                assert_eq!(path, "row.tmpl");
+                assert!(module_id.is_none());
+                assert_eq!(args.len(), 2);
+                assert_eq!(ex(src, args[0].name), "item");
+                assert_eq!(ex(src, args[0].ty), "int");
+                assert_eq!(ex(src, args[0].value), "n");
+                assert_eq!(ex(src, args[1].name), "label");
+                assert_eq!(ex(src, args[1].ty), "string");
+                assert_eq!(ex(src, args[1].value), "name");
+            }
+            other => panic!("expected Include, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn include_without_with_parses() {
+        let src = "#include \"footer.tmpl\"\n";
+        let nodes = parse(src, &Syntax::lines(), 0).unwrap();
+        match &nodes[0] {
+            Node::Include { path, args, .. } => {
+                assert_eq!(path, "footer.tmpl");
+                assert!(args.is_empty());
+            }
+            other => panic!("expected Include, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn include_requires_types_on_with() {
+        let src = r#"{% include "x.tmpl" with item = n %}"#;
+        let err = parse(src, &Syntax::brackets(), 0).unwrap_err();
+        assert!(
+            err.message.contains("type") || err.message.contains(':'),
+            "{}",
+            err.message
+        );
     }
 }

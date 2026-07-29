@@ -4,11 +4,17 @@
 //!
 //! - `template` — the template source (required), optionally prefixed with a frontmatter
 //!   block that configures the [`Syntax`] (see [`somni_template::split_frontmatter`]).
-//! - `output`   — the expected rendered output (required).
+//! - `output` — the expected rendered output (for successful fixtures).
+//! - `compile_error` — if present, compilation must fail; compared against the full
+//!   ANSI-stripped [`TemplateError::display_with`] output.
+//! - `error` — if present, rendering must fail; compared the same way.
+//!
+//! `include "path"` directives load sibling files from the fixture directory (the path is
+//! joined onto the fixture folder).
 //!
 //! All fixtures render against the same [`standard_env`], so templates may reference the
-//! values and functions registered there. Set `BLESS=1` to (re)generate `output` files from
-//! the current rendering.
+//! values and functions registered there. Set `BLESS=1` to (re)generate `output`,
+//! `compile_error`, and `error` files from the current run.
 //!
 //! ## Frontmatter
 //!
@@ -39,7 +45,7 @@ use std::{fs, path::Path};
 
 use pretty_assertions::assert_eq;
 use somni_expr::{Context, ExprContext, somni_struct};
-use somni_template::{Env, IntoValue, Iter, Syntax, Template, TemplateTypes};
+use somni_template::{Env, IntoValue, Iter, Syntax, Template, TemplateError, TemplateTypes};
 
 /// The data available to every fixture template.
 fn standard_env() -> Env {
@@ -112,6 +118,40 @@ fn normalize(s: &str) -> String {
     s.replace("\r\n", "\n")
 }
 
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            for ch in chars.by_ref() {
+                if ch.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+fn rich_error(err: &TemplateError, template: &str) -> String {
+    normalize(&strip_ansi(&err.display_with(template).to_string()))
+}
+
+fn assert_error_fixture(name: &str, path: &Path, actual: &str, bless: bool) {
+    if bless {
+        fs::write(path, actual).unwrap();
+        return;
+    }
+    let expected = normalize(
+        &fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("[{name}] missing `{}`: {e}", path.display())),
+    );
+    assert_eq!(actual, expected, "[{name}] error output mismatch");
+}
+
 #[test]
 fn run_template_fixtures() {
     let bless = std::env::var("BLESS").as_deref() == Ok("1");
@@ -136,26 +176,59 @@ fn run_template_fixtures() {
         let name = dir.file_name().unwrap().to_string_lossy().into_owned();
         let template = normalize(&fs::read_to_string(&template_path).unwrap());
 
-        let compiled = Template::compile(&template, &Syntax::brackets()).unwrap_or_else(|e| {
-            panic!("[{name}] compile failed:\n{}", e.display_with(&template));
-        });
+        let compile_error_path = dir.join("compile_error");
+        let render_error_path = dir.join("error");
+
+        let compiled = match Template::compile_with(&template, &Syntax::brackets(), &mut |path| {
+            let file = dir.join(path);
+            fs::read_to_string(&file).map_err(|e| format!("{}: {e}", file.display()))
+        }) {
+            Ok(t) => {
+                if compile_error_path.exists() {
+                    panic!("[{name}] expected compile error, but compile succeeded");
+                }
+                t
+            }
+            Err(e) => {
+                if !compile_error_path.exists() {
+                    panic!("[{name}] compile failed:\n{}", rich_error(&e, &template));
+                }
+                assert_error_fixture(
+                    &name,
+                    &compile_error_path,
+                    &rich_error(&e, &template),
+                    bless,
+                );
+                ran += 1;
+                continue;
+            }
+        };
 
         // Always save the generated Somni program as an artifact (never compared).
         fs::write(dir.join("program.sm"), compiled.generated_program()).unwrap();
 
-        let actual = compiled.render(standard_env()).unwrap_or_else(|e| {
-            panic!("[{name}] render failed:\n{}", e.display_with(&template));
-        });
-
-        let output_path = dir.join("output");
-        if bless {
-            fs::write(&output_path, &actual).unwrap();
-        } else {
-            let expected = normalize(
-                &fs::read_to_string(&output_path)
-                    .unwrap_or_else(|e| panic!("[{name}] missing `output`: {e}")),
-            );
-            assert_eq!(actual, expected, "[{name}] rendered output mismatch");
+        match compiled.render(standard_env()) {
+            Ok(actual) => {
+                if render_error_path.exists() {
+                    panic!("[{name}] expected render error, but render succeeded:\n{actual}");
+                }
+                let output_path = dir.join("output");
+                if bless {
+                    fs::write(&output_path, &actual).unwrap();
+                } else {
+                    let expected = normalize(
+                        &fs::read_to_string(&output_path)
+                            .unwrap_or_else(|e| panic!("[{name}] missing `output`: {e}")),
+                    );
+                    assert_eq!(actual, expected, "[{name}] rendered output mismatch");
+                }
+            }
+            Err(e) => {
+                if !render_error_path.exists() {
+                    panic!("[{name}] render failed:\n{}", rich_error(&e, &template));
+                }
+                assert_error_fixture(&name, &render_error_path, &rich_error(&e, &template), bless);
+            }
         }
         ran += 1;
     }

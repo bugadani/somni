@@ -1,0 +1,10 @@
+fn __tmpl_inc_0(item: int) {
+__tmpl_emit_lit(0);
+__tmpl_emit(str(item));
+__tmpl_emit_lit(1);
+}
+fn __tmpl_render() {
+for n in (nums) {
+__tmpl_inc_0(n);
+}
+}

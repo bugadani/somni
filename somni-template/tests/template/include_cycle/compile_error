@@ -1,0 +1,5 @@
+Template error
+ ---> at line 6 column 10
+  |
+6 | #include "a.tmpl"
+  |          ^^^^^^^^ cyclic include: a.tmpl -> b.tmpl -> a.tmpl
